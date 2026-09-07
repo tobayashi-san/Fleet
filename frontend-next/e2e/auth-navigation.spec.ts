@@ -175,6 +175,62 @@ test('sidebar keeps an unknown Proxmox inventory in a loading state', async ({ p
   await page.unroute('**/api/opentofu/infrastructure-summary?*');
 });
 
+test('host details keep their originating workspace and desktop activity opens inline', async ({ page }) => {
+  await loginForIsolatedTest(page);
+  const host = await page.evaluate(async () => {
+    const token = localStorage.getItem('shipyard_token');
+    const response = await fetch('/api/servers', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ name: 'infrastructure-context-host', hostname: '127.0.0.1', ip_address: '127.0.0.1', ssh_user: 'root' }),
+    });
+    if (!response.ok) throw new Error(`Could not create infrastructure host: ${response.status}`);
+    return response.json() as Promise<{ id: string }>;
+  });
+
+  try {
+    await page.goto('/infrastructure');
+    const sidebar = page.locator('aside');
+    await expect(sidebar.getByRole('button', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await sidebar.getByRole('button').filter({ hasText: 'infrastructure-context-host' }).click();
+    await expect(page).toHaveURL(new RegExp(`/servers/${host.id}$`));
+    await expect(sidebar.getByRole('button', { name: 'Infrastructure', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(sidebar.getByRole('navigation', { name: 'Infrastructure', exact: true })).toBeVisible();
+
+    await page.route('**/api/operations?*', route => route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        items: [{
+          id: 'desktop-activity',
+          source: 'Host',
+          name: 'Desktop activity details',
+          target: 'infrastructure-context-host',
+          initiator: 'e2e-admin',
+          status: 'success',
+          statusTone: 'success',
+          time: new Date().toISOString(),
+        }],
+        page: 1,
+        page_size: 10,
+        total: 1,
+        total_pages: 1,
+        counts: { all: 1, active: 0, failed: 0 },
+      }),
+    }));
+    await page.goto('/operations?section=tasks');
+    await page.getByRole('row', { name: /Desktop activity details/ }).click();
+    await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0);
+    await expect(page.getByText('Task details', { exact: true })).toBeVisible();
+    await expect(page.getByText('Selected task', { exact: true })).toBeVisible();
+  } finally {
+    await page.evaluate(async (id) => {
+      const token = localStorage.getItem('shipyard_token');
+      await fetch(`/api/servers/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
+    }, host.id);
+  }
+});
+
 test('mobile profile menu and maintenance form remain inside the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   // Keep this test independently runnable. A fresh server starts with the

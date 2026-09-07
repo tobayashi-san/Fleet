@@ -342,6 +342,8 @@ describe("UI refactor contract", () => {
     expect(networks).toContain('tr("descriptionLabel")');
     expect(sidebar.match(/<NavItem to="\/operations"/g)).toHaveLength(1);
     expect(sidebar).toContain("shipyard.lastInfrastructureRoute");
+    expect(sidebar).toContain('path === "/servers"');
+    expect(sidebar).not.toContain('path.startsWith("/servers")');
     expect(operations).not.toContain('| "Audit"');
     expect(operations).not.toContain('<option value="Audit">');
     expect(router).not.toContain("'Workflow' | 'Audit'");
@@ -371,6 +373,8 @@ describe("UI refactor contract", () => {
     expect(operations).not.toContain('type="datetime-local"');
     expect(operations).not.toContain('type="date"');
     expect(operations).toContain('aria-controls="activity-filters"');
+    expect(operations).toContain('window.matchMedia("(max-width: 1279px)")');
+    expect(operations).toContain('showCompactOperationDialog && selectedOperationId');
     expect(operations).toContain('DialogTitle>Task details</DialogTitle>');
     expect(operations).toContain("target_detail?: string");
     expect(network).toContain('connectionRows.length === 0\n                      ? tr("noProxmoxConnection")');

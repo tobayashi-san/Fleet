@@ -128,9 +128,13 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     if (path.startsWith("/infrastructure") || path.startsWith("/networks")) {
       setWorkspace("infrastructure");
       try { localStorage.setItem("shipyard.lastInfrastructureRoute", path); } catch { /* storage unavailable */ }
-    } else if (path === "/" || path.startsWith("/servers") || path.startsWith("/deployments") || path.startsWith("/operations") || path.startsWith("/playbooks")) {
+    } else if (path === "/" || path === "/servers" || path.startsWith("/deployments") || path.startsWith("/operations") || path.startsWith("/playbooks")) {
       setWorkspace("operations");
     }
+    // A host detail can be opened from either workspace. Keep the workspace
+    // the user came from so selecting a host in the infrastructure tree does
+    // not replace that tree with the Operations navigation. The /servers list
+    // itself remains an Operations destination and selects it above.
   }, [path, setWorkspace]);
 
   const changeWorkspace = (nextWorkspace: NavigationWorkspace) => {

@@ -173,6 +173,8 @@ export function OperationsPage() {
   const [toDate, setToDate] = useState(routeSearch.to || "");
   const [operationsPage, setOperationsPage] = useState(routeSearch.page || 1);
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [showCompactOperationDialog, setShowCompactOperationDialog] =
+    useState(false);
   const initialFailureFilterApplied = useRef(false);
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
@@ -212,6 +214,14 @@ export function OperationsPage() {
     const target = document.getElementById(`operation-${routeSearch.section}`);
     window.requestAnimationFrame(() => target?.scrollIntoView({ block: "start" }));
   }, [routeSearch.section]);
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(max-width: 1279px)");
+    const syncDialogLayout = () =>
+      setShowCompactOperationDialog(mediaQuery.matches);
+    syncDialogLayout();
+    mediaQuery.addEventListener("change", syncDialogLayout);
+    return () => mediaQuery.removeEventListener("change", syncDialogLayout);
+  }, []);
   const workspaces = Array.isArray(workspaceQuery.data)
     ? workspaceQuery.data
     : [];
@@ -484,10 +494,10 @@ export function OperationsPage() {
                       />
                     </div>
                     <Dialog
-                      open={Boolean(selectedOperationId && explicitlySelectedOperation)}
+                      open={Boolean(showCompactOperationDialog && selectedOperationId && explicitlySelectedOperation)}
                       onOpenChange={(open) => !open && setSelectedOperationId(null)}
                     >
-                      <DialogContent className="p-0 xl:hidden">
+                      <DialogContent className="p-0">
                         <DialogHeader className="border-b px-4 pb-3 pt-4 text-left">
                           <DialogTitle>Task details</DialogTitle>
                           <DialogDescription>

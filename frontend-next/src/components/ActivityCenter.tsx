@@ -11,7 +11,7 @@ import { api } from '@/lib/api';
 import { canAccessOperations, canViewActivity, hasCap, useProfile } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { ws } from '@/lib/ws';
-import { cn } from '@/lib/utils';
+import { cn, formatDateTime } from '@/lib/utils';
 
 type ActivityStatus = 'running' | 'success' | 'failed';
 
@@ -254,6 +254,7 @@ function EnvironmentActivityCenter({
             </Button>
           </div>
 
+          <p className="border-b px-3 py-2 text-xs text-muted-foreground">Live events received by this browser for your account and current environment. Keeps 30 events; displays the latest 20. Open Operations for the complete recorded history.</p>
           <div className="max-h-[420px] overflow-y-auto">
             {visibleItems.length === 0 ? (
               <div className="flex flex-col items-center justify-center gap-2 px-6 py-10 text-center text-sm text-muted-foreground">
@@ -290,8 +291,8 @@ function EnvironmentActivityCenter({
                       </div>
                     )}
                   </div>
-                  <div className="whitespace-nowrap pt-0.5 text-[11px] text-muted-foreground">
-                    {formatAge(item.completedAt || item.startedAt)}
+                  <div className="whitespace-nowrap pt-0.5 text-[11px] text-muted-foreground" title={`First observed in this browser: ${formatDateTime(item.startedAt)}${item.completedAt ? ` · Completion received: ${formatDateTime(item.completedAt)}` : ''}`}>
+                    {item.completedAt ? 'Completion received ' : 'Observed '}{formatAge(item.completedAt || item.startedAt)}
                   </div>
                 </div>
               ))

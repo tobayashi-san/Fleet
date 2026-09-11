@@ -18,6 +18,16 @@ export function asArray<T>(value: unknown): T[] {
 
 export const DISPLAY_TIME_ZONE = 'Europe/Zurich';
 
+/** SQLite datetime('now') values are UTC even though they omit a zone. */
+export function parseApiDate(value: string | number | Date): Date {
+  if (value instanceof Date) return value;
+  const normalized = typeof value === 'string'
+    && /^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?$/.test(value)
+    ? `${value.replace(' ', 'T')}Z`
+    : value;
+  return new Date(normalized);
+}
+
 type DateParts = {
   year: number;
   month: number;
@@ -34,7 +44,7 @@ function validDateParts({ year, month, day }: DateParts): boolean {
 }
 
 function zonedDateParts(value: string | number | Date, timeZone: string): Required<DateParts> | null {
-  const date = value instanceof Date ? value : new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) return null;
   try {
     const parts = new Intl.DateTimeFormat('en-GB', {
@@ -61,20 +71,26 @@ function zonedDateParts(value: string | number | Date, timeZone: string): Requir
   }
 }
 
+function preferredHour12(): boolean {
+  try { return localStorage.getItem('timeFormat') === '12h'; }
+  catch { return false; }
+}
+
 /** Keeps operator-facing timestamps consistent regardless of browser locale. */
 export function formatDateTime(
   value: string | number | Date | null | undefined = null,
   options: Intl.DateTimeFormatOptions = {},
 ): string {
   if (value == null || value === '') return '—';
-  const date = value instanceof Date ? value : new Date(value);
+  const date = parseApiDate(value);
   if (Number.isNaN(date.getTime())) return '—';
   return new Intl.DateTimeFormat('en-GB', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    hour12: preferredHour12(),
     timeZone: DISPLAY_TIME_ZONE,
     ...options,
-  }).format(date);
+  }).format(date) + ` (${options.timeZone ?? DISPLAY_TIME_ZONE})`;
 }
 
 /** Formats the API's YYYY-MM-DD date value without involving browser locale UI. */
@@ -150,4 +166,16 @@ export function parseZonedDateTimeInput(value: string, timeZone: string): string
     (key) => resolved[key as keyof Required<DateParts>] !== desired[key as keyof Required<DateParts>],
   )) return null;
   return new Date(candidate).toISOString();
+}
+
+/** Native datetime-local fields represent wall time in the explicitly selected zone. */
+export function formatZonedDateTimeLocal(value: string, timeZone: string): string {
+  const formatted = formatZonedDateTimeInput(value, timeZone);
+  const match = formatted.match(/^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2})$/);
+  return match ? `${match[3]}-${match[2]}-${match[1]}T${match[4]}:${match[5]}` : '';
+}
+
+export function parseZonedDateTimeLocal(value: string, timeZone: string): string | null {
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
+  return match ? parseZonedDateTimeInput(`${match[3]}/${match[2]}/${match[1]}, ${match[4]}:${match[5]}`, timeZone) : null;
 }

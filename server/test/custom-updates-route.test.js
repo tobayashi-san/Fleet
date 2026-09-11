@@ -72,3 +72,73 @@ test('POST /api/servers/:id/custom-updates rejects trigger tasks without trigger
   assert.equal(res.status, 400);
   assert.match(res.body.error, /trigger_output/i);
 });
+
+test('custom checks require usable commands and nonblank trigger text', async () => {
+ for(const input of [
+   {name:'Missing installed',type:'github',github_repo:'owner/repo'},
+   {name:'Missing desired',type:'script',check_command:'installed'},
+   {name:'Blank trigger',type:'trigger',check_command:'check',trigger_output:'   '},
+ ]) {
+   const response=await request(app).post(`/api/servers/${serverId}/custom-updates`).set('Authorization',`Bearer ${token}`).send(input);
+   assert.equal(response.status,400);
+ }
+});
+
+test('preview returns checked outputs without task writes or executing the update command', async () => {
+ const ssh=require('../services/ssh-manager');
+ const original=ssh.execCommand;
+ const commands=[];
+ const before=db.customUpdateTasks.getByServer(serverId);
+ ssh.execCommand=async(_server,command)=>{commands.push(command);return {code:0,stdout:command==='installed'?'v1.0':'v2.0'}};
+ const draft={name:'Preview',type:'script',check_command:'installed',latest_command:'latest',update_command:'never-execute'};
+ try {
+   const result=await request(app).post(`/api/servers/${serverId}/custom-updates/preview`).set('Authorization',`Bearer ${token}`).send(draft);
+   assert.equal(result.status,200);
+   assert.deepEqual(result.body,{current_version:'1.0',last_version:'2.0',has_update:true});
+   assert.deepEqual(commands,['latest','installed']);
+   assert.deepEqual(db.customUpdateTasks.getByServer(serverId),before);
+   ssh.execCommand=async()=>{throw new Error('private exception output')};
+   const failed=await request(app).post(`/api/servers/${serverId}/custom-updates/preview`).set('Authorization',`Bearer ${token}`).send(draft);
+   assert.equal(failed.status,422);
+   assert.equal(JSON.stringify(failed.body).includes('private exception'),false);
+   assert.deepEqual(db.customUpdateTasks.getByServer(serverId),before);
+ } finally { ssh.execCommand=original; }
+});
+
+test('task changes are audited with stable scope and without command contents', async () => {
+ const headers={Authorization:`Bearer ${token}`};
+ const draft={name:'Audit task',type:'script',check_command:'private-installed-command',latest_command:'private-desired-command'};
+ const created=await request(app).post(`/api/servers/${serverId}/custom-updates`).set(headers).send(draft);
+ assert.equal(created.status,201);
+ const id=created.body.id;
+ const edited=await request(app).put(`/api/servers/${serverId}/custom-updates/${id}`).set(headers).send({...draft,check_command:'private-new-command'});
+ assert.equal(edited.status,200);
+ assert.equal((await request(app).delete(`/api/servers/${serverId}/custom-updates/${id}`).set(headers)).status,200);
+ const rows=db.auditLog.query({environmentId:'default',limit:100}).filter(row=>row.detail.includes(id));
+ assert.deepEqual(rows.map(row=>row.action).sort(),['custom_update.create','custom_update.delete','custom_update.update']);
+ const {auditRowVisibleToServers}=require('../utils/audit-scope');
+ for(const row of rows){
+   assert.match(row.detail,/name="Audit task"/);
+   assert.equal(row.detail.includes('private-'),false);
+   assert.equal(auditRowVisibleToServers(row,{servers:{servers:[serverId],groups:[]}}),true);
+   assert.equal(auditRowVisibleToServers(row,{servers:{servers:['unrelated'],groups:[]}}),false);
+ }
+ assert.match(rows.find(row=>row.action==='custom_update.update').detail,/changed_fields="check_command"/);
+});
+
+test('custom catalog exposes source and distinguishes missing, fresh and stale checks', async () => {
+ const task = db.customUpdateTasks.create(serverId,{name:'Age check',type:'script'});
+ const read = async () => {
+  const response = await request(app).get(`/api/servers/${serverId}/custom-updates`).set('Authorization',`Bearer ${token}`);
+  assert.equal(response.status,200);
+  return response.body.find(row => row.id === task.id);
+ };
+ assert.equal((await read()).stale,true);
+ db.db.prepare("UPDATE custom_update_tasks SET last_checked_at=datetime('now') WHERE id=?").run(task.id);
+ const fresh = await read();
+ assert.equal(fresh.stale,false);
+ assert.match(fresh.source,/installed and desired/);
+ assert.equal(fresh.stale_after_seconds,43200);
+ db.db.prepare("UPDATE custom_update_tasks SET last_checked_at='2000-01-01 00:00:00' WHERE id=?").run(task.id);
+ assert.equal((await read()).stale,true);
+});

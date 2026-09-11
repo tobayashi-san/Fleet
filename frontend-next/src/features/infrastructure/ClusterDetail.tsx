@@ -1,6 +1,7 @@
+import { platformCapacity } from './platform-capacity';
 import { useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   ArrowLeft,
@@ -23,7 +24,9 @@ import { CreateServerDialog } from "@/components/CreateServerDialog";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
 import { useUrlTab } from "@/lib/use-url-tab";
+import { formatDateTime } from "@/lib/utils";
 import {
+  datastoreCapacityState,
   type AuditTask,
   type Cluster,
   type Node,
@@ -32,7 +35,6 @@ import {
   CompactUsage,
   ObjectOverview,
   pct,
-  preferredDatastores,
   statusLabel,
   tone,
   uptime,
@@ -73,9 +75,7 @@ export function ClusterPage({
   auditError?: unknown;
   onRetryAudit?: () => void;
 }) {
-  const stores = preferredDatastores(
-    Array.isArray(cluster.datastores) ? cluster.datastores : [],
-  );
+  const stores = Array.isArray(cluster.datastores) ? cluster.datastores : [];
   // A cluster is one navigation object. Multiple API connection aliases must
   // not turn its title into a comma-separated duplicate in breadcrumbs,
   // headings and the infrastructure tree.
@@ -146,7 +146,7 @@ export function ClusterPage({
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
             <ServerCog className="h-4 w-4" />
-            Configuration
+            Inventory
           </TabsTrigger>
           <TabsTrigger value="nodes">
             <Server className="h-4 w-4" />
@@ -214,6 +214,7 @@ export function ClusterPage({
         <TabsContent value="datastores" className="mt-0">
           <DatastoresCard
             stores={stores}
+            sources={cluster.nodes}
             emptyText="No datastores reported for this platform."
           />
         </TabsContent>
@@ -290,20 +291,28 @@ export function PlatformOperatingState({
   );
   const stores = cluster.datastores ?? [];
   const constrainedStores = stores.filter(
-    (store) => store.total > 0 && store.used / store.total >= 0.85,
+    (store) => datastoreCapacityState(store) === "high",
   );
-  const healthy =
+  const disabledStores = stores.filter(store => store.enabled === false);
+  const inactiveStores = stores.filter(store => store.enabled !== false && store.active === false);
+  const unknownStores = stores.filter(store => store.enabled !== false && store.active !== false && datastoreCapacityState(store) === "unknown");
+  const normalStores = stores.filter(store => datastoreCapacityState(store) === "normal");
+  const storageCollectionIncomplete = nodes.some(node => node.datastores_status !== "available");
+  const healthy = !storageCollectionIncomplete && nodes.length > 0 && normalStores.length > 0 && inactiveStores.length === 0 && unknownStores.length === 0 &&
     offlineNodes.length === 0 &&
     unknownVms.length === 0 &&
     constrainedStores.length === 0;
   const statusTone: StatusTone = healthy
     ? "success"
-    : offlineNodes.length || constrainedStores.length
+    : offlineNodes.length || constrainedStores.length || inactiveStores.length
       ? "danger"
       : "muted";
-  const statusText = healthy
-    ? "Ready for operation"
-    : `${offlineNodes.length + constrainedStores.length + unknownVms.length} review${offlineNodes.length + constrainedStores.length + unknownVms.length === 1 ? "" : "s"} required`;
+  const reviewCount = offlineNodes.length + constrainedStores.length + inactiveStores.length + unknownVms.length;
+  const incomplete = storageCollectionIncomplete || !nodes.length || !stores.length || unknownStores.length > 0;
+  const statusText = healthy ? "Ready for operation"
+    : reviewCount ? `${reviewCount} review${reviewCount === 1 ? "" : "s"} required${incomplete ? " · Inventory data incomplete" : ""}`
+    : incomplete ? "Inventory data incomplete" : "No active storage capacity";
+
 
   return (
     <Card>
@@ -371,17 +380,21 @@ export function PlatformOperatingState({
         </div>
         <div className="p-4">
           <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            ZFS datastores
+            Datastores
           </div>
           <div className="mt-1 text-sm font-medium">
-            {constrainedStores.length
-              ? `${constrainedStores.length} with high utilization`
-              : `${stores.length} healthy`}
+            {!stores.length ? "Not reported" : [
+              constrainedStores.length ? `${constrainedStores.length} with high utilization` : '',
+              inactiveStores.length ? `${inactiveStores.length} inactive` : '',
+              unknownStores.length ? `${unknownStores.length} with unknown capacity` : '',
+              normalStores.length ? `${normalStores.length} below 85% utilization` : '',
+              disabledStores.length ? `${disabledStores.length} disabled` : '',
+            ].filter(Boolean).join(' · ')}
           </div>
           <p className="mt-1 text-xs text-muted-foreground">
-            {constrainedStores.length
-              ? constrainedStores.map((store) => store.id).join(", ")
-              : "Threshold: 85% utilization."}
+            {inactiveStores.length ? `Check storage connectivity: ${inactiveStores.map(store => store.id).join(', ')}. ` : ''}
+            {constrainedStores.length ? `High utilization: ${constrainedStores.map(store => store.id).join(', ')}. ` : ''}
+            Disabled stores are excluded from available capacity.
           </p>
           <Button
             type="button"
@@ -399,9 +412,7 @@ export function PlatformOperatingState({
 }
 
 export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
-  const stores = preferredDatastores(
-    Array.isArray(cluster.datastores) ? cluster.datastores : [],
-  );
+  const stores = Array.isArray(cluster.datastores) ? cluster.datastores : [];
   const running = cluster.vms.filter((vm) => vm.status === "running").length;
   const onlineNodes = cluster.nodes.filter(
     (node) => node.status === "online",
@@ -427,7 +438,7 @@ export function ClusterConfiguration({ cluster }: { cluster: Cluster }) {
               />
               <Property
                 label="Nodes"
-                value={`${onlineNodes} online · ${cluster.nodes.length} insgesamt`}
+                value={`${onlineNodes} online · ${cluster.nodes.length} total`}
               />
               <Property
                 label="Virtual machines"
@@ -569,7 +580,7 @@ export function NodesCard({ cluster }: { cluster: Cluster }) {
             <tbody>
               {cluster.nodes.length ? (
                 cluster.nodes.map((node) => {
-                  const cpuUsed = (node.cpu || 0) * (node.maxcpu || 0);
+                  const { cpuUsed } = platformCapacity([node]);
                   return (
                     <tr key={node.name}>
                       <td className="font-mono font-medium">
@@ -790,6 +801,15 @@ export function NodeUpdatesCard({
   );
   const connectionId = cluster.connections?.[0]?.id || "";
   const packages = node.available_updates || [];
+  const maintenance = useQuery({
+    queryKey: ["maintenance-windows", environmentId, "node-updates"],
+    queryFn: () => apiFetch<Array<{id:string;name:string;starts_at:string;ends_at:string;state?:string;resource_ids?:string[]}>>(`/maintenance-windows?environment_id=${encodeURIComponent(environmentId)}`, { environmentId }),
+    enabled: canRunUpdates,
+    staleTime: 15_000,
+  });
+  const relevantMaintenance = (Array.isArray(maintenance.data) ? maintenance.data : [])
+    .filter(window => (window.state === "active" || window.state === "scheduled") && (!window.resource_ids?.length || (node.fleet_server_id && window.resource_ids.includes(node.fleet_server_id))))
+    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0];
   const refresh = useMutation({
     mutationFn: () =>
       apiFetch(`/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/nodes/${encodeURIComponent(node.name)}/updates/refresh`, { method: "POST" }),
@@ -856,6 +876,13 @@ export function NodeUpdatesCard({
           </div>
         )}
         <CardContent className="p-0">
+          {packages.length > 0 && <div className="space-y-2 border-b bg-warning/[0.04] px-4 py-3 text-sm">
+            <p className="font-medium">Operational impact</p>
+            <p className="text-muted-foreground">A full system upgrade may restart services and may require a reboot. Package metadata cannot predict every maintainer-script restart; review the package changes and validate services afterwards.</p>
+            <p>{relevantMaintenance ? <>Covered by <strong>{relevantMaintenance.name}</strong> · {formatDateTime(relevantMaintenance.starts_at)} – {formatDateTime(relevantMaintenance.ends_at)}</> : "No active or upcoming maintenance window covers this node."} <Link to="/operations" search={{section:"maintenance"}} className="text-primary hover:underline">Review maintenance</Link></p>
+          </div>}
+          {install.isSuccess && <div role="status" className="border-b bg-success/5 px-4 py-3 text-sm">Update request accepted for {node.name}. Track its result and log in <Link to="/operations" className="text-primary hover:underline">Operations</Link>.</div>}
+          {install.isError && <div role="alert" className="border-b bg-destructive/5 px-4 py-3 text-sm text-destructive">Update request failed: {install.error.message}</div>}
           {node.update_status === "unavailable" ? (
             <div className="p-5 text-sm text-muted-foreground">
               Grant the Proxmox API token <code>Sys.Modify</code> on this node to view and refresh package updates.
@@ -872,6 +899,7 @@ export function NodeUpdatesCard({
                       <td>
                         <div className="font-mono font-medium">{item.package}</div>
                         {item.description && <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">{item.description}</div>}
+                        <a className="mt-0.5 inline-block text-xs text-primary hover:underline" href={`https://tracker.debian.org/pkg/${encodeURIComponent(item.package)}`} target="_blank" rel="noreferrer">Package release information</a>
                       </td>
                       <td>{item.origin || "—"}</td>
                       <td className="font-mono text-xs">{item.current_version || "—"}</td>

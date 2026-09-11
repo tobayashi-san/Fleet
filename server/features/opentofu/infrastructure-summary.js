@@ -4,6 +4,12 @@ const { createHash } = require('crypto');
 const { PROXMOX_IDENTIFIER_RE } = require('./proxmox-blueprints');
 const { normalizeProxmoxDiskUsage } = require('./core-utils');
 
+function platformReachability(nodes) {
+  if (nodes.some(node => node.status === 'online')) return 'online';
+  if (nodes.length && nodes.every(node => node.status === 'offline')) return 'offline';
+  return 'unknown';
+}
+
 function createInfrastructureSummary({
   db,
   log,
@@ -119,7 +125,7 @@ function createInfrastructureSummary({
         `).all(...sourceIds);
         adopted.forEach(item => adoptedByVm.set(
           `${item.connection_id}:${item.node_name}:${item.vm_id}:${item.guest_type || 'qemu'}`,
-          item.server_id
+          { serverId: item.server_id, connectionId: item.connection_id }
         ));
       }
       const vms = (Array.isArray(resourcesResponse) ? resourcesResponse : [])
@@ -128,7 +134,7 @@ function createInfrastructureSummary({
           const nodeName = String(resource?.node || '').trim();
           const vmId = Number(resource?.vmid) || null;
           const guestType = String(resource?.type || '').toLowerCase();
-          const fleetServerId = sourceIds
+          const adopted = sourceIds
             .map(sourceId => adoptedByVm.get(`${sourceId}:${nodeName}:${vmId}:${guestType}`))
             .find(Boolean) || null;
           const { disk, maxdisk } = normalizeProxmoxDiskUsage(resource, guestType);
@@ -143,14 +149,17 @@ function createInfrastructureSummary({
             maxmem: Number(resource?.maxmem) || 0,
             disk,
             maxdisk,
-            fleet_server_id: fleetServerId,
+            fleet_server_id: adopted?.serverId || null,
+            fleet_connection_id: adopted?.connectionId || null,
           };
         })
         .filter(vm => vm.node_name && Number.isInteger(vm.vm_id));
       return {
         id: group.key,
+        collected_at: new Date().toISOString(),
+        stale: false,
         endpoint: group.connection.base.host,
-        status: nodes.some(node => node.status === 'online') ? 'online' : 'offline',
+        status: platformReachability(nodes),
         connections: group.connections,
         nodes,
         vms,
@@ -172,10 +181,13 @@ function createInfrastructureSummary({
   function summarize(infrastructure, environmentId) {
     return {
       environment_id: environmentId,
+      warnings: Array.isArray(infrastructure?.warnings) ? infrastructure.warnings : [],
       updated_at: new Date().toISOString(),
       source_version: sourceVersion(environmentId),
       clusters: (Array.isArray(infrastructure?.clusters) ? infrastructure.clusters : []).map(cluster => ({
         id: cluster.id,
+        collected_at: cluster.collected_at || null,
+        stale: cluster.stale === true,
         endpoint: cluster.endpoint,
         status: cluster.status,
         connections: (Array.isArray(cluster.connections) ? cluster.connections : []).map(connection => ({
@@ -212,6 +224,7 @@ function createInfrastructureSummary({
           disk: vm.disk ?? null,
           maxdisk: vm.maxdisk || 0,
           fleet_server_id: vm.fleet_server_id || null,
+          fleet_connection_id: vm.fleet_connection_id || null,
         })),
         datastores: (Array.isArray(cluster.datastores) ? cluster.datastores : []).map(store => ({
           id: store.id,
@@ -249,8 +262,8 @@ function createInfrastructureSummary({
           const liveIds = new Set(infrastructure.clusters.map(cluster => cluster.id));
           const failedIds = new Set(infrastructure.failedClusterIds || []);
           const retained = cached.clusters.filter(cluster =>
-            failedIds.has(cluster.id) && !liveIds.has(cluster.id));
-          const summary = summarize({ clusters: [...infrastructure.clusters, ...retained] }, environmentId);
+            failedIds.has(cluster.id) && !liveIds.has(cluster.id)).map(cluster => ({...cluster, stale: true}));
+          const summary = summarize({ clusters: [...infrastructure.clusters, ...retained], warnings: infrastructure.warnings }, environmentId);
           db.settings.set(cacheKey(environmentId), JSON.stringify(summary));
           return summary;
         }
@@ -289,4 +302,4 @@ function createInfrastructureSummary({
   };
 }
 
-module.exports = { createInfrastructureSummary };
+module.exports = { createInfrastructureSummary, platformReachability };

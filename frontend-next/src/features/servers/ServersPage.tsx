@@ -1,4 +1,10 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { hasHostFolderScope } from './folder-scope';
+import { deleteHostBatch, type DeleteHostTarget } from './delete-host-batch';
+import { BulkDeleteResult } from './BulkDeleteResult';
+import { selectHostPage, hostSelectionScope, groupHostIds } from './host-selection';
+import { SavedHostViews } from './SavedHostViews';
+import { savedViewKey } from './saved-views';
+import { Fragment, useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
@@ -27,7 +33,7 @@ import {
   Filter,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { asArray } from "@/lib/utils";
+import { asArray, formatDateTime } from "@/lib/utils";
 import { useUi } from "@/lib/store";
 import { useProfile, hasCap } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
@@ -57,8 +63,8 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import {
+  inventoryAttentionReason,
   buildGroupTree,
-  countDescendantServers,
   formatRelativeTime,
   getDescendantIds,
   loadCollapsedGroups,
@@ -159,7 +165,8 @@ interface GroupDialogProps {
     name: string;
     color: string;
     parentId: string | null;
-  }) => void;
+    environmentId: string;
+  }) => Promise<unknown>;
   title: string;
   confirmText: string;
   groups: ServerGroup[];
@@ -167,6 +174,9 @@ interface GroupDialogProps {
   defaultName?: string;
   defaultColor?: string;
   defaultParentId?: string | null;
+  allowTopLevel: boolean;
+  parentScope: string[];
+  environmentId: string;
 }
 
 function GroupDialog({
@@ -180,6 +190,9 @@ function GroupDialog({
   defaultName = "",
   defaultColor,
   defaultParentId = null,
+  allowTopLevel,
+  parentScope,
+  environmentId,
 }: GroupDialogProps) {
   const { t } = useTranslation();
   const [name, setName] = useState(defaultName);
@@ -188,36 +201,53 @@ function GroupDialog({
     defaultParentId ?? null,
   );
 
+  const [saving,setSaving]=useState(false);
+  const [saveError,setSaveError]=useState<string | null>(null);
+  const submitting=useRef(false);
+  const wasOpen=useRef(false);
+  const [openingEnvironment,setOpeningEnvironment]=useState(environmentId);
+  const contextChanged=openingEnvironment !== environmentId;
   useEffect(() => {
-    if (open) {
+    if (open && !wasOpen.current) {
+      setOpeningEnvironment(environmentId);
+      setSaveError(null);
       setName(defaultName);
       setColor(defaultColor || PRESET_COLORS[0]);
       setParentId(defaultParentId ?? null);
     }
-  }, [open, defaultName, defaultColor, defaultParentId]);
+    wasOpen.current=open;
+  }, [open, defaultName, defaultColor, defaultParentId, environmentId]);
 
   const excludeIds = editId
     ? getDescendantIds(groups, editId)
     : new Set<string>();
-  const parentOptions = groups.filter((g) => !excludeIds.has(g.id));
+  const parentOptions = groups.filter((g) => !excludeIds.has(g.id) && parentScope.includes(g.id));
 
-  const handleSubmit = () => {
-    if (!name.trim()) return;
-    onSubmit({ name: name.trim(), color, parentId: parentId || null });
+  const handleSubmit = async () => {
+    if (submitting.current || contextChanged || !name.trim() || (!allowTopLevel && !parentId)) return;
+    submitting.current=true;setSaving(true);setSaveError(null);
+    try {
+      await onSubmit({name:name.trim(),color,parentId:parentId || null,environmentId:openingEnvironment});
+      onClose();
+    } catch(error) {
+      setSaveError(error instanceof Error ? error.message : 'Folder could not be saved.');
+    } finally {submitting.current=false;setSaving(false);}
   };
 
   return (
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        if (!v) onClose();
+        if (!v && !submitting.current) onClose();
       }}
     >
       <DialogContent>
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-4">
+        {contextChanged && <p role="alert" className="text-sm text-warning">Environment changed. Close this draft and reopen it in the intended environment.</p>}
+        {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
+        <fieldset disabled={saving || contextChanged} className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="server-group-name">{t("common.name")}</Label>
             <Input
@@ -226,7 +256,7 @@ function GroupDialog({
               onChange={(e) => setName(e.target.value)}
               placeholder={t("srv.groupNamePlaceholder")}
               onKeyDown={(e) => {
-                if (e.key === "Enter") handleSubmit();
+                if (e.key === "Enter" && !e.nativeEvent.isComposing) {e.preventDefault();void handleSubmit();}
               }}
               autoFocus
             />
@@ -264,7 +294,7 @@ function GroupDialog({
               onChange={(e) => setParentId(e.target.value || null)}
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
-              <option value="">{t("srv.noneTopLevel")}</option>
+              {allowTopLevel && <option value="">{t("srv.noneTopLevel")}</option>}
               {parentOptions.map((g) => (
                 <option key={g.id} value={g.id}>
                   {g.name}
@@ -272,12 +302,12 @@ function GroupDialog({
               ))}
             </select>
           </div>
-        </div>
+        </fieldset>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>
             {t("common.cancel")}
           </Button>
-          <Button onClick={handleSubmit}>{confirmText}</Button>
+          <Button onClick={handleSubmit} disabled={saving || contextChanged || !name.trim() || (!allowTopLevel && !parentId)}>{saving ? 'Saving…' : confirmText}</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -406,11 +436,25 @@ export function ServersPage() {
       : "all";
   });
   const [needsUpdates, setNeedsUpdates] = useState(() => routeSearch.updates === true);
+  const [severity, setSeverity] = useState<'all' | 'critical' | 'warning'>(() => routeSearch.severity || 'all');
   const [needsAttention, setNeedsAttention] = useState(() => routeSearch.attention === true);
   const [activeGroup, setActiveGroup] = useState<string>(
     () => localStorage.getItem("shipyard-next.server-group") || "all",
   );
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [operatingColumns, setOperatingColumns] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('shipyard.ui.servers.operatingColumns') || '{}');
+      return { state: saved?.state !== false, contact: saved?.contact !== false, owner: saved?.owner === true };
+    } catch { return { state: true, contact: true, owner: false }; }
+  });
+  const toggleOperatingColumn = (column: 'state' | 'contact' | 'owner') => {
+    setOperatingColumns(current => {
+      const next = { ...current, [column]: !current[column] };
+      try { localStorage.setItem('shipyard.ui.servers.operatingColumns', JSON.stringify(next)); } catch { /* Optional browser preference. */ }
+      return next;
+    });
+  };
   // The navigator already owns the hierarchy.  Keep the main resource area
   // as a flat, scan-friendly inventory unless an administrator explicitly
   // asks to inspect the folder structure in table form.
@@ -423,6 +467,7 @@ export function ServersPage() {
   const [page, setPage] = useState(1);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkGroupId, setBulkGroupId] = useState("");
+  const [bulkAction, setBulkAction] = useState<{kind:'update'|'move'; environmentId:string; targets:ServerRow[]; groupId?:string|null; groupName?:string} | null>(null);
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsedGroups);
   const [groupDialog, setGroupDialog] = useState<{
     open: boolean;
@@ -479,6 +524,15 @@ export function ServersPage() {
     localStorage.setItem("shipyard-next.server-sort", sortBy);
   }, [sortBy]);
 
+  // A dashboard severity drill-down is an explicit scope, so stale local
+  // search/tag/folder preferences must not silently hide counted hosts.
+  useEffect(() => {
+    if (!routeSearch.severity) return;
+    setSeverity(routeSearch.severity);
+    setSearch(''); setActiveTag(null); setActiveStatus('all'); setActiveGroup('all');
+    setNeedsAttention(false); setNeedsUpdates(false); setPage(1);
+  }, [routeSearch.severity]);
+
   // ── Derived data ────────────────────────────────────────────
   const allTags = useMemo(
     () => [...new Set(servers.flatMap((s) => s.tags || []))].sort(),
@@ -491,7 +545,8 @@ export function ServersPage() {
       const matchesStatus =
         activeStatus === "all" || server.status === activeStatus;
       const matchesUpdates = !needsUpdates || Number(server.updates_count ?? 0) > 0 || Number(server.image_updates_count ?? 0) > 0 || Number(server.custom_updates_count ?? 0) > 0;
-      const matchesAttention = !needsAttention || server.status === "offline" || Boolean(server.reboot_required) || Number(server.alert_count ?? 0) > 0 || Number(server.updates_count ?? 0) > 0 || Number(server.image_updates_count ?? 0) > 0 || Number(server.custom_updates_count ?? 0) > 0;
+      const matchesSeverity = severity === 'all' || server.attention?.severity === severity;
+      const matchesAttention = !needsAttention || server.attention?.requiresAttention === true;
       const scopedGroups =
         activeGroup === "all" || activeGroup === "__ungrouped__"
           ? undefined
@@ -509,11 +564,12 @@ export function ServersPage() {
         matchesStatus &&
         matchesUpdates &&
         matchesAttention &&
+        matchesSeverity &&
         matchesGroup &&
         (!query || haystack.includes(query))
       );
     });
-  }, [servers, groups, activeTag, activeStatus, activeGroup, search, needsUpdates, needsAttention]);
+  }, [servers, groups, activeTag, activeStatus, activeGroup, search, needsUpdates, needsAttention, severity]);
   const sortedServers = useMemo(
     () =>
       [...filtered].sort((a, b) => {
@@ -548,7 +604,7 @@ export function ServersPage() {
   const offlineCount = servers.filter((s) => s.status === "offline").length;
   const showFolderColumn = servers.some((server) => Boolean(server.group_id));
   const showTagColumn = servers.some((server) => (server.tags || []).length > 0);
-  const tableColumnCount = 5 + Number(showFolderColumn) + Number(showTagColumn);
+  const tableColumnCount = 5 + Number(operatingColumns.state) + Number(operatingColumns.contact) + Number(operatingColumns.owner) + Number(showFolderColumn) + Number(showTagColumn);
 
   // Load server info for visible rows
   const visibleIds = useMemo(() => {
@@ -578,24 +634,22 @@ export function ServersPage() {
   });
 
   const bulkDeleteMut = useMutation({
-    mutationFn: async (ids: string[]) => {
-      const results = await Promise.allSettled(
-        ids.map((id) => api.deleteServer(id)),
-      );
-      return {
-        deleted: results.filter((result) => result.status === "fulfilled")
-          .length,
-        failed: results.filter((result) => result.status === "rejected").length,
-      };
+    mutationFn: async ({targets, environmentId: targetEnvironment}: {targets:DeleteHostTarget[]; environmentId:string}) => {
+      if (targetEnvironment !== useUi.getState().environmentId) throw new Error('Environment changed. Select the hosts again.');
+      const outcomes=await deleteHostBatch(targets,id=>api.deleteServer(id,targetEnvironment));
+      const deletedIds=outcomes.filter(row=>row.deleted).map(row=>row.id);
+      return {environmentId:targetEnvironment, outcomes, completedAt:new Date().toISOString(), deletedIds, deleted:deletedIds.length, failed:outcomes.length-deletedIds.length};
     },
-    onSuccess: ({ deleted, failed }) => {
+    onSuccess: ({ deleted, failed, deletedIds, environmentId: targetEnvironment }) => {
       if (deleted)
         showToast(
           `${deleted} host${deleted === 1 ? "" : "s"} deleted.${failed ? ` ${failed} could not be deleted.` : ""}`,
           failed ? "warning" : "success",
         );
       else showToast("The selected hosts could not be deleted.", "error");
-      setSelectedIds(new Set());
+      if (useUi.getState().environmentId === targetEnvironment) {
+        setSelectedIds(previous => new Set([...previous].filter(id=>!deletedIds.includes(id))));
+      }
       invalidateAll();
     },
     onError: (error: Error) =>
@@ -627,20 +681,27 @@ export function ServersPage() {
     mutationFn: ({
       serverIds,
       groupId,
+      environmentId: targetEnvironment,
     }: {
       serverIds: string[];
       groupId: string | null;
-    }) => api.setServersGroup(serverIds, groupId),
-    onSuccess: (_, { groupId }) => {
+      environmentId: string;
+    }) => {
+      if (targetEnvironment !== useUi.getState().environmentId) throw new Error('Environment changed. Review the targets again.');
+      return api.setServersGroup(serverIds, groupId, targetEnvironment);
+    },
+    onSuccess: (_, { groupId, serverIds, environmentId: targetEnvironment }) => {
       const group = groups.find((item) => item.id === groupId);
       showToast(
         groupId
-          ? `${selectedIds.size} managed ${selectedIds.size === 1 ? "host" : "hosts"} moved to “${group?.name || groupId}”.`
-          : `${selectedIds.size} hosts removed from folders.`,
+          ? `${serverIds.length} managed ${serverIds.length === 1 ? "host" : "hosts"} moved to “${group?.name || groupId}”.`
+          : `${serverIds.length} hosts removed from folders.`,
         "success",
       );
-      setSelectedIds(new Set());
-      setBulkGroupId("");
+      if (useUi.getState().environmentId === targetEnvironment) {
+        setSelectedIds(previous=>new Set([...previous].filter(id=>!serverIds.includes(id))));
+        setBulkGroupId("");
+      }
       invalidateAll();
     },
     onError: (error: Error) =>
@@ -652,12 +713,13 @@ export function ServersPage() {
       name: string;
       color: string;
       parentId: string | null;
+      environmentId: string;
     }) =>
       api.createServerGroup(
         data.name,
         data.color,
         data.parentId,
-        environmentId,
+        data.environmentId,
       ),
     onSuccess: () => {
       showToast(t("srv.folderCreated"), "success");
@@ -673,12 +735,9 @@ export function ServersPage() {
       name: string;
       color: string;
       parentId: string | null;
-      oldParentId: string | null;
+      environmentId: string;
     }) =>
-      api.updateServerGroup(data.id, data.name, data.color).then(() => {
-        if (data.parentId !== data.oldParentId)
-          return api.setGroupParent(data.id, data.parentId);
-      }),
+      api.updateServerGroup(data.id, data.name, data.color, data.environmentId, data.parentId),
     onSuccess: () => {
       showToast(t("srv.folderUpdated"), "success");
       invalidateAll();
@@ -750,7 +809,16 @@ export function ServersPage() {
   const [playbookExtraVars, setPlaybookExtraVars] = useState("");
   const [confirmDeleteServer, setConfirmDeleteServer] =
     useState<ServerRow | null>(null);
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
+  const [confirmBulkDelete, setConfirmBulkDelete] = useState<{environmentId:string; targets:ServerRow[]} | null>(null);
+  useEffect(() => {
+    setSelectedIds(new Set());
+    setConfirmBulkDelete(null);
+    bulkDeleteMut.reset();
+    bulkMoveMut.reset();
+    setBulkAction(null);
+    setPlaybookDialogOpen(false);
+    setBulkGroupId('');
+  }, [environmentId]);
   const [confirmDeleteGroup, setConfirmDeleteGroup] =
     useState<ServerGroup | null>(null);
   const playbooksQuery = useQuery({
@@ -837,11 +905,7 @@ export function ServersPage() {
 
   const selectAll = useCallback(
     (checked: boolean) => {
-      if (checked) {
-        setSelectedIds(new Set(pageServers.map((s) => s.id)));
-      } else {
-        setSelectedIds(new Set());
-      }
+      setSelectedIds(previous => selectHostPage(previous, pageServers.map(s=>s.id), checked));
     },
     [pageServers],
   );
@@ -926,21 +990,14 @@ export function ServersPage() {
     [groups],
   );
 
-  const handleBulkUpdate = useCallback(async () => {
-    const names = servers
-      .filter((s) => selectedIds.has(s.id))
-      .map((s) => s.name);
-    if (!names.length) return;
-    try {
-      await api.runPlaybook("update.yml", names.join(","), {});
-      showToast(t("srv.updatesStarted", { count: names.length }), "success");
-    } catch (e: unknown) {
-      showToast(
-        t("common.errorPrefix", { msg: (e as Error).message }),
-        "error",
-      );
-    }
-  }, [servers, selectedIds, t]);
+  const selectedUpdateMut = useMutation({
+    mutationFn: async (input: {ids:string[]; environmentId:string}) => {
+      if (input.environmentId !== useUi.getState().environmentId) throw new Error('Environment changed. Review the targets again.');
+      return api.runSelectedUpdates(input.ids, input.environmentId);
+    },
+    onSuccess: (_, input) => showToast(t('srv.updatesStarted', {count:input.ids.length}), 'success'),
+    onError: (error:Error) => showToast(error.message, 'error'),
+  });
 
   // Drag & Drop state
   const [dragItem, setDragItem] = useState<{
@@ -993,21 +1050,20 @@ export function ServersPage() {
 
   // ── Group dialog handler ────────────────────────────────────
   const handleGroupDialogSubmit = useCallback(
-    (data: { name: string; color: string; parentId: string | null }) => {
+    async (data: { name: string; color: string; parentId: string | null; environmentId:string }) => {
+      if(data.environmentId !== useUi.getState().environmentId) throw new Error("Environment changed. Reopen the folder form.");
       const editId = groupDialog.editId;
       if (editId) {
-        const old = groups.find((g) => g.id === editId);
-        groupUpdateMut.mutate({
+        await groupUpdateMut.mutateAsync({
           id: editId,
           name: data.name,
           color: data.color,
           parentId: data.parentId,
-          oldParentId: old?.parent_id || null,
+          environmentId:data.environmentId,
         });
       } else {
-        groupCreateMut.mutate(data);
+        await groupCreateMut.mutateAsync(data);
       }
-      setGroupDialog((prev) => ({ ...prev, open: false }));
     },
     [groupDialog.editId, groups, groupCreateMut, groupUpdateMut],
   );
@@ -1015,8 +1071,24 @@ export function ServersPage() {
   // ── Render helpers ──────────────────────────────────────────
   const allSelected =
     pageServers.length > 0 && pageServers.every((s) => selectedIds.has(s.id));
+  const selectionScope = hostSelectionScope(selectedIds, pageServers.map(s=>s.id), sortedServers.map(s=>s.id));
+  const selectedHosts = servers.filter(s=>selectedIds.has(s.id));
   const someSelected =
     pageServers.some((s) => selectedIds.has(s.id)) && !allSelected;
+
+  function renderOperatingState(server: ServerRow) {
+    const counts = [
+      ['OS', server.updates_count, server.updates_checked_at],
+      ['Images', server.image_updates_count, server.image_updates_checked_at],
+      ['Custom', server.custom_updates_count, null],
+    ].filter(([, value]) => value !== undefined);
+    return <div className="space-y-1 text-xs">
+      {server.attention?.requiresAttention && <StatusBadge tone={server.attention.severity === 'critical' ? 'danger' : 'warning'}>Needs attention</StatusBadge>}
+      {server.attention?.reasons.filter(reason => !['os_updates', 'image_updates', 'custom_updates'].includes(reason.code)).map(reason => <div key={reason.code}>{inventoryAttentionReason(reason)}</div>)}
+      {counts.length > 0 && <div className="flex flex-wrap gap-x-2 gap-y-1">{counts.map(([label, value, checkedAt]) => <span title={label === 'Custom' ? 'Cached custom checks; individual timestamps are in host details.' : checkedAt ? `Cached ${String(label)} check: ${formatDateTime(String(checkedAt))}` : 'No successful check timestamp reported'} key={String(label)} className="text-muted-foreground">{String(label)}: {value === null ? 'Not checked' : String(value)}</span>)}</div>}
+      {!server.attention && <span className="text-muted-foreground">Not reported</span>}
+    </div>;
+  }
 
   function renderServerRow(
     s: ServerRow,
@@ -1113,6 +1185,11 @@ export function ServersPage() {
             )}
           </div>
         </td>
+        {operatingColumns.state && <td className="min-w-40 px-3 py-2">{renderOperatingState(s)}</td>}
+        {operatingColumns.contact && <td className="min-w-36 px-3 py-2 text-xs text-muted-foreground" title={formatDateTime(s.last_seen)}>
+          {s.last_seen ? formatRelativeTime(s.last_seen, t) : 'Not reported'}
+        </td>}
+        {operatingColumns.owner && <td className="min-w-36 px-3 py-2 text-xs">{s.owner || <span className="text-muted-foreground">Not assigned</span>}</td>}
         {showFolderColumn && <td className="w-48 px-3 py-2">
           {group ? (
             <div className="flex min-w-0 items-center gap-1.5">
@@ -1166,7 +1243,7 @@ export function ServersPage() {
                 </Button>
                 {moveFor === s.id && (
                   <MoveDropdown
-                    groups={groups}
+                    groups={groups.filter(group=>hasHostFolderScope(profile,group.id))}
                     anchorRef={moveRef}
                     onClose={() => setMoveFor(null)}
                     onSelect={(gid) => {
@@ -1208,11 +1285,13 @@ export function ServersPage() {
     const members = serversByGroup[node.id] || [];
     const isCollapsed = collapsed.has(node.id);
     const color = node.color || PRESET_COLORS[0];
-    const total = members.length + countDescendantServers(node, serversByGroup);
+    const matchingIds = groupHostIds(node, serversByGroup);
+    const selectedCount = matchingIds.filter(id=>selectedIds.has(id)).length;
+    const total = matchingIds.length;
     const isDragOver = dragOverGroup === node.id;
 
     return (
-      <tbody key={`group-${node.id}`}>
+      <Fragment key={`group-${node.id}`}><tbody>
         <tr
           className={`group-row cursor-pointer border-y border-border bg-muted/35 hover:bg-accent/30 ${isDragOver ? "!bg-accent/50" : ""}`}
           onClick={() => toggleCollapsed(node.id)}
@@ -1247,6 +1326,15 @@ export function ServersPage() {
               className="flex items-center gap-2 py-1.5"
               style={{ paddingLeft: `${12 + depth * 20}px` }}
             >
+              <input type="checkbox" className="shrink-0" style={{marginInline:0}} aria-label={`Select matching hosts in ${node.name} and subfolders`}
+                checked={total > 0 && selectedCount === total} disabled={total === 0}
+                ref={element=>{if(element) element.indeterminate=selectedCount > 0 && selectedCount < total;}}
+                onClick={event=>event.stopPropagation()}
+                onChange={event=>{const checked=event.target.checked;setSelectedIds(previous=>selectHostPage(previous,matchingIds,checked));}}
+              />
+              <button type="button" className="flex min-w-0 items-center gap-2 text-left" aria-expanded={!isCollapsed}
+                aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} folder ${node.name}`}
+                onClick={event=>{event.stopPropagation();toggleCollapsed(node.id);}}>
               {isCollapsed ? (
                 <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />
               ) : (
@@ -1264,14 +1352,16 @@ export function ServersPage() {
               <Badge variant="secondary" className="text-[10px] ml-1">
                 {total}
               </Badge>
+              {selectedCount > 0 && <span className="text-xs text-muted-foreground">{selectedCount} selected</span>}
+              </button>
             </div>
           </td>
           <td
             className="w-28 px-3 py-1.5 srv-actions"
             onClick={(e) => e.stopPropagation()}
           >
-            <OverflowMenu title={`Actions for ${node.name}`} width="w-52">
-              {hasCap(profile, "canAddServers") && (
+            {hasHostFolderScope(profile,node.id) && (hasCap(profile,'canEditServers') || hasCap(profile,'canDeleteServers')) && <OverflowMenu title={`Actions for ${node.name}`} width="w-52">
+              {hasCap(profile, "canEditServers") && hasHostFolderScope(profile,node.id) && (
                 <OverflowItem
                   icon={FolderPlus}
                   onClick={() =>
@@ -1317,7 +1407,7 @@ export function ServersPage() {
                   </OverflowItem>
                 </>
               )}
-            </OverflowMenu>
+            </OverflowMenu>}
           </td>
         </tr>
         {!isCollapsed && (
@@ -1335,12 +1425,11 @@ export function ServersPage() {
               </tr>
             )}
             {members.map((s) => renderServerRow(s, depth + 1, color))}
-            {node.children.map((child) =>
-              renderGroupRow(child, depth + 1, serversByGroup),
-            )}
           </>
         )}
       </tbody>
+      {!isCollapsed && node.children.map(child=>renderGroupRow(child,depth+1,serversByGroup))}
+      </Fragment>
     );
   }
 
@@ -1365,7 +1454,7 @@ export function ServersPage() {
     Number(activeGroup !== "all") +
     Number(Boolean(activeTag)) +
     Number(needsUpdates) +
-    Number(needsAttention);
+    Number(needsAttention) + Number(severity !== 'all');
 
   // ═══════════════════════════════════════════════════════════
   // ─── JSX ──────────────────────────────────────────────────
@@ -1375,7 +1464,7 @@ export function ServersPage() {
       {/* Header */}
       <PageHeader
         title={t("srv.resourceTitle")}
-        description={`${t("srv.resourceScope")} · ${t("srv.count", { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t("srv.filtered", { tag: activeTag })}` : ""}${search ? ` · ${t("srv.results", { count: filtered.length })}` : ""}`}
+        description={`${t("srv.count", { total: servers.length, online: onlineCount, offline: offlineCount })}${activeTag ? ` · ${t("srv.filtered", { tag: activeTag })}` : ""}${search || activeFilterCount > 0 ? ` · ${t("srv.results", { count: filtered.length })}` : ""}`}
         actions={
           <>
             {servers.length > 0 && hasCap(profile, "canAddServers") && (
@@ -1412,6 +1501,10 @@ export function ServersPage() {
               {t("srv.filters")}{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
             </Button>
             <OverflowMenu title={t("srv.resourceOptions")}>
+              <OverflowItem onClick={() => toggleOperatingColumn('state')}>{operatingColumns.state ? 'Hide' : 'Show'} operating state column</OverflowItem>
+              <OverflowItem onClick={() => toggleOperatingColumn('contact')}>{operatingColumns.contact ? 'Hide' : 'Show'} last contact column</OverflowItem>
+              <OverflowItem onClick={() => toggleOperatingColumn('owner')}>{operatingColumns.owner ? 'Hide' : 'Show'} owner column</OverflowItem>
+              <OverflowSep />
               <OverflowItem icon={RefreshCw} onClick={handleRefresh} disabled={refreshing}>
                 {t("common.refresh")}
               </OverflowItem>
@@ -1449,7 +1542,7 @@ export function ServersPage() {
                 ))}
               </div>
               <OverflowSep />
-              {hasCap(profile, "canAddServers") && (
+              {hasCap(profile, "canEditServers") && hasHostFolderScope(profile,null) && (
                 <OverflowItem
                   icon={FolderPlus}
                   onClick={() =>
@@ -1554,14 +1647,40 @@ export function ServersPage() {
         <Button
           type="button"
           variant={activeFilterCount > 0 ? "secondary" : "outline"}
-          size="icon"
+          size="sm"
           onClick={() => setFiltersOpen((open) => !open)}
           aria-label={t("srv.openFilters")}
           aria-expanded={filtersOpen}
         >
           <Filter className="h-4 w-4" />
+          {t("srv.filters")}{activeFilterCount > 0 ? ` (${activeFilterCount})` : ''}
         </Button>
       </div>
+
+      {profile && (profile.id != null || profile.username) && <SavedHostViews
+        key={savedViewKey(String(profile.id ?? profile.username), environmentId)}
+        storageKey={savedViewKey(String(profile.id ?? profile.username), environmentId)}
+        current={{ search, tag: activeTag, status: activeStatus, group: activeGroup, updates: needsUpdates, attention: needsAttention, severity, grouped: groupedView, sort: sortBy, columns: operatingColumns }}
+        onApply={view => {
+          setSearch(view.search); setActiveTag(view.tag); setActiveStatus(view.status); setActiveGroup(view.group);
+          setNeedsUpdates(view.updates); setNeedsAttention(view.attention); setSeverity(view.severity || 'all'); setGroupedView(view.grouped); setSortBy(view.sort);
+          setOperatingColumns(view.columns); setPage(1); setSelectedIds(new Set());
+        }}
+      />}
+
+      {bulkDeleteMut.isSuccess && bulkDeleteMut.data.environmentId === environmentId && hasCap(profile,'canDeleteServers') && <BulkDeleteResult
+        outcomes={bulkDeleteMut.data.outcomes} completedAt={bulkDeleteMut.data.completedAt}
+        onDismiss={()=>bulkDeleteMut.reset()}
+        onSelectFailed={()=>{
+          const available=new Set(servers.map(host=>host.id));
+          setSelectedIds(new Set(bulkDeleteMut.data.outcomes.filter(row=>!row.deleted && available.has(row.id)).map(row=>row.id)));
+        }}
+      />}
+
+      {bulkMoveMut.isError && bulkMoveMut.variables?.environmentId === environmentId && hasCap(profile,'canEditServers') && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-destructive/30 p-3 text-sm">
+        <p>Last move request failed: {bulkMoveMut.error.message}</p>
+        <Button size="sm" variant="ghost" onClick={()=>bulkMoveMut.reset()}>Dismiss move error</Button>
+      </div>}
 
       {/* Bulk bar */}
       {selectedIds.size > 0 && (
@@ -1570,9 +1689,15 @@ export function ServersPage() {
           <span className="text-sm font-medium">
             {t("srv.selected", { count: selectedIds.size })}
           </span>
+          <details className="text-xs">
+            <summary className="cursor-pointer">Review {selectedIds.size} selected hosts</summary>
+            <p className="mt-2 text-muted-foreground">{selectionScope.onPage} on this page · {selectionScope.otherPages} on other pages · {selectionScope.outsideFilter} outside current filters. Actions use the entire selection.</p>
+            <ul className="mt-2 max-h-40 overflow-auto space-y-1">{selectedHosts.map(host=><li key={host.id}>{host.name} · <span className="font-mono">{host.ip_address}</span></li>)}</ul>
+            {selectedHosts.length !== selectedIds.size && <p className="text-warning">Some selected hosts are no longer available. Clear the selection and select the current targets.</p>}
+          </details>
           <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
             {hasCap(profile, "canRunUpdates") && (
-              <Button size="sm" onClick={handleBulkUpdate}>
+              <Button size="sm" disabled={selectedUpdateMut.isPending || selectedHosts.length !== selectedIds.size} onClick={()=>setBulkAction({kind:'update',environmentId,targets:selectedHosts.map(host=>({...host}))})}>
                 <Download className="h-3.5 w-3.5 mr-1" />{" "}
                 {t("srv.startUpdates")}
               </Button>
@@ -1586,7 +1711,7 @@ export function ServersPage() {
                 <Play className="h-3.5 w-3.5 mr-1" /> {t("srv.runPlaybook")}
               </Button>
             )}
-            <div className="flex items-center gap-1.5">
+            {hasCap(profile, 'canEditServers') && <div className="flex items-center gap-1.5">
               <select
                 value={bulkGroupId}
                 onChange={(event) => setBulkGroupId(event.target.value)}
@@ -1595,7 +1720,7 @@ export function ServersPage() {
               >
                 <option value="">Move to folder…</option>
                 <option value="__root__">No folder</option>
-                {groups.map((group) => (
+                {groups.filter(group=>hasHostFolderScope(profile,group.id)).map((group) => (
                   <option key={group.id} value={group.id}>
                     {group.name}
                   </option>
@@ -1604,24 +1729,22 @@ export function ServersPage() {
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!bulkGroupId || bulkMoveMut.isPending}
+                disabled={!bulkGroupId || (bulkGroupId !== '__root__' && !groups.some(group=>group.id===bulkGroupId)) || bulkMoveMut.isPending || selectedHosts.length !== selectedIds.size}
                 onClick={() =>
-                  bulkMoveMut.mutate({
-                    serverIds: [...selectedIds],
-                    groupId: bulkGroupId === "__root__" ? null : bulkGroupId,
-                  })
+                  setBulkAction({kind:'move',environmentId,targets:selectedHosts.map(host=>({...host})),groupId:bulkGroupId === '__root__' ? null : bulkGroupId,groupName:bulkGroupId === '__root__' ? 'No folder' : groups.find(group=>group.id===bulkGroupId)?.name || bulkGroupId})
                 }
               >
                 <Folder className="h-3.5 w-3.5" />
                 Move
               </Button>
-            </div>
+            </div>}
             {hasCap(profile, "canDeleteServers") && (
               <Button
                 size="sm"
                 variant="ghost"
                 className="text-destructive hover:text-destructive"
-                onClick={() => setConfirmBulkDelete(true)}
+                disabled={bulkDeleteMut.isPending || selectedHosts.length !== selectedIds.size}
+                onClick={() => setConfirmBulkDelete({environmentId, targets:selectedHosts.map(host=>({...host}))})}
               >
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete
@@ -1661,6 +1784,11 @@ export function ServersPage() {
             <option value="online">{t("common.online")}</option>
             <option value="offline">{t("common.offline")}</option>
             <option value="unknown">{t("common.unknown")}</option>
+          </select>
+          <select aria-label="Attention severity" value={severity} onChange={event => { setSeverity(event.target.value as typeof severity); setPage(1); }} className="h-8 rounded-md border bg-background px-2 text-xs text-muted-foreground">
+            <option value="all">All severities</option>
+            <option value="critical">Critical hosts</option>
+            <option value="warning">Warning hosts</option>
           </select>
           <button type="button" aria-pressed={needsAttention} onClick={() => { setNeedsAttention(value => !value); setPage(1); }} className={`h-8 rounded-md border px-2 text-xs ${needsAttention ? "border-primary/35 bg-primary/10 text-foreground" : "bg-background text-muted-foreground"}`}>
             {t("srv.attentionOnly")}
@@ -1725,6 +1853,10 @@ export function ServersPage() {
             label: t("srv.tagFilter", { value: activeTag }),
             onRemove: () => { setActiveTag(null); setPage(1); },
           }] : []),
+          ...(severity !== 'all' ? [{
+            id: 'severity', label: severity === 'critical' ? 'Critical hosts' : 'Warning hosts',
+            onRemove: () => { setSeverity('all'); setPage(1); },
+          }] : []),
           ...(needsAttention ? [{
             id: "attention",
             label: t("srv.attentionOnly"),
@@ -1741,6 +1873,7 @@ export function ServersPage() {
           setActiveStatus("all");
           setActiveGroup("all");
           setNeedsAttention(false);
+          setSeverity('all');
           setNeedsUpdates(false);
           setPage(1);
         }}
@@ -1791,12 +1924,13 @@ export function ServersPage() {
                     setActiveStatus("all");
                     setActiveGroup("all");
                     setNeedsAttention(false);
+          setSeverity('all');
                     setNeedsUpdates(false);
                     setSearch("");
                     setPage(1);
                   }}
                 >
-                  {t("common.clear")}
+                  {t("srv.resetFilters")}
                 </Button>
               }
             />
@@ -1813,7 +1947,7 @@ export function ServersPage() {
                       <th className="w-12 px-4 py-2.5">
                         <input
                           type="checkbox"
-                          aria-label={t("common.all")}
+                          aria-label={useGroups ? "Select all hosts matching current filters" : "Select all hosts on this page"}
                           className="rounded"
                           checked={allSelected}
                           ref={(el) => {
@@ -1825,6 +1959,9 @@ export function ServersPage() {
                       <th className="px-3 py-2.5">{t("srv.colName")}</th>
                       <th className="w-52 px-3 py-2.5">{t("srv.colIp")}</th>
                       <th className="w-48 px-3 py-2.5">{t("common.status")}</th>
+                      {operatingColumns.state && <th className="px-3 py-2.5" title="Cached update counts and current attention reasons">Operating state</th>}
+                      {operatingColumns.contact && <th className="px-3 py-2.5" title="Last successful host contact; hover over a value for the time and timezone">Last contact</th>}
+                      {operatingColumns.owner && <th className="px-3 py-2.5">Owner / team</th>}
                       {showFolderColumn && <th className="w-48 px-3 py-2.5">Folder</th>}
                       {showTagColumn && <th className="w-56 px-3 py-2.5">{t("srv.tags")}</th>}
                       <th className="w-24 px-4 py-2.5 text-right">
@@ -1888,7 +2025,7 @@ export function ServersPage() {
                 <div className="flex items-center gap-2 px-4 py-2 border-b">
                   <input
                     type="checkbox"
-                    aria-label={t("common.all")}
+                    aria-label={useGroups ? "Select all hosts matching current filters" : "Select all hosts on this page"}
                     className="rounded"
                     checked={allSelected}
                     ref={(el) => {
@@ -1897,7 +2034,7 @@ export function ServersPage() {
                     onChange={(e) => selectAll(e.target.checked)}
                   />
                   <span className="text-xs text-muted-foreground">
-                    {t("common.all")}
+                    {useGroups ? 'All matching hosts' : 'This page'}
                   </span>
                 </div>
                 <div className="divide-y">
@@ -1952,6 +2089,7 @@ export function ServersPage() {
                                     : t("common.unknown")}
                               </StatusBadge>}
                             </div>
+                            {operatingColumns.state && <div className="mt-2">{renderOperatingState(s)}</div>}
                             {(s.tags || []).length > 0 && (
                               <div className="flex flex-wrap gap-1 mt-1">
                                 {s.tags!.slice(0, 2).map((tag) => (
@@ -1966,12 +2104,12 @@ export function ServersPage() {
                                 {s.tags!.length > 2 && <Badge variant="outline" className="px-1.5 py-0 text-[10px]">+{s.tags!.length - 2}</Badge>}
                               </div>
                             )}
-                            <div className={`grid gap-2 mt-2 text-xs text-muted-foreground ${fmtLastSeen(s) ? "grid-cols-3" : "grid-cols-2"}`}>
+                            <div className={`grid grid-cols-2 gap-2 mt-2 text-xs text-muted-foreground ${operatingColumns.contact ? "sm:grid-cols-3" : ""}`}>
                               <div>
                                 <span className="block text-[10px] uppercase">
                                   {t("srv.colIp")}
                                 </span>
-                                {s.ip_address || "—"}
+                                <span className="break-all font-mono">{s.ip_address || "—"}</span>
                               </div>
                               <div>
                                 <span className="block text-[10px] uppercase">
@@ -1979,11 +2117,15 @@ export function ServersPage() {
                                 </span>
                                 {info?.os?.split(" ")[0] || "—"}
                               </div>
-                              {fmtLastSeen(s) && <div>
+                              {operatingColumns.contact && <div title={s.last_seen ? formatDateTime(s.last_seen) : 'No successful host contact reported'}>
                                 <span className="block text-[10px] uppercase">
-                                  {t("srv.colLastSeen")}
+                                  Last contact
                                 </span>
-                                {fmtLastSeen(s)}
+                                {s.last_seen ? formatRelativeTime(s.last_seen, t) : 'Not reported'}
+                              </div>}
+                              {operatingColumns.owner && <div>
+                                <span className="block text-[10px] uppercase">Owner / team</span>
+                                {s.owner || 'Not assigned'}
                               </div>}
                             </div>
                             {group && <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
@@ -2073,16 +2215,19 @@ export function ServersPage() {
 
       {/* Group dialog */}
       <GroupDialog
+        environmentId={environmentId}
         open={groupDialog.open}
         onClose={() => setGroupDialog((prev) => ({ ...prev, open: false }))}
         onSubmit={handleGroupDialogSubmit}
         title={groupDialog.title}
         confirmText={groupDialog.confirmText}
         groups={groups}
+        parentScope={groups.filter(group=>hasHostFolderScope(profile,group.id) || (!!groupDialog.editId && group.id===groupDialog.parentId)).map(group=>group.id)}
         editId={groupDialog.editId}
         defaultName={groupDialog.name}
         defaultColor={groupDialog.color}
         defaultParentId={groupDialog.parentId}
+        allowTopLevel={!!groupDialog.editId || hasHostFolderScope(profile,null)}
       />
 
       {/* Playbook run dialog */}
@@ -2266,6 +2411,24 @@ export function ServersPage() {
         </DialogContent>
       </Dialog>
       <ConfirmDialog
+        open={!!bulkAction && bulkAction.environmentId === environmentId}
+        onOpenChange={open=>{if (!open) setBulkAction(null);}}
+        title={bulkAction?.kind === 'update' ? `Update ${bulkAction.targets.length} hosts?` : `Move ${bulkAction?.targets.length || 0} hosts?`}
+        description={<div className="space-y-3">
+          <p>{bulkAction?.kind === 'update' ? 'Run system package updates on these hosts. Updates can restart services and require a later reboot.' : `Move these hosts to “${bulkAction?.groupName}”.`}</p>
+          <ul className="max-h-48 overflow-auto space-y-1">{bulkAction?.targets.map(host=><li key={host.id}>{host.name} · <span className="font-mono text-xs">{host.ip_address}</span></li>)}</ul>
+        </div>}
+        confirmLabel={bulkAction?.kind === 'update' ? 'Start updates' : 'Move hosts'}
+        variant="warning"
+        isPending={selectedUpdateMut.isPending || bulkMoveMut.isPending}
+        onConfirm={()=>{
+          if (!bulkAction || bulkAction.environmentId !== useUi.getState().environmentId) return;
+          const ids=bulkAction.targets.map(host=>host.id);
+          if (bulkAction.kind === 'update') selectedUpdateMut.mutate({ids,environmentId:bulkAction.environmentId});
+          else if (hasCap(profile,'canEditServers')) bulkMoveMut.mutate({serverIds:ids,groupId:bulkAction.groupId || null,environmentId:bulkAction.environmentId});
+        }}
+      />
+      <ConfirmDialog
         open={!!confirmDeleteServer}
         onOpenChange={(open) => {
           if (!open) setConfirmDeleteServer(null);
@@ -2298,29 +2461,33 @@ export function ServersPage() {
         isPending={deleteMut.isPending}
       />
       <ConfirmDialog
-        open={confirmBulkDelete}
-        onOpenChange={setConfirmBulkDelete}
-        title={`Delete ${selectedIds.size} hosts?`}
+        open={!!confirmBulkDelete && confirmBulkDelete.environmentId === environmentId}
+        onOpenChange={(open)=>{if (!open) setConfirmBulkDelete(null);}}
+        title={`Delete ${confirmBulkDelete?.targets.length || 0} hosts?`}
         description={
           <>
             The selected hosts will be removed from Shipyard. External
             virtual machines or platforms are <strong>not</strong> deleted.
+            <ul className="mt-3 max-h-48 overflow-auto space-y-1">{confirmBulkDelete?.targets.map(host=><li key={host.id}>{host.name} · <span className="font-mono text-xs">{host.ip_address}</span></li>)}</ul>
           </>
         }
         confirmLabel="Delete hosts"
         variant="destructive"
-        confirmTextValue={`DELETE ${selectedIds.size}`}
+        confirmTextValue={`DELETE ${confirmBulkDelete?.targets.length || 0}`}
         confirmInputLabel="Confirmation"
         confirmInputHelp={
           <>
-            Tippe{" "}
+            Type{" "}
             <span className="font-mono text-foreground">
-              DELETE {selectedIds.size}
+              DELETE {confirmBulkDelete?.targets.length || 0}
             </span>
             to remove these hosts.
           </>
         }
-        onConfirm={() => bulkDeleteMut.mutate([...selectedIds])}
+        onConfirm={() => {
+          if (!confirmBulkDelete || confirmBulkDelete.environmentId !== useUi.getState().environmentId) return;
+          bulkDeleteMut.mutate({targets:confirmBulkDelete.targets.map(host=>({id:host.id,name:host.name,ip_address:host.ip_address || "—"})), environmentId:confirmBulkDelete.environmentId});
+        }}
         isPending={bulkDeleteMut.isPending}
       />
       <ConfirmDialog

@@ -1,13 +1,15 @@
 const express    = require('express');
 const router     = express.Router();
+const {roleRevision: revision} = require('../utils/role-revision');
 const db         = require('../db');
+const {roleSnapshot,roleAuditDetail}=require('../utils/role-audit');
 const { adminOnly } = require('../middleware/auth');
-const { ALLOWED_PERMISSION_KEYS } = require('../utils/permissions');
+const { ALLOWED_PERMISSION_KEYS, getPermissions } = require('../utils/permissions');
 const { serverError } = require('../utils/http-error');
 
 function parse(role) {
-  try { return { ...role, permissions: JSON.parse(role.permissions || '{}') }; }
-  catch { return { ...role, permissions: {} }; }
+  try { return { ...role, revision: revision(role), permissions: JSON.parse(role.permissions || '{}'), effectivePermissions: getPermissions({ role: role.id }) }; }
+  catch { return { ...role, revision: revision(role), permissions: {}, effectivePermissions: getPermissions({ role: role.id }) }; }
 }
 
 // Strip unknown keys and enforce correct types to prevent privilege escalation
@@ -45,8 +47,11 @@ router.post('/', adminOnly, (req, res) => {
   const { name, permissions } = req.body;
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
   try {
-    const role = db.roles.create(name.trim(), sanitizePermissions(permissions));
-    db.auditLog.write('roles.create', `Created role: ${name}`, req.ip, true, req.user?.username);
+    const role = db.db.transaction(() => {
+      const created = db.roles.create(name.trim(), sanitizePermissions(permissions));
+      db.auditLog.write('roles.create', roleAuditDetail(created,null,roleSnapshot(created)), req.ip, true, req.user?.username);
+      return created;
+    }).immediate();
     res.status(201).json(parse(role));
   } catch (e) {
     if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
@@ -54,35 +59,48 @@ router.post('/', adminOnly, (req, res) => {
   }
 });
 
-// PUT /api/roles/:id
-router.put('/:id', adminOnly, (req, res) => {
+function currentEditableRole(req) {
   const role = db.roles.getById(req.params.id);
-  if (!role) return res.status(404).json({ error: 'Role not found' });
-  if (role.is_system) return res.status(400).json({ error: 'Cannot edit built-in roles' });
-  const { name, permissions } = req.body;
-  if (!name || !String(name).trim()) return res.status(400).json({ error: 'name required' });
+  if (!role) throw Object.assign(Error('Role not found'), {status:404});
+  if (role.is_system) throw Object.assign(Error('Cannot change built-in roles'), {status:400});
+  if (typeof req.body?.revision !== 'string' || !req.body.revision) throw Object.assign(Error('Reload roles before changing or deleting this role.'), {status:428,field:'revision'});
+  if (req.body.revision !== revision(role)) throw Object.assign(Error('This role changed since you opened it. Close this dialog and reopen the latest role before reviewing your changes again.'), {status:409,field:'revision'});
+  return role;
+}
+function roleError(res,error,context) {
+  if (error.status) return res.status(error.status).json({error:error.message,...(error.field?{field:error.field}:{})});
+  if (error.message?.includes('UNIQUE')) return res.status(409).json({error:'Role name already exists'});
+  return serverError(res,error,context);
+}
+
+// Check the reviewed revision and mutate under the same write transaction.
+router.put('/:id', adminOnly, (req, res) => {
+  const {name,permissions} = req.body || {};
+  if (typeof name !== 'string' || !name.trim()) return res.status(400).json({error:'name required'});
   try {
-    const updated = db.roles.update(req.params.id, name.trim(), sanitizePermissions(permissions));
-    db.auditLog.write('roles.update', `Updated role: ${req.params.id}`, req.ip, true, req.user?.username);
-    res.json(parse(updated));
-  } catch (e) {
-    if (e.message?.includes('UNIQUE')) return res.status(409).json({ error: 'Role name already exists' });
-    serverError(res, e, 'update role');
-  }
+    const updated = db.db.transaction(() => {
+      const previous = currentEditableRole(req);
+      const before = roleSnapshot(previous);
+      const role = db.roles.update(req.params.id,name.trim(),sanitizePermissions(permissions));
+      db.auditLog.write('roles.update',roleAuditDetail(role,before,roleSnapshot(role)),req.ip,true,req.user?.username);
+      return parse(role);
+    }).immediate();
+    res.json(updated);
+  } catch(error) { roleError(res,error,'update role'); }
 });
 
-// DELETE /api/roles/:id
 router.delete('/:id', adminOnly, (req, res) => {
-  const role = db.roles.getById(req.params.id);
-  if (!role) return res.status(404).json({ error: 'Role not found' });
-  if (role.is_system) return res.status(400).json({ error: 'Cannot delete built-in roles' });
-  const inUse = db.users.getAll().filter(u => u.role === req.params.id).length;
-  if (inUse > 0) return res.status(400).json({ error: `Role assigned to ${inUse} user(s). Reassign them first.` });
   try {
-    db.roles.delete(req.params.id);
-    db.auditLog.write('roles.delete', `Deleted role: ${req.params.id}`, req.ip, true, req.user?.username);
-    res.json({ success: true });
-  } catch (e) { serverError(res, e, 'delete role'); }
+    db.db.transaction(() => {
+      const previous = currentEditableRole(req);
+      const before = roleSnapshot(previous);
+      const inUse = db.users.getAll().filter(user=>user.role===req.params.id).length;
+      if(inUse)throw Object.assign(Error(`Role assigned to ${inUse} user(s). Reassign them first.`),{status:400});
+      db.roles.delete(req.params.id);
+      db.auditLog.write('roles.delete',roleAuditDetail(previous,before,null),req.ip,true,req.user?.username);
+    }).immediate();
+    res.json({success:true});
+  } catch(error) { roleError(res,error,'delete role'); }
 });
 
 module.exports = router;

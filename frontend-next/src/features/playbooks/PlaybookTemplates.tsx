@@ -1,3 +1,5 @@
+import { completionStatus } from '@/lib/execution-status';
+import { statusLabel } from '@/lib/history-labels';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -12,6 +14,8 @@ import {
   History,
   Play,
   Save,
+  Pencil,
+  ShieldCheck,
   Search,
   Terminal,
   Trash2,
@@ -34,6 +38,7 @@ import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
 import { ws } from "@/lib/ws";
 import {
   buildAllExceptTargets,
@@ -42,11 +47,12 @@ import {
   saveCollapsedCategories as saveCollapsed,
   TEMPLATE_YAML,
 } from "./playbook-utils";
+import { PlaybookDiff } from "./components/PlaybookDiff";
 import type { Playbook, PlaybookVersion } from "./playbook-types";
 
 const PlaybookEditor = lazy(() => import("./components/PlaybookEditor"));
 
-export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: string) => void; createRequest?: number }) {
+export function TemplatesTab({ onRun, createRequest = 0, initialFile, onCreateRequestHandled }: { onRun: (filename: string) => void; createRequest?: number; initialFile?: string; onCreateRequestHandled?: () => void }) {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const qc = useQueryClient();
@@ -59,12 +65,14 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
 
   const [filter, setFilter] = useState("");
   const [collapsed, setCollapsed] = useState<Set<string>>(loadCollapsed);
-  const [selected, setSelected] = useState<string | null>(null);
-  const [panel, setPanel] = useState<"none" | "editor">("none");
+  const [selected, setSelected] = useState<string | null>(initialFile || null);
+  const [panel, setPanel] = useState<"none" | "editor">(initialFile ? "editor" : "none");
   const [content, setContent] = useState("");
   const [origContent, setOrigContent] = useState("");
+  const [baseRevision, setBaseRevision] = useState<string | null>(null);
+  const [editing, setEditing] = useState(false);
   const [isNew, setIsNew] = useState(false);
-  const [filenameInput, setFilenameInput] = useState("");
+  const [filenameInput, setFilenameInput] = useState(initialFile?.replace(/\.ya?ml$/, "") || "");
   const [historyOpen, setHistoryOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [yamlError, setYamlError] = useState<string | null>(null);
@@ -88,13 +96,15 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
   });
   const pbData = playbookContentQuery.data;
   useEffect(() => {
-    if (pbData?.content !== undefined && !isNew) {
+    if (pbData?.content !== undefined && !isNew && !editing) {
       setContent(pbData.content);
       setOrigContent(pbData.content);
+      setBaseRevision(pbData.revision);
     }
-  }, [pbData?.content, isNew]);
+  }, [pbData?.content, pbData?.revision, selected, isNew, editing]);
 
-  const dirty = content !== origContent;
+  const dirty = panel === "editor" && content !== origContent;
+  useUnsavedChanges(dirty);
   const selectedPb = playbooks?.find((p) => p.filename === selected);
 
   // Grouped + filtered
@@ -118,9 +128,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
     });
     return { catMap, internal };
   }, [playbooks, filter, t]);
-  const canOpenTemplates =
-    hasCap(profile, "canEditPlaybooks") ||
-    hasCap(profile, "canDeletePlaybooks");
+  const canOpenTemplates = hasCap(profile, "canViewPlaybooks");
 
   const toggleCat = (key: string) => {
     setCollapsed((prev) => {
@@ -134,6 +142,9 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
 
   // Select existing playbook for editing
   const selectPb = (filename: string, isInternal: boolean) => {
+    if (selected === filename && panel === "editor") return;
+    if (saveMut.isPending || (dirty && !window.confirm('Discard unsaved playbook changes and open another file?'))) return;
+    setEditing(false);
     setSelected(filename);
     setIsNew(false);
     setPanel("editor");
@@ -146,6 +157,9 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
   useEffect(() => {
     if (createRequest <= handledCreateRequest.current) return;
     handledCreateRequest.current = createRequest;
+    onCreateRequestHandled?.();
+    if (dirty && !window.confirm('Discard unsaved playbook changes and create a new file?')) return;
+    setEditing(true);
     setSelected(null);
     setIsNew(true);
     setFilenameInput("");
@@ -153,7 +167,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
     setOrigContent("");
     setYamlError(null);
     setPanel("editor");
-  }, [createRequest]);
+  }, [createRequest, onCreateRequestHandled]);
 
   // Save
   const saveMut = useMutation({
@@ -161,7 +175,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
       const fn = selected || filenameInput.trim() + ".yml";
       if (!fn.trim()) throw new Error(t("pb.needFilename"));
       if (!content.trim()) throw new Error(t("pb.needContent"));
-      return api.savePlaybook(fn, content) as unknown as Promise<
+      return api.savePlaybook(fn, content, isNew ? null : baseRevision) as unknown as Promise<
         Record<string, unknown>
       >;
     },
@@ -174,8 +188,21 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
       setSelected(fn);
       setIsNew(false);
       setOrigContent(content);
+      const revision = String(res.revision);
+      setBaseRevision(revision);
+      qc.setQueryData(["playbook", fn], { ...pbData, content, revision });
+      setEditing(false);
       qc.invalidateQueries({ queryKey: ["playbooks"] });
       qc.invalidateQueries({ queryKey: ["playbook", fn] });
+    },
+    onError: (e: Error) => showToast(e.message, "error"),
+  });
+
+  const approveMut = useMutation({
+    mutationFn: () => api.approvePlaybook(selected!, baseRevision!),
+    onSuccess: () => {
+      showToast(`${selected} approved at the current revision.`, "success");
+      qc.invalidateQueries({ queryKey: ["playbook", selected] });
     },
     onError: (e: Error) => showToast(e.message, "error"),
   });
@@ -194,6 +221,8 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
   });
 
   const closePanel = () => {
+    if (saveMut.isPending || (dirty && !window.confirm('Discard unsaved playbook changes?'))) return;
+    setEditing(false);
     setPanel("none");
     setSelected(null);
   };
@@ -359,6 +388,8 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                 <span className="truncate font-medium">
                   {isNew ? t("pb.new") : (selected ?? "")}
                 </span>
+                <Badge variant="secondary">{editing ? "Editing" : "Read-only"}</Badge>
+                {!isNew && <Badge variant={pbData?.status === "approved" ? "default" : "secondary"}>{pbData?.status === "approved" ? "Approved" : "Draft"}</Badge>}
                 {dirty && (
                   <Badge variant="secondary" className="shrink-0">
                     {t("pb.unsaved")}
@@ -378,6 +409,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                   <Button
                     variant="outline"
                     size="sm"
+                    disabled={dirty || saveMut.isPending}
                     onClick={() => setHistoryOpen(true)}
                   >
                     <History className="h-4 w-4" /> {t("pb.history")}
@@ -386,12 +418,14 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                 <Button variant="ghost" size="sm" onClick={closePanel}>
                   {t("common.cancel")}
                 </Button>
-                {hasCap(profile, "canEditPlaybooks") && (
+                {hasCap(profile, 'canEditPlaybooks') && !editing && <Button size="sm" variant="outline" disabled={playbookContentQuery.isPending || playbookContentQuery.isError} onClick={() => setEditing(true)}><Pencil className="h-4 w-4" /> Edit playbook</Button>}
+                {hasCap(profile, 'canEditPlaybooks') && !isNew && !selectedPb?.isInternal && !editing && pbData?.status !== 'approved' && <Button size="sm" disabled={!baseRevision || approveMut.isPending} onClick={() => approveMut.mutate()}><ShieldCheck className="h-4 w-4" /> Approve revision</Button>}
+                {hasCap(profile, "canEditPlaybooks") && editing && (
                   <Button
                     size="sm"
                     onClick={() => saveMut.mutate()}
                     disabled={
-                      saveMut.isPending ||
+                      !dirty || saveMut.isPending ||
                       !!yamlError ||
                       (!isNew &&
                         (playbookContentQuery.isPending ||
@@ -436,8 +470,19 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                 </div>
               </div>
             )}
+            {!isNew && pbData && (
+              <div className="mx-4 grid gap-2 rounded-md border bg-muted/15 p-3 text-xs sm:grid-cols-2 lg:grid-cols-4">
+                <div><span className="block text-muted-foreground">Release state</span><strong>{pbData.status === 'approved' ? 'Approved' : 'Draft'}</strong></div>
+                <div><span className="block text-muted-foreground">Last author</span><strong>{pbData.author || 'Not recorded'}</strong></div>
+                <div><span className="block text-muted-foreground">Last changed</span><strong>{pbData.modifiedAt ? fmtDate(pbData.modifiedAt) : 'Not reported'}</strong></div>
+                <div><span className="block text-muted-foreground">Approval</span><strong>{pbData.status === 'approved' ? `${pbData.approvedBy || 'Unknown'} · ${pbData.approvedAt ? fmtDate(pbData.approvedAt) : 'time unavailable'}` : 'Current revision is not approved'}</strong></div>
+              </div>
+            )}
             <div className="flex min-h-0 flex-1 flex-col space-y-1 px-4 pb-4">
+              {editing && dirty && <PlaybookDiff before={origContent} after={content} />}
               <Label>{t("pb.yaml")}</Label>
+              {baseRevision && !isNew && <p className="text-xs text-muted-foreground">Content revision: <code>{baseRevision.slice(0, 12)}</code></p>}
+              {saveMut.isError && <p role="alert" className="text-xs text-destructive">{saveMut.error.message} Your draft remains in the editor.</p>}
               {!isNew && playbookContentQuery.isPending ? (
                 <Skeleton className="h-[420px] w-full" />
               ) : !isNew && playbookContentQuery.isError ? (
@@ -455,6 +500,7 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
                     onChange={setContent}
                     onValidityChange={setYamlError}
                     dark={isDark}
+                    readOnly={!editing || saveMut.isPending || !hasCap(profile, "canEditPlaybooks")}
                   />
                 </Suspense>
               )}
@@ -470,6 +516,9 @@ export function TemplatesTab({ onRun, createRequest = 0 }: { onRun: (filename: s
           filename={selected ?? ""}
           onRestore={(c: string) => {
             setContent(c);
+            setOrigContent(c);
+            setEditing(false);
+            qc.invalidateQueries({ queryKey: ["playbook", selected] });
             setHistoryOpen(false);
           }}
         />
@@ -608,10 +657,8 @@ export function TemplateRunPanel({
               m.stream === "stderr" ? "text-red-400" : "",
             );
           else if (m.type === "ansible_complete") {
-            addLine(
-              m.success ? t("ws.completed") : t("ws.failed"),
-              m.success ? "text-green-500" : "text-red-400",
-            );
+            const status = completionStatus(m);
+            addLine(statusLabel(t, status), status === 'success' ? 'text-green-500' : status === 'failed' ? 'text-red-400' : 'text-muted-foreground');
             unsub();
             setBusy(false);
           } else if (m.type === "ansible_error") {
@@ -801,6 +848,7 @@ export function PlaybookHistoryDialog({
   onRestore: (content: string) => void;
 }) {
   const { t } = useTranslation();
+  const { data: profile } = useProfile();
   const { data: versions, isLoading, isError, error, refetch } = useQuery<PlaybookVersion[]>({
     queryKey: ["playbookHistory", filename],
     queryFn: () =>
@@ -896,7 +944,7 @@ export function PlaybookHistoryDialog({
                       className={`h-3.5 w-3.5 ${previewVer === v.version ? "text-primary" : ""}`}
                     />
                   </Button>
-                  <Button
+                  {hasCap(profile, 'canEditPlaybooks') && <Button
                     variant="outline"
                     size="icon"
                     className="h-7 w-7"
@@ -905,7 +953,7 @@ export function PlaybookHistoryDialog({
                     title={t("pb.restore")}
                   >
                     <Undo2 className="h-3.5 w-3.5" />
-                  </Button>
+                  </Button>}
                 </div>
               </div>
               {previewVer === v.version && (

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { Loader2, CheckCircle2, XCircle, CircleSlash, CircleHelp } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { useTranslation } from 'react-i18next';
@@ -9,7 +9,7 @@ export interface OutputLine {
   cls?: string;
 }
 
-export type RunStatus = 'running' | 'success' | 'failed';
+export type RunStatus = 'running' | import('@/lib/execution-status').CompletionStatus;
 
 interface ActionRunDialogProps {
   open: boolean;
@@ -46,6 +46,8 @@ export function ActionRunDialog({ open, title, status, lines, onClose, allowClos
             {status === 'running' && <Loader2 className="h-4 w-4 animate-spin text-primary" />}
             {status === 'success' && <CheckCircle2 className="h-4 w-4 text-emerald-500" />}
             {status === 'failed' && <XCircle className="h-4 w-4 text-destructive" />}
+            {status === 'cancelled' && <CircleSlash className="h-4 w-4 text-muted-foreground" />}
+            {status === 'unknown' && <CircleHelp className="h-4 w-4 text-muted-foreground" />}
             {title}
           </DialogTitle>
         </DialogHeader>
@@ -63,8 +65,8 @@ export function ActionRunDialog({ open, title, status, lines, onClose, allowClos
         </div>
 
         {status !== 'running' && (
-          <div className={`text-xs font-medium ${status === 'success' ? 'text-emerald-500' : 'text-destructive'}`}>
-            {status === 'success' ? t('det.actionSuccess') : t('det.actionFailed')}
+          <div role="status" className={`text-xs font-medium ${status === 'success' ? 'text-emerald-500' : status === 'failed' ? 'text-destructive' : 'text-muted-foreground'}`}>
+            {status === 'success' ? t('det.actionSuccess') : status === 'failed' ? t('det.actionFailed') : status === 'cancelled' ? 'Run cancelled. Completed changes are not rolled back.' : 'Execution status is unknown. Check the execution history.'}
           </div>
         )}
 

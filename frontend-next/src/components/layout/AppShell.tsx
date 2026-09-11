@@ -1,3 +1,5 @@
+import { ContextHelp } from '@/components/ContextHelp';
+import { commandModifier } from '@/lib/keyboard';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from '@tanstack/react-router';
@@ -16,11 +18,12 @@ import { api } from '@/lib/api';
 import { applyWhiteLabel, type WhiteLabelSettings } from '@/lib/whitelabel';
 import { resolveVisibleEnvironmentId, useUi } from '@/lib/store';
 import { cn } from '@/lib/utils';
-import { setToken } from '@/lib/auth';
+import { useSignOut } from '@/lib/sign-out';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 
 export function AppShell({ children }: { children: ReactNode }) {
   const { t } = useTranslation();
+  const signOut = useSignOut();
   const navigate = useNavigate();
   const { data: settings } = useSettings();
   const queryClient = useQueryClient();
@@ -28,6 +31,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const profile = profileQuery.data;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const helpMenuRef = useRef<HTMLDivElement>(null);
@@ -71,6 +75,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const removeEnvironment = useMutation({
     mutationFn: (id: string) => api.deleteEnvironment(id),
     onSuccess: (_, id) => {
+      setEnvironmentToDelete(null);
       if (environmentId === id) switchEnvironment('default');
       void queryClient.invalidateQueries({ queryKey: ['environments'] });
     },
@@ -202,7 +207,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <button type="button" onClick={openCommandPalette} className="hidden h-7 max-w-xl flex-1 items-center gap-2 rounded-sm border border-input bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted/45 md:flex">
             <Search className="h-3.5 w-3.5" />
             <span className="flex-1 text-left">{t('shell.searchCommands')}</span>
-            <span className="kbd">⌘K</span>
+            <span className="kbd">{commandModifier()} K</span>
           </button>
           <div ref={environmentMenuRef} className="relative ml-auto hidden md:block">
             <button type="button" onClick={() => setEnvironmentOpen((open) => !open)} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent" aria-haspopup="menu" aria-expanded={environmentOpen}>
@@ -216,17 +221,18 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const id = String(item.id);
                 const name = String(item.name);
                 return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
-                  <button type="button" onClick={() => { switchEnvironment(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{t('shell.hostCount', { count: Number(item.server_count ?? 0) })}{canViewDeployments ? ` · ${t('shell.deploymentCount', { count: Number(item.deployment_count ?? 0) })}` : ''}</span></button>
-                  {isAdmin && <div className="mr-1 hidden items-center gap-0.5 group-hover:flex">
-                    <button type="button" title={t('shell.renameEnvironment')} aria-label={t('shell.renameNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
-                    {id !== 'default' && <button type="button" title={t('shell.deleteEnvironment')} aria-label={t('shell.deleteNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}
+                  <button type="button" onClick={() => { switchEnvironment(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{t('shell.hostCount', { count: Number(item.server_count ?? 0) })}{canViewDeployments ? ` · ${t('shell.vmDefinitionCount', { count: Number(item.vm_definition_count ?? 0) })}` : ''}</span></button>
+                  {isAdmin && <div className="mr-1 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                    <button type="button" title={t('shell.renameEnvironment')} aria-label={t('shell.renameNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { renameEnvironment.reset(); setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
+                    {id !== 'default' && <button type="button" title={t('shell.deleteEnvironment')} aria-label={t('shell.deleteNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { removeEnvironment.reset(); setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}
                   </div>}
                 </div>;
               })}
-              {isAdmin && environmentsQuery.isSuccess && <form className="mt-1.5 flex gap-1 border-t pt-1.5" onSubmit={(event) => { event.preventDefault(); const name = newEnvironmentName.trim(); if (name) createEnvironment.mutate(name); }}>
-                <input value={newEnvironmentName} onChange={(event) => setNewEnvironmentName(event.target.value)} placeholder={t('shell.newEnvironment')} aria-label={t('shell.newEnvironmentName')} className="h-8 min-w-0 flex-1 rounded-sm border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" />
+              {isAdmin && environmentsQuery.isSuccess && <form className="mt-1.5 flex gap-1 border-t pt-1.5" onSubmit={(event) => { event.preventDefault(); const name = newEnvironmentName.trim(); if (name && name.length <= 80 && !createEnvironment.isPending) createEnvironment.mutate(name); }}>
+                <input required maxLength={80} disabled={createEnvironment.isPending} value={newEnvironmentName} onChange={(event) => setNewEnvironmentName(event.target.value)} placeholder={t('shell.newEnvironment')} aria-label={t('shell.newEnvironmentName')} className="h-8 min-w-0 flex-1 rounded-sm border bg-background px-2 text-xs outline-none focus-visible:ring-1 focus-visible:ring-ring" />
                 <Button type="submit" size="sm" className="h-8 px-2 text-xs" disabled={!newEnvironmentName.trim() || createEnvironment.isPending} aria-label={t('shell.createEnvironment')}>+</Button>
               </form>}
+              {createEnvironment.isError && <p role="alert" className="mt-2 text-xs text-destructive">{createEnvironment.error.message}</p>}
             </div>}
           </div>
           <div ref={helpMenuRef} className="relative hidden md:block">
@@ -240,6 +246,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="mt-0.5 text-xs text-muted-foreground">{t('shell.projectSupport')}</div>
                 </div>
                 <div className="space-y-0.5 py-1.5">
+                  <button type="button" onClick={() => { setHelpOpen(false); setGuideOpen(true); }} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent"><HelpCircle className="h-4 w-4" />Guide for this page</button>
                   <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
                     <Github className="h-4 w-4 text-muted-foreground" /> {t('shell.githubRepository')}
                   </button>
@@ -269,6 +276,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <UserRoundCog className="h-4 w-4 text-muted-foreground" /> {t('shell.accountSecurity')}
                   </Link>
                   <div className="mt-1 space-y-0.5 border-t pt-1 md:hidden">
+                    <button type="button" onClick={() => { setProfileOpen(false); setGuideOpen(true); }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><HelpCircle className="h-4 w-4 text-muted-foreground" />Guide for this page</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Github className="h-4 w-4 text-muted-foreground" />{t('shell.githubRepository')}</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard/issues')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Bug className="h-4 w-4 text-muted-foreground" />{t('shell.reportIssue')}</button>
                   </div>
@@ -288,8 +296,9 @@ export function AppShell({ children }: { children: ReactNode }) {
                   </div>
                 </div>
                 <div className="pt-2">
-                  <button type="button" onClick={() => { setToken(null); window.location.assign('/login'); }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm text-destructive hover:bg-destructive/10">
-                    <LogOut className="h-4 w-4" /> {t('common.logout')}
+                  {signOut.isError && <p role="alert" className="px-3 py-2 text-sm text-destructive">Sign-out could not be completed. {signOut.error.message} Please retry.</p>}
+                  <button type="button" disabled={signOut.isPending} onClick={() => signOut.mutate()} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm text-destructive hover:bg-destructive/10">
+                    <LogOut className="h-4 w-4" /> {signOut.isPending ? 'Signing out…' : t('common.logout')}
                   </button>
                 </div>
               </div>
@@ -303,15 +312,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="min-w-0 flex-1 overflow-auto bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6 lg:py-5">{children}</main>
       </div>
       <CommandPalette />
-      <RenameEnvironmentDialog environment={environmentToRename} isPending={renameEnvironment.isPending} onClose={() => setEnvironmentToRename(null)} onRename={(name) => renameEnvironment.mutate({ id: environmentToRename!.id, name }, { onSuccess: () => setEnvironmentToRename(null) })} />
-      <ConfirmDialog open={Boolean(environmentToDelete)} onOpenChange={(open) => !open && setEnvironmentToDelete(null)} title={t('shell.deleteEnvironmentQuestion')} description={environmentToDelete ? <>{t('shell.deleteEnvironmentDescription', { name: environmentToDelete.name })}</> : ''} confirmLabel={t('shell.deleteEnvironment')} cancelLabel={t('common.cancel')} variant="destructive" confirmTextValue={environmentToDelete?.name} confirmInputLabel={t('shell.confirmEnvironmentName')} onConfirm={() => { if (environmentToDelete) removeEnvironment.mutate(environmentToDelete.id); }} isPending={removeEnvironment.isPending} />
+      <ContextHelp open={guideOpen} onClose={() => setGuideOpen(false)} />
+      <RenameEnvironmentDialog error={renameEnvironment.error?.message} environment={environmentToRename} isPending={renameEnvironment.isPending} onClose={() => setEnvironmentToRename(null)} onRename={(name) => renameEnvironment.mutate({ id: environmentToRename!.id, name }, { onSuccess: () => setEnvironmentToRename(null) })} />
+      <ConfirmDialog closeOnConfirm={false} error={removeEnvironment.error?.message} targetEnvironmentId={environmentToDelete?.id} open={Boolean(environmentToDelete)} onOpenChange={(open) => !open && !removeEnvironment.isPending && setEnvironmentToDelete(null)} title={t('shell.deleteEnvironmentQuestion')} description={environmentToDelete ? <>{t('shell.deleteEnvironmentDescription', { name: environmentToDelete.name })}</> : ''} confirmLabel={t('shell.deleteEnvironment')} cancelLabel={t('common.cancel')} variant="destructive" confirmTextValue={environmentToDelete?.name} confirmInputLabel={t('shell.confirmEnvironmentName')} onConfirm={() => { if (environmentToDelete) removeEnvironment.mutate(environmentToDelete.id); }} isPending={removeEnvironment.isPending} />
     </div>
   );
 }
 
-function RenameEnvironmentDialog({ environment, isPending, onClose, onRename }: { environment: { id: string; name: string } | null; isPending: boolean; onClose: () => void; onRename: (name: string) => void }) {
+function RenameEnvironmentDialog({ environment, isPending, onClose, onRename, error }: { error?: string; environment: { id: string; name: string } | null; isPending: boolean; onClose: () => void; onRename: (name: string) => void }) {
   const { t } = useTranslation();
   const [name, setName] = useState('');
   useEffect(() => setName(environment?.name || ''), [environment]);
-  return <Dialog open={Boolean(environment)} onOpenChange={(open) => !open && onClose()}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{t('shell.renameEnvironment')}</DialogTitle><DialogDescription>{t('shell.renameEnvironmentDescription')}</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const next = name.trim(); if (next && next !== environment?.name) onRename(next); }}><div className="space-y-1.5"><Label htmlFor="environment-rename">{t('common.name')}</Label><Input id="environment-rename" autoFocus value={name} onChange={(event) => setName(event.target.value)} /></div><DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={isPending}>{t('common.cancel')}</Button><Button type="submit" disabled={isPending || !name.trim() || name.trim() === environment?.name}>{t('common.save')}</Button></DialogFooter></form></DialogContent></Dialog>;
+  return <Dialog open={Boolean(environment)} onOpenChange={(open) => !open && !isPending && onClose()}><DialogContent className="max-w-sm"><DialogHeader><DialogTitle>{t('shell.renameEnvironment')}</DialogTitle><DialogDescription>{t('shell.renameEnvironmentDescription')}</DialogDescription></DialogHeader><form className="space-y-4" onSubmit={(event) => { event.preventDefault(); const next = name.trim(); if (!isPending && next && next.length <= 80 && next !== environment?.name) onRename(next); }}><div className="space-y-1.5"><Label htmlFor="environment-rename">{t('common.name')}</Label><Input id="environment-rename" required maxLength={80} disabled={isPending} aria-invalid={Boolean(error)} aria-describedby={error ? "environment-rename-error" : undefined} autoFocus value={name} onChange={(event) => setName(event.target.value)} /></div>{error && <p id="environment-rename-error" role="alert" className="text-sm text-destructive">{error}</p>}<DialogFooter><Button type="button" variant="outline" onClick={onClose} disabled={isPending}>{t('common.cancel')}</Button><Button type="submit" disabled={isPending || !name.trim() || name.trim() === environment?.name}>{t('common.save')}</Button></DialogFooter></form></DialogContent></Dialog>;
 }

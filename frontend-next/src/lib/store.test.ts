@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveThemePreset, resolveVisibleEnvironmentId, THEME_PRESETS } from './store';
+import { normalizeSidebarWidth, resolveThemePreset, resolveVisibleEnvironmentId, THEME_PRESETS } from './store';
 
 const communityThemeIds = [
   'tokyo-night-dark',
@@ -63,5 +63,17 @@ describe('environment selection', () => {
     expect(resolveVisibleEnvironmentId('staging', environments)).toBe('staging');
     expect(resolveVisibleEnvironmentId('deleted', environments)).toBe('production');
     expect(resolveVisibleEnvironmentId('deleted', [])).toBeNull();
+  });
+});
+
+describe('sidebar width preferences', () => {
+  it('uses the intended default for missing and malformed values', () => {
+    for (const value of [null, undefined, '', ' ', 'invalid', NaN, Infinity, {}, false]) expect(normalizeSidebarWidth(value)).toBe(272);
+  });
+  it('preserves valid widths while rounding and enforcing layout bounds', () => {
+    expect(normalizeSidebarWidth('300')).toBe(300);
+    expect(normalizeSidebarWidth(300.7)).toBe(301);
+    expect(normalizeSidebarWidth(100)).toBe(224);
+    expect(normalizeSidebarWidth(1000)).toBe(384);
   });
 });

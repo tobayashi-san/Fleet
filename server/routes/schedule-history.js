@@ -1,22 +1,8 @@
+const { canAccessWorkflowHistory } = require('../utils/workflow-history-scope');
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { getPermissions, filterServers, can, canAccessPlaybook, canAccessEnvironment } = require('../utils/permissions');
-const { parseTargetExpression } = require('../utils/validate');
-
-function canAccessHistoryRow(perms, row, allServers) {
-  if (!perms) return false;
-  if (perms.full) return true;
-  if (!canAccessPlaybook(perms, row.playbook)) return false;
-  if (perms.servers === 'all') return true;
-
-  const accessibleNames = new Set(
-    filterServers(allServers, perms).map(s => s.name)
-  );
-  const parsed = parseTargetExpression(row.targets);
-  if (parsed.kind !== 'list' || parsed.included.length === 0) return false;
-  return parsed.included.every(t => accessibleNames.has(t));
-}
+const { getPermissions, can, canAccessEnvironment } = require('../utils/permissions');
 
 // GET /api/schedule-history?limit=100&scheduleId=xxx
 router.get('/', (req, res) => {
@@ -31,20 +17,25 @@ router.get('/', (req, res) => {
   if (!perms) return res.status(403).json({ error: 'Permission denied' });
   if (!canAccessEnvironment(perms, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
 
-  // Admins / full-access users see everything
-  if (perms.full) {
-    return res.json(db.scheduleHistory.getAll(limit, scheduleId, environmentId));
+  const paged = req.query.page !== undefined;
+  const page = Number(req.query.page || 1);
+  if (paged && (!Number.isSafeInteger(page) || page < 1 || page > 100000)) return res.status(400).json({ error: 'Invalid history page' });
+  const status = req.query.status || '';
+  if (status && !['success','failed','running','queued','cancelled','skipped','unknown'].includes(status)) return res.status(400).json({ error: 'Invalid history status' });
+  const allServers = db.servers.getAll(environmentId);
+  const accessible = db.scheduleHistory.getAll(-1, null, environmentId)
+    .filter(row => perms.full || canAccessWorkflowHistory(perms, row, allServers));
+  const visible = accessible.filter(row => (!scheduleId || row.schedule_id === scheduleId) && (!status || row.status === status));
+  if (!paged) return res.json(visible.slice(0, limit));
+  const pageSize = 25;
+  const existingIds = new Set(db.schedules.getAll(environmentId).map(schedule => schedule.id));
+  const historicalSchedules = new Map();
+  for (const row of accessible) {
+    if (row.schedule_id && !historicalSchedules.has(row.schedule_id)) historicalSchedules.set(row.schedule_id, {
+      id: row.schedule_id, name: row.schedule_name || row.playbook, deleted: !existingIds.has(row.schedule_id),
+    });
   }
-
-  // Non-full users only see history for allowed playbooks and visible targets.
-  const allServers = db.servers.getAll().filter(server =>
-    String(server.environment_id || 'default') === environmentId);
-  const all = db.scheduleHistory.getAll(limit * 5, scheduleId, environmentId);
-  const filtered = all
-    .filter(h => canAccessHistoryRow(perms, h, allServers))
-    .slice(0, limit);
-
-  res.json(filtered);
+  res.json({ schedules: [...historicalSchedules.values()], items: visible.slice((page - 1) * pageSize, page * pageSize), total: visible.length, page, pageSize });
 });
 
 // GET /api/schedule-history/:id  (includes full output)
@@ -64,7 +55,7 @@ router.get('/:id', (req, res) => {
   const environmentId = row.environment_id || 'default';
   const environmentServers = db.servers.getAll().filter(server =>
     String(server.environment_id || 'default') === environmentId);
-  if (!canAccessHistoryRow(perms, row, environmentServers)) {
+  if (!canAccessWorkflowHistory(perms, row, environmentServers)) {
     return res.status(403).json({ error: 'Permission denied' });
   }
 

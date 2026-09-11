@@ -1,6 +1,7 @@
 'use strict';
 
 const { randomUUID } = require('crypto');
+const { writeObjectAudit } = require('./object-audit');
 const db = require('../../db');
 const log = require('../../utils/logger').child('features:opentofu:ipam-sync');
 const cryptoUtil = require('../../utils/crypto');
@@ -133,7 +134,7 @@ async function syncProxmoxIpam(connectionId, { subnetId = null, actor = 'schedul
     }
     const now = new Date().toISOString();
     db.db.prepare("UPDATE tofu_proxmox_connections SET last_ipam_synced_at = ?, last_ipam_status = 'success', last_ipam_error = '', updated_at = datetime('now') WHERE id = ?").run(now, source.id);
-    db.auditLog.write('ipam.proxmox_sync', `source=${source.name} prefixes=${subnets.length} discovered=${total.discovered} created=${total.created} updated=${total.updated}`, ip, true, actor);
+    writeObjectAudit(db, source, null, 'ipam.proxmox_sync', `source_id=${JSON.stringify(source.id)} source=${JSON.stringify(source.name)} prefixes=${subnets.length} discovered=${total.discovered} created=${total.created} updated=${total.updated}`, ip, actor);
     return total;
   } catch (error) {
     db.db.prepare("UPDATE tofu_proxmox_connections SET last_ipam_status = 'failed', last_ipam_error = ?, updated_at = datetime('now') WHERE id = ?").run(String(error.message || 'Sync failed').slice(0, 500), source.id);

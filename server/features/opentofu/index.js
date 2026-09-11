@@ -66,6 +66,7 @@ const {
   syncOneToGit,
 } = require('./workspace-files');
 const { setupOpenTofuDatabase } = require('./schema');
+const { collectStorageResults } = require('./storage-history');
 const { createInfrastructureSummary } = require('./infrastructure-summary');
 const { registerFileRoutes } = require('./routes/files');
 const { registerStateRoutes } = require('./routes/state');
@@ -838,7 +839,7 @@ override.tf.json
       .filter(item => Number.isInteger(item.vm_id) && item.vm_id > 0)
       .sort((a, b) => a.name.localeCompare(b.name, 'de'));
     const datastores = (Array.isArray(storageResponse) ? storageResponse : [])
-      .filter(item => item && item.storage && item.active !== 0 && item.active !== '0')
+      .filter(item => item && item.storage)
       .map(item => ({
         id: String(item.storage),
         type: String(item.type || ''),
@@ -970,6 +971,7 @@ override.tf.json
       insecure: Boolean(row.insecure),
       api_token_configured: Boolean(row.api_token),
       ssh_public_key_configured: Boolean(row.ssh_public_key),
+      ca_certificate_configured: Boolean(row.ca_certificate),
       auto_sync_ipam: row.auto_sync_ipam === undefined ? true : Boolean(row.auto_sync_ipam),
       sync_interval_min: Math.min(1440, Math.max(5, Number.parseInt(row.sync_interval_min, 10) || 15)),
       last_ipam_synced_at: row.last_ipam_synced_at || null,
@@ -983,7 +985,8 @@ override.tf.json
   function readSavedProxmoxConnection(row) {
     const token = cryptoUtil.decrypt(String(row?.api_token || ''));
     if (!token || String(token).startsWith('enc:')) throw new Error(`Credentials for Proxmox connection "${row?.name || 'unknown'}" cannot be read.`);
-    return createProxmoxConnection(row.endpoint, token, Boolean(row.insecure));
+    const caCertificate = row.ca_certificate ? cryptoUtil.decrypt(String(row.ca_certificate)) : '';
+    return createProxmoxConnection(row.endpoint, token, Boolean(row.insecure), caCertificate);
   }
 
   function collectProxmoxInfrastructureGroups(environmentId) {
@@ -1056,23 +1059,7 @@ override.tf.json
         // so read-only API tokens still provide the rest of the platform.
         Promise.allSettled(nodes.map(node => requestProxmoxApi(group.connection, `/nodes/${encodeURIComponent(node.name)}/apt/update`))),
       ]);
-      const datastores = [];
-      storageResults.forEach((result, index) => {
-        if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
-        const node = nodes[index];
-        const pools = result.value
-          .filter(item => item && item.storage && item.active !== 0 && item.active !== '0' && String(item.type || '').toLowerCase() === 'zfspool')
-          .map(item => ({
-            id: String(item.storage),
-            node_name: node.name,
-            type: String(item.type || 'zfspool'),
-            used: Number(item.used) || 0,
-            total: Number(item.total) || 0,
-            available: Number(item.avail) || 0,
-          }));
-        node.datastores = pools;
-        datastores.push(...pools);
-      });
+      const datastores = collectStorageResults(db.db, group.environmentId, group.key, nodes, storageResults);
       statusResults.forEach((result, index) => {
         if (result.status !== 'fulfilled' || !result.value || typeof result.value !== 'object') return;
         const node = nodes[index];
@@ -1083,18 +1070,24 @@ override.tf.json
         node.cpu_sockets = Number(details.cpuinfo?.sockets) || null;
       });
       networkResults.forEach((result, index) => {
-        if (result.status !== 'fulfilled' || !Array.isArray(result.value)) return;
         const node = nodes[index];
-        node.bridges = result.value
-          .filter(item => item && item.iface && (String(item.type || '').toLowerCase() === 'bridge' || /^vmbr/i.test(String(item.iface))))
+        node.network_checked_at = new Date().toISOString();
+        node.network_status = result.status === 'fulfilled' && Array.isArray(result.value) ? 'available' : 'unavailable';
+        if (node.network_status !== 'available') return;
+        node.network_interfaces = result.value
+          .filter(item => item && item.iface)
           .map(item => ({
             name: String(item.iface),
-            type: String(item.type || 'bridge'),
-            active: item.active === 1 || item.active === '1' || item.active === true,
+            type: String(item.type || ''),
+            active: [1, '1', true].includes(item.active) ? true : [0, '0', false].includes(item.active) ? false : null,
             address: typeof item.address === 'string' && item.address.trim() ? item.address.trim() : null,
-            cidr: Number.isFinite(Number(item.cidr)) ? Number(item.cidr) : null,
+            cidr: (typeof item.cidr === 'number' || (typeof item.cidr === 'string' && /^\d+$/.test(item.cidr))) && Number.isInteger(Number(item.cidr)) && Number(item.cidr) >= 0 && Number(item.cidr) <= 32 ? Number(item.cidr) : null,
             gateway: typeof item.gateway === 'string' && item.gateway.trim() ? item.gateway.trim() : null,
+            address6: typeof item.address6 === 'string' && item.address6.trim() ? item.address6.trim() : null,
+            cidr6: (typeof item.cidr6 === 'number' || (typeof item.cidr6 === 'string' && /^\d+$/.test(item.cidr6))) && Number.isInteger(Number(item.cidr6)) && Number(item.cidr6) >= 0 && Number(item.cidr6) <= 128 ? Number(item.cidr6) : null,
+            gateway6: typeof item.gateway6 === 'string' && item.gateway6.trim() ? item.gateway6.trim() : null,
           }));
+        node.bridges = node.network_interfaces.filter(item => item.type.toLowerCase() === 'bridge' || /^vmbr/i.test(item.name));
       });
       const fleetServers = db.servers.getAll().filter(server =>
         String(server.environment_id || 'default') === String(group.environmentId || 'default'));
@@ -1328,6 +1321,7 @@ override.tf.json
 
   function requestedDeploymentEnvironment(req) {
     const pathname = req.path || '/';
+    if (pathname === '/proxmox-connections/test') return String(req.body?.environment_id || '').trim() || undefined;
     const workspaceMatch = pathname.match(/^\/workspaces\/([^/]+)/);
     if (workspaceMatch) {
       const workspace = getWorkspaceRow(decodeURIComponent(workspaceMatch[1]));

@@ -1,3 +1,4 @@
+const {createSecretRedactor,redactSecrets}=require('../utils/secret-redactor');
 const { spawn, execFileSync } = require('child_process');
 const crypto = require('crypto');
 const fs = require('fs');
@@ -7,7 +8,7 @@ const log = require('../utils/logger').child('ansible');
 const db = require('../db');
 const sshManager = require('./ssh-manager');
 
-const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
+const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -168,6 +169,8 @@ class AnsibleRunner {
         this.activeProcesses.set(String(runId), state);
         if (state.cancelRequested) child.kill('SIGTERM');
       }
+      child.stdout.setEncoding('utf8');
+      child.stderr.setEncoding('utf8');
       let stdout = '', stderr = '';
       child.stdout.on('data', d => { const t = d.toString(); stdout += t; onOutput?.('stdout', t); });
       child.stderr.on('data', d => { const t = d.toString(); stderr += t; onOutput?.('stderr', t); });
@@ -223,6 +226,7 @@ class AnsibleRunner {
     this._assertSafeTargetArgument(targets);
     const { keyPath, cleanup } = this._resolveSshKey();
     let inventoryPath;
+    let variablesDirectory;
     try {
       const environmentId = options.environmentId || 'default';
       if (options.runId && !this.activeProcesses.has(String(options.runId))) this.prepareRun(options.runId);
@@ -262,7 +266,13 @@ class AnsibleRunner {
       const args = ['-i', inventoryPath, resolvedPlaybook, '--limit', targets, '-v'];
       const storedVars = db.ansibleVars.toExtraVars(environmentId);
       const mergedVars = { ...storedVars, ...extraVars };
-      if (Object.keys(mergedVars).length > 0) args.push('-e', JSON.stringify(mergedVars));
+      if (Object.keys(mergedVars).length > 0) {
+        variablesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-run-vars-'));
+        fs.chmodSync(variablesDirectory, 0o700);
+        const variablesPath = path.join(variablesDirectory, 'extra-vars.json');
+        fs.writeFileSync(variablesPath, JSON.stringify(mergedVars), {mode:0o600,flag:'wx'});
+        args.push('-e', `@${variablesPath}`);
+      }
       if (options.checkMode) args.push('--check', '--diff');
       const forks = Math.min(50, Math.max(1, Number.parseInt(options.forks, 10) || 5));
       args.push('--forks', String(forks));
@@ -273,20 +283,34 @@ class AnsibleRunner {
       }
 
       const secretValues = db.ansibleVars.secretValues(environmentId);
-      const safeOutput = onOutput ? (type, data) => {
-        let redacted = String(data);
-        for (const secret of secretValues) redacted = redacted.split(secret).join('********');
-        onOutput(type, redacted);
-      } : null;
-      const result = await this._spawnProcess('ansible-playbook', args, safeOutput,
-        { cwd: path.join(__dirname, '..'), runId: options.runId });
-      for (const field of ['stdout', 'stderr']) {
-        for (const secret of secretValues) result[field] = String(result[field] || '').split(secret).join('********');
+      for (const variable of db.ansibleVars.getAll(environmentId)) {
+        if (variable.is_secret && typeof mergedVars[variable.key] === 'string') secretValues.push(mergedVars[variable.key]);
       }
+      const streams = {stdout:createSecretRedactor(secretValues),stderr:createSecretRedactor(secretValues)};
+      const safeOutput = onOutput ? (type, data) => {
+        const output = streams[type].write(data);
+        if (output) onOutput(type,output);
+      } : null;
+      let result;
+      try {
+        result = await this._spawnProcess('ansible-playbook', args, safeOutput,
+          { cwd: path.join(__dirname, '..'), runId: options.runId });
+      } finally {
+        if (onOutput) for (const [type,stream] of Object.entries(streams)) {
+          const remaining=stream.end();
+          if (remaining) onOutput(type,remaining);
+        }
+      }
+      for (const field of ['stdout', 'stderr']) result[field]=redactSecrets(String(result[field] || ''),secretValues);
       return result;
     } finally {
-      cleanup();
-      if (inventoryPath) try { fs.unlinkSync(inventoryPath); } catch {}
+      try {
+        if (variablesDirectory) fs.rmSync(variablesDirectory, {recursive:true,force:true});
+      } finally {
+        try { cleanup(); } finally {
+          if (inventoryPath) try { fs.unlinkSync(inventoryPath); } catch {}
+        }
+      }
     }
   }
 

@@ -4,16 +4,55 @@ const { ipKeyGenerator } = require('express-rate-limit');
 const router = express.Router();
 const ansibleRunner = require('../services/ansible-runner');
 const fs = require('fs');
+const contentRevision = (content) => require('node:crypto').createHash('sha256').update(content).digest('hex');
 const path = require('path');
 const gitSync = require('../services/git-sync');
 const log = require('../utils/logger').child('routes:playbooks');
 const { fileReadLimiter } = require('../utils/rate-limiters');
 const { validatePlaybookContent } = require('../utils/playbook-validation');
 
-const PLAYBOOKS_DIR = path.join(__dirname, '..', 'playbooks');
+const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const MAX_BACKUPS = 5;
 const RESOLVED_PLAYBOOKS_DIR = path.resolve(PLAYBOOKS_DIR);
+const RELEASES_FILE = path.join(PLAYBOOKS_DIR, '.shipyard-playbook-releases.json');
+
+function readReleaseMetadata() {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(RELEASES_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch { return {}; }
+}
+
+function writeReleaseMetadata(metadata) {
+  fs.mkdirSync(PLAYBOOKS_DIR, { recursive: true });
+  const temporary = `${RELEASES_FILE}.${process.pid}.tmp`;
+  fs.writeFileSync(temporary, `${JSON.stringify(metadata, null, 2)}\n`, { encoding: 'utf8', mode: 0o600 });
+  fs.renameSync(temporary, RELEASES_FILE);
+}
+
+function releaseState(filename, revision, modifiedAt) {
+  const saved = readReleaseMetadata()[filename];
+  const metadataMatches = saved?.revision === revision;
+  const approved = saved?.status === 'approved' && metadataMatches;
+  return {
+    status: approved ? 'approved' : 'draft',
+    author: metadataMatches && typeof saved?.author === 'string' ? saved.author : null,
+    modifiedAt,
+    approvedBy: approved && typeof saved.approvedBy === 'string' ? saved.approvedBy : null,
+    approvedAt: approved && typeof saved.approvedAt === 'string' ? saved.approvedAt : null,
+  };
+}
+
+function markDraft(filename, revision, req) {
+  const metadata = readReleaseMetadata();
+  metadata[filename] = {
+    status: 'draft', revision,
+    author: String(req.user?.username || req.user?.id || 'unknown'),
+    modifiedAt: new Date().toISOString(),
+  };
+  writeReleaseMetadata(metadata);
+}
 
 const writeLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -97,7 +136,10 @@ router.get('/:filename', fileReadLimiter, (req, res, next) => { if (!can(getPerm
         return res.status(404).json({ error: 'Playbook not found' });
       }
     }
-    res.json({ content: fs.readFileSync(filepath, 'utf8') });
+    const content = fs.readFileSync(filepath, 'utf8');
+    const revision = contentRevision(content);
+    const modifiedAt = fs.statSync(filepath).mtime.toISOString();
+    res.json({ content, revision, ...releaseState(resolved.filename, revision, modifiedAt) });
   } catch (error) {
     serverError(res, error, 'playbooks');
   }
@@ -106,8 +148,8 @@ router.get('/:filename', fileReadLimiter, (req, res, next) => { if (!can(getPerm
 // POST /api/playbooks - Create or update a playbook
 router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, async (req, res) => {
   try {
-    const { filename, content } = req.body;
-    if (!filename || !content) return res.status(400).json({ error: 'filename and content are required' });
+    const { filename, content, revision } = req.body;
+    if (typeof filename !== 'string' || typeof content !== 'string' || !filename || !content) return res.status(400).json({ error: 'filename and content are required' });
     const safeFilename = path.basename(filename);
     if (!/^[a-zA-Z0-9_\-]+\.ya?ml$/.test(safeFilename)) {
       return res.status(400).json({ error: 'Invalid filename. Only letters, digits, _ and - are allowed.' });
@@ -121,8 +163,15 @@ router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req
     if (content.length > 512 * 1024) return res.status(400).json({ error: 'Playbook too large (max 512 KB)' });
     const validation = validatePlaybookContent(content);
     if (!validation.valid) return res.status(400).json({ error: validation.error });
+    const bundled = resolveBundledReadPath(finalFilename);
+    const currentPath = fs.existsSync(filepath) ? filepath : bundled && fs.existsSync(bundled.filepath) ? bundled.filepath : null;
+    const currentRevision = currentPath ? contentRevision(fs.readFileSync(currentPath, 'utf8')) : null;
+    if (revision === undefined) return res.status(428).json({ error: 'Load the current playbook revision before saving.' });
+    if (revision !== currentRevision) return res.status(409).json({ error: 'This playbook changed or the filename already exists. Keep your draft, reload the saved version, and merge your changes.' });
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
+    const savedRevision = contentRevision(content);
+    markDraft(finalFilename, savedRevision, req);
     let pushFailed = false;
     try {
       await gitSync.autoPush(`Update ${finalFilename}`);
@@ -130,10 +179,35 @@ router.post('/', writeLimiter, (req, res, next) => { if (!can(getPermissions(req
       pushFailed = true;
       log.warn({ err }, 'Auto-push failed');
     }
-    res.json({ success: true, filename: finalFilename, pushFailed });
+    res.json({ success: true, filename: finalFilename, pushFailed, revision: savedRevision, status: 'draft' });
   } catch (error) {
     serverError(res, error, 'playbooks');
   }
+});
+
+// POST /api/playbooks/:filename/approve - Approve exactly the currently loaded revision
+router.post('/:filename/approve', writeLimiter, (req, res, next) => { if (!can(getPermissions(req.user), 'canEditPlaybooks')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
+  try {
+    const resolved = resolvePlaybookPath(req.params.filename);
+    if (!resolved) return res.status(400).json({ error: 'Invalid filename' });
+    if (!ensurePlaybookAccess(req, res, resolved.filename)) return;
+    if (!fs.existsSync(resolved.filepath)) return res.status(404).json({ error: 'Only custom playbooks can be approved.' });
+    const content = fs.readFileSync(resolved.filepath, 'utf8');
+    const revision = contentRevision(content);
+    if (typeof req.body?.revision !== 'string' || req.body.revision !== revision) {
+      return res.status(409).json({ error: 'This playbook changed. Reload the current revision before approving it.' });
+    }
+    const metadata = readReleaseMetadata();
+    const now = new Date().toISOString();
+    const actor = String(req.user?.username || req.user?.id || 'unknown');
+    metadata[resolved.filename] = {
+      ...(metadata[resolved.filename] || {}), status: 'approved', revision,
+      author: metadata[resolved.filename]?.author || actor,
+      approvedBy: actor, approvedAt: now,
+    };
+    writeReleaseMetadata(metadata);
+    res.json({ success: true, revision, status: 'approved', approvedBy: actor, approvedAt: now });
+  } catch (error) { serverError(res, error, 'playbooks'); }
 });
 
 // GET /api/playbooks/:filename/history - List backup versions
@@ -192,6 +266,7 @@ router.post('/:filename/restore/:version', writeLimiter, (req, res, next) => { i
     const content = fs.readFileSync(bakPath, 'utf8');
     rotateBak(filepath);
     fs.writeFileSync(filepath, content, 'utf8');
+    markDraft(resolved.filename, contentRevision(content), req);
     // rotateBak shifted every backup up by 1, so the file we just restored
     // from is now also sitting at .bak.(version+1) — remove the duplicate.
     const dupPath = `${filepath}.bak.${version + 1}`;
@@ -211,6 +286,8 @@ router.delete('/:filename', writeLimiter, (req, res, next) => { if (!can(getPerm
     const { filename, filepath } = resolved;
     if (!fs.existsSync(filepath)) return res.status(404).json({ error: 'Playbook not found' });
     fs.unlinkSync(filepath);
+    const metadata = readReleaseMetadata();
+    if (metadata[filename]) { delete metadata[filename]; writeReleaseMetadata(metadata); }
     let pushFailed = false;
     try {
       await gitSync.autoPush(`Delete ${filename}`);

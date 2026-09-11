@@ -20,6 +20,10 @@ export interface Profile {
 }
 
 export interface PluginInfo {
+  packageStatus?: {installedVersion: string | null; loadedVersion: string | null; state: 'reload-required' | 'same-version' | 'unreadable' | 'version-unavailable'; checkedAt: number; rollback: 'manual'};
+  hasUi?: boolean;
+  compatibility?: {status:'unspecified'|'compatible'|'incompatible'|'invalid';error?:string;requirements:{name:string;range:string;current:string;matches:boolean}[];runtime:{node:string;shipyard:string}};
+  trust?: { digest: string; trusted: boolean; policy: string; scheme?: string; scope?: string };
   id: string;
   name?: string;
   version?: string;

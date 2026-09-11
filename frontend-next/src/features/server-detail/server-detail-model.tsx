@@ -25,7 +25,7 @@ export interface ServerDetail {
 }
 
 export interface ServerAttentionReason {
-  code: "offline" | "active_alerts" | "reboot_required" | "os_updates" | "image_updates" | "custom_updates" | "failed_operations" | "cpu_capacity" | "ram_capacity" | "disk_capacity" | "storage_capacity";
+  code: "custom_check_failed" | "offline" | "active_alerts" | "reboot_required" | "os_updates" | "image_updates" | "custom_updates" | "failed_operations" | "cpu_capacity" | "ram_capacity" | "disk_capacity" | "storage_capacity";
   severity: "critical" | "warning";
   count: number;
   value?: number;
@@ -45,6 +45,7 @@ export interface ServerAttention {
 }
 
 export interface ServerInfo {
+  reboot_required?: boolean;
   os?: string;
   kernel?: string;
   cpu?: string;
@@ -58,6 +59,8 @@ export interface ServerInfo {
   load_avg?: string;
   updates_count?: number;
   _cached?: boolean;
+  _source?: "agent" | "ssh";
+  updated_at?: string;
   storage_mount_metrics?: StorageMount[];
   zfs_pools?: ZfsPool[];
 }
@@ -69,6 +72,79 @@ export interface StorageMount {
   used_gb?: number;
   total_gb?: number;
   usage_pct?: number;
+  mounted?: boolean;
+}
+
+export interface ServerInfoHistoryPoint {
+  collected_at: string;
+  source: "agent" | "ssh";
+  cpu_usage_pct?: number | null;
+  ram_used_mb?: number | null;
+  ram_total_mb?: number | null;
+  disk_used_gb?: number | null;
+  disk_total_gb?: number | null;
+}
+
+function metricPercent(
+  point: ServerInfoHistoryPoint,
+  metric: "cpu" | "ram" | "disk",
+): number | null {
+  if (metric === "cpu") return point.cpu_usage_pct ?? null;
+  const used = metric === "ram" ? point.ram_used_mb : point.disk_used_gb;
+  const total = metric === "ram" ? point.ram_total_mb : point.disk_total_gb;
+  return used != null && total ? Math.round((used / total) * 100) : null;
+}
+
+export function HostMetricTrends({
+  points,
+  warningAt,
+  hour12,
+}: {
+  points: ServerInfoHistoryPoint[];
+  warningAt: { cpu: number; ram: number; disk: number };
+  hour12: boolean;
+}) {
+  const recent = points.slice(-24);
+  if (recent.length < 2) {
+    return <p className="text-xs text-muted-foreground">Trends appear after two host measurements.</p>;
+  }
+  const metrics = [
+    ["cpu", "CPU", warningAt.cpu],
+    ["ram", "Memory", warningAt.ram],
+    ["disk", "Disk", warningAt.disk],
+  ] as const;
+  return (
+    <div className="grid gap-3 sm:grid-cols-3" aria-label="Recent host capacity trends">
+      {metrics.map(([key, label, threshold]) => {
+        const values = recent.map((point) => metricPercent(point, key));
+        const valid = values.filter((value): value is number => value !== null);
+        const latest = [...values].reverse().find((value) => value !== null);
+        const polyline = values.map((value, index) => {
+          const x = values.length === 1 ? 0 : (index / (values.length - 1)) * 100;
+          return `${x},${100 - Math.max(0, Math.min(100, value ?? 0))}`;
+        }).join(" ");
+        return (
+          <div key={key} className="rounded-md border bg-background/60 p-2.5">
+            <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+              <span className="font-medium">{label}</span>
+              <span className="font-mono tabular-nums">{latest == null ? "No data" : `${latest}%`}</span>
+            </div>
+            {valid.length >= 2 ? (
+              <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-10 w-full" role="img" aria-label={`${label} recent trend, latest ${latest}%`}>
+                <line x1="0" x2="100" y1={100 - threshold} y2={100 - threshold} className="stroke-amber-500/50" strokeDasharray="3 3" vectorEffect="non-scaling-stroke" />
+                <polyline points={polyline} fill="none" className="stroke-primary" strokeWidth="2" vectorEffect="non-scaling-stroke" />
+              </svg>
+            ) : (
+              <div className="flex h-10 items-center text-xs text-muted-foreground">No comparable values</div>
+            )}
+          </div>
+        );
+      })}
+      <p className="text-[11px] text-muted-foreground sm:col-span-3">
+        {recent.length} measurements · {formatDate(recent[0].collected_at, hour12)} to {formatDate(recent.at(-1)?.collected_at, hour12)} · latest source {recent.at(-1)?.source === "agent" ? "Shipyard Agent" : "SSH"}
+      </p>
+    </div>
+  );
 }
 
 export interface ZfsPool {
@@ -116,6 +192,11 @@ export interface CustomTask {
   last_version?: string;
   has_update?: boolean;
   last_checked_at?: string;
+  stale?: boolean;
+  source?: string;
+  stale_after_seconds?: number;
+  last_check_error?: string | null;
+  last_attempted_at?: string | null;
 }
 
 export interface AgentStatus {
@@ -138,7 +219,7 @@ export interface ManagedDeployment {
   kind?: "inventory" | "deployment";
   vm?: {
     id?: string;
-    name?: string;
+    name?: string | null;
     node_name?: string;
     vm_id?: number | string | null;
     post_deploy_playbooks?: string[];
@@ -187,8 +268,7 @@ export function formatBytes(mb: number | null | undefined): string {
 
 export function formatDate(d?: string, hour12?: boolean): string {
   if (!d) return "—";
-  const utc = !d.endsWith("Z") ? d.replace(" ", "T") + "Z" : d;
-  return formatDateTime(utc, hour12 !== undefined ? { hour12 } : undefined);
+  return formatDateTime(d, hour12 !== undefined ? { hour12 } : undefined);
 }
 
 export function SummaryField({
@@ -336,6 +416,7 @@ export type StorageInventoryRow = {
   pct: number | null;
   health?: string;
   detail?: string;
+  mounted?: boolean;
 };
 
 export function HostStorageInventory({
@@ -358,6 +439,7 @@ export function HostStorageInventory({
         (mount.total_gb
           ? Math.round(((mount.used_gb || 0) / mount.total_gb) * 100)
           : null),
+      mounted: mount.mounted,
     })),
     ...(info?.zfs_pools ?? []).map((pool, index) => ({
       id: `zfs-${index}-${pool.name}`,
@@ -383,6 +465,14 @@ export function HostStorageInventory({
     row.total
       ? `${row.used?.toFixed(1) ?? "—"} / ${row.total.toFixed(1)} GB${row.pct !== null ? ` · ${row.pct} %` : ""}`
       : "—";
+  const stateLabel = (row: StorageInventoryRow) =>
+    row.kind === "ZFS-Pool"
+      ? row.health || "Status not reported"
+      : row.mounted === true
+        ? "Mounted"
+        : row.mounted === false
+          ? "Not mounted"
+          : "Mount status not reported";
   return (
     <>
       <div className="divide-y md:hidden">
@@ -398,14 +488,12 @@ export function HostStorageInventory({
                   {row.location ? ` · ${row.location}` : ""}
                 </div>
               </div>
-              {row.health && (
-                <StatusBadge
-                  tone={row.health === "ONLINE" ? "success" : "danger"}
-                  dot
-                >
-                  {row.health}
-                </StatusBadge>
-              )}
+              <StatusBadge
+                tone={row.health === "ONLINE" || row.mounted === true ? "success" : row.health || row.mounted === false ? "danger" : "neutral"}
+                dot
+              >
+                {stateLabel(row)}
+              </StatusBadge>
             </div>
             <div className="text-xs font-mono tabular-nums text-muted-foreground">
               {usageLabel(row)}
@@ -425,7 +513,7 @@ export function HostStorageInventory({
             <tr>
               <th>Storage</th>
               <th>Type</th>
-              <th>Health</th>
+              <th>State</th>
               <th>Usage</th>
               <th>Note</th>
             </tr>
@@ -443,16 +531,12 @@ export function HostStorageInventory({
                 </td>
                 <td className="text-xs text-muted-foreground">{row.kind}</td>
                 <td>
-                  {row.health ? (
-                    <StatusBadge
-                      tone={row.health === "ONLINE" ? "success" : "danger"}
-                      dot
-                    >
-                      {row.health}
-                    </StatusBadge>
-                  ) : (
-                    <span className="text-xs text-muted-foreground">—</span>
-                  )}
+                  <StatusBadge
+                    tone={row.health === "ONLINE" || row.mounted === true ? "success" : row.health || row.mounted === false ? "danger" : "neutral"}
+                    dot
+                  >
+                    {stateLabel(row)}
+                  </StatusBadge>
                 </td>
                 <td className="min-w-[15rem]">
                   <div className="mb-1 font-mono text-xs tabular-nums">

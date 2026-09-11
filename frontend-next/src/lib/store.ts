@@ -132,12 +132,15 @@ function readSidebar(): boolean {
   try { return localStorage.getItem(SIDEBAR_KEY) === '1'; } catch { return false; }
 }
 
+export function normalizeSidebarWidth(value: unknown): number {
+  if (value === null || value === undefined || (typeof value !== 'number' && typeof value !== 'string') || (typeof value === 'string' && !value.trim())) return 272;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.min(384, Math.max(224, Math.round(parsed))) : 272;
+}
+
 function readSidebarWidth(): number {
-  try {
-    const value = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
-    if (Number.isFinite(value)) return Math.min(384, Math.max(224, value));
-  } catch { /* ignore */ }
-  return 272;
+  try { return normalizeSidebarWidth(localStorage.getItem(SIDEBAR_WIDTH_KEY)); }
+  catch { return 272; }
 }
 
 function readDensity(): UiDensity {
@@ -196,7 +199,7 @@ export const useUi = create<UiState>((set) => ({
     }),
   sidebarWidth: readSidebarWidth(),
   setSidebarWidth: (width) => set(() => {
-    const next = Math.min(384, Math.max(224, Math.round(width)));
+    const next = normalizeSidebarWidth(width);
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* ignore */ }
     return { sidebarWidth: next };
   }),

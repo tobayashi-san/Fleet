@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { validateVmForm, VM_STEPS } from './vm-form-validation';
+import { VmIpamSelection } from './VmIpamSelection';
+import { useEffect, useMemo, useState, useRef, useId, Children, createContext, useContext, cloneElement, isValidElement, type ReactElement, type ReactNode } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowDown, ArrowUp, Plus, RefreshCw, Server, X } from "lucide-react";
 import { api, apiFetch } from "@/lib/api";
@@ -15,6 +17,8 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { QueryErrorState } from "@/components/ui/query-error-state";
+
+const FieldErrors = createContext<Record<string, string>>({});
 
 interface CatalogItem {
   name?: string;
@@ -107,7 +111,7 @@ const initialForm: VmForm = {
   ipv4_prefix: "24",
   ipv4_gateway: "",
   dns_servers: "",
-  username: "ubuntu",
+  username: "",
   ssh_public_key_variable: "ssh_public_key",
   started: true,
 };
@@ -164,15 +168,7 @@ function formFromVm(input?: Record<string, unknown> | null) {
   } satisfies VmForm;
 }
 
-export function VmFormDialog({
-  workspaceId,
-  vmId,
-  environmentId,
-  connectionId,
-  open,
-  onOpenChange,
-  initialVm,
-}: {
+interface VmFormDialogProps {
   workspaceId?: string;
   vmId?: string;
   environmentId?: string;
@@ -180,12 +176,27 @@ export function VmFormDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
   initialVm?: Record<string, unknown> | null;
-}) {
+}
+const workflows = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+function baselineFor(vm?: Record<string, unknown> | null) {
+  return JSON.stringify([formFromVm(vm), workflows(vm?.post_deploy_playbooks), workflows(vm?.pre_deploy_playbooks), String(vm?.pre_deploy_target_server_id || '')]);
+}
+export function VmFormDialog(props: VmFormDialogProps) {
+  if (!props.open) return null;
+  return <VmFormContent key={JSON.stringify([props.environmentId, props.connectionId, props.workspaceId, props.vmId, props.initialVm?.id])} {...props} />;
+}
+function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, onOpenChange, initialVm}: VmFormDialogProps) {
+  const active = useRef(true);
+  useEffect(() => {active.current = true; return () => {active.current = false;};}, []);
+  const [baseline] = useState(() => baselineFor(initialVm));
+  const changedOnServer = baselineFor(initialVm) !== baseline;
   const queryClient = useQueryClient();
-  const [form, setForm] = useState<VmForm>(initialForm);
-  const [postDeploy, setPostDeploy] = useState<string[]>([]);
-  const [preDeploy, setPreDeploy] = useState<string[]>([]);
-  const [preDeployTarget, setPreDeployTarget] = useState("");
+  const [step, setStep] = useState(0);
+  const [showErrors, setShowErrors] = useState(false);
+  const [form, setForm] = useState<VmForm>(() => formFromVm(initialVm));
+  const [postDeploy, setPostDeploy] = useState<string[]>(() => workflows(initialVm?.post_deploy_playbooks));
+  const [preDeploy, setPreDeploy] = useState<string[]>(() => workflows(initialVm?.pre_deploy_playbooks));
+  const [preDeployTarget, setPreDeployTarget] = useState(() => String(initialVm?.pre_deploy_target_server_id || ""));
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [selectedZone, setSelectedZone] = useState("");
@@ -196,10 +207,11 @@ export function VmFormDialog({
       ? `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/proxmox-catalog`
       : `/opentofu/proxmox-connections/${encodeURIComponent(connectionId || "")}/vm-catalog`;
   const catalogQuery = useQuery({
-    queryKey: ["opentofu", isolated ? "vm" : "workspace", vmId || workspaceId || connectionId, "catalog", form.node_name],
+    queryKey: ["opentofu", isolated ? "vm" : "workspace", vmId || workspaceId || connectionId, "catalog", environmentId, form.node_name],
     queryFn: () =>
       apiFetch<Catalog>(
         `${catalogUrl}${form.node_name ? `?node=${encodeURIComponent(form.node_name)}` : ""}`,
+        { environmentId },
       ),
     enabled: open && Boolean(vmId || workspaceId || connectionId),
     staleTime: 0,
@@ -212,13 +224,14 @@ export function VmFormDialog({
         isolated
           ? `/opentofu/vm-templates?environment_id=${encodeURIComponent(environmentId || "")}`
           : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vm-templates`,
+        { environmentId },
       ),
     enabled: open && Boolean(isolated ? environmentId : workspaceId),
     staleTime: 30_000,
   });
   const playbooksQuery = useQuery({
-    queryKey: ["playbooks"],
-    queryFn: () => api.getPlaybooks() as Promise<Playbook[]>,
+    queryKey: ["playbooks", environmentId],
+    queryFn: () => apiFetch<Playbook[]>("/playbooks", { environmentId }),
     enabled: open,
     staleTime: 60_000,
   });
@@ -239,27 +252,6 @@ export function VmFormDialog({
     [playbooksQuery.data],
   );
   const hosts = useMemo(() => Array.isArray(hostsQuery.data) ? hostsQuery.data.filter(host => String(host.environment_id || "default") === environmentId) : [], [environmentId, hostsQuery.data]);
-
-  useEffect(() => {
-    if (!open) return;
-    setForm(formFromVm(initialVm));
-    setPostDeploy(
-      Array.isArray(initialVm?.post_deploy_playbooks)
-        ? initialVm!.post_deploy_playbooks.filter(
-            (item): item is string => typeof item === "string",
-          )
-        : [],
-    );
-    setPreDeploy(
-      Array.isArray(initialVm?.pre_deploy_playbooks)
-        ? initialVm!.pre_deploy_playbooks.filter((item): item is string => typeof item === "string")
-        : [],
-    );
-    setPreDeployTarget(String(initialVm?.pre_deploy_target_server_id || ""));
-    setTemplateId("");
-    setTemplateName("");
-    setSelectedZone("");
-  }, [initialVm, open]);
 
   useEffect(() => {
     const catalog = catalogQuery.data;
@@ -316,10 +308,13 @@ export function VmFormDialog({
           : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vms${initialVm?.id ? `/${encodeURIComponent(String(initialVm.id))}` : ""}`,
         {
           method: vmId || initialVm?.id ? "PUT" : "POST",
+          environmentId,
           body: { ...payload(), environment_id: environmentId, connection_id: connectionId, template_id: templateId || undefined },
         },
       ),
     onSuccess: () => {
+      void queryClient.invalidateQueries({queryKey: ["opentofu"]});
+      if (!active.current) return;
       showToast(
         vmId || initialVm?.id
           ? "VM configuration updated. Review a plan before applying it."
@@ -341,10 +336,13 @@ export function VmFormDialog({
           : `/opentofu/workspaces/${encodeURIComponent(workspaceId || "")}/proxmox-vm-templates`,
         {
           method: "POST",
+          environmentId,
           body: { name: templateName.trim(), config: payload(), environment_id: environmentId, connection_id: connectionId },
         },
       ),
     onSuccess: () => {
+      void queryClient.invalidateQueries({queryKey: ["opentofu"]});
+      if (!active.current) return;
       showToast("VM template saved.", "success");
       setTemplateName("");
       void queryClient.invalidateQueries({
@@ -425,28 +423,17 @@ export function VmFormDialog({
     nodeNames.includes(form.node_name) || catalog?.node === form.node_name
   );
   const validVmId = Number.isInteger(Number(form.vm_id)) && Number(form.vm_id) >= 100;
-  const requiredValuesValid = Boolean(
-    form.name.trim() && form.clone_vm_id.trim() && form.disk_datastore.trim() &&
-    form.bridge.trim() && Number(form.disk_size_gb) > 0 &&
-    Number(form.cpu_cores) > 0 && Number(form.memory_mb) > 0 &&
-    (form.ipv4_mode === "dhcp" || (
-      form.ipv4_address.trim() && form.ipv4_prefix.trim() && form.ipv4_gateway.trim()
-    )) &&
-    (preDeploy.length === 0 || preDeployTarget)
-  );
-  const formValid = catalogQuery.isSuccess && !catalogQuery.isFetching &&
-    validNode && validVmId && requiredValuesValid;
-  const validationMessage = catalogQuery.isPending || catalogQuery.isFetching
-    ? "Loading and validating Proxmox node and VM ID …"
-    : catalogQuery.isError
-      ? "Proxmox inventory must be available before this VM definition can be saved."
-      : !validNode
-        ? "Select a valid Proxmox node."
-        : !validVmId
-          ? "VM ID must be an integer of 100 or greater."
-          : !requiredValuesValid
-            ? "Complete all required compute, storage, network and workflow target fields."
-            : "";
+  const validation = validateVmForm({ ...form }, preDeploy, preDeployTarget);
+  if (!validNode) validation.errors['Proxmox node'] = 'Select a node from the current platform inventory.';
+  const requiredValuesValid = Object.keys(validation.errors).length === 0;
+  const formValid = !changedOnServer && catalogQuery.isSuccess && !catalogQuery.isFetching && validNode && validVmId && requiredValuesValid;
+  const nextStep = () => {
+    setShowErrors(true);
+    if (step === 0 && (!validNode || !catalogQuery.isSuccess || catalogQuery.isFetching)) return;
+    if (validation.steps[step]?.length) return;
+    setStep(current => Math.min(current + 1, 4));
+    setShowErrors(false);
+  };
   const selectBridge = (value: string) => {
     const item = bridgeItems.find((bridge) => bridge.name === value);
     setForm((current) => ({
@@ -459,25 +446,32 @@ export function VmFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-6xl overflow-y-auto">
+      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
             {initialVm?.id ? "Edit Proxmox VM" : "Add Proxmox VM"}
           </DialogTitle>
           <DialogDescription>
-            Shipyard manages this VM in its own isolated OpenTofu state;
-            sensitive Proxmox values remain on the selected platform.
+            Configure a VM in five steps. Saving creates a definition; review the deployment plan before applying it.
           </DialogDescription>
         </DialogHeader>
-        <form
-          className="grid gap-5 lg:grid-cols-2 lg:items-start"
+        {changedOnServer && <p role="alert" className="rounded-md border border-destructive p-3 text-sm">The saved VM configuration changed while this form was open. Your draft is preserved. Close and reopen the form to review the current configuration before saving.</p>}
+        <nav aria-label="VM setup steps" className="flex flex-wrap gap-2">
+          {VM_STEPS.map((label, index) => <Button key={label} type="button" size="sm" variant={step === index ? 'default' : 'outline'} aria-current={step === index ? 'step' : undefined} onClick={() => { setStep(index); setShowErrors(false); }}>{index + 1}. {label}</Button>)}
+        </nav>
+        <FieldErrors.Provider value={showErrors ? validation.errors : {}}>
+        <form noValidate
+          className="space-y-5"
           onSubmit={(event) => {
             event.preventDefault();
-            if (formValid) saveMutation.mutate();
+            if (step < 4) { nextStep(); return; }
+            setShowErrors(true);
+            if (formValid && !saveMutation.isPending) saveMutation.mutate();
           }}
         >
           <div className="min-w-0 space-y-5">
+          <fieldset hidden={step !== 0} disabled={step !== 0} className="space-y-5">
           <section className="rounded-lg border bg-muted/20 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">
               <div>
@@ -585,21 +579,13 @@ export function VmFormDialog({
                   }))}
                 />
               </Field>
-              <Field label="Clone attempts">
-                <Input
-                  value={form.clone_retries}
-                  onChange={(event) =>
-                    update("clone_retries", event.target.value)
-                  }
-                  type="number"
-                  min="0"
-                  max="10"
-                />
-              </Field>
+
             </div>
           </section>
 
-          <section className="space-y-3 border-t pt-5">
+          </fieldset>
+          <fieldset hidden={step !== 1} disabled={step !== 1}>
+          <section className="space-y-3">
             <h3 className="text-sm font-semibold">Compute & Storage</h3>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Datastore">
@@ -612,7 +598,7 @@ export function VmFormDialog({
                   }))}
                 />
               </Field>
-              <Field label="Disk size (GB)">
+              <Field label="Disk size (GiB)">
                 <Input
                   required
                   value={form.disk_size_gb}
@@ -632,7 +618,7 @@ export function VmFormDialog({
                   min="1"
                 />
               </Field>
-              <Field label="Memory (MB)">
+              <Field label="Memory (MiB)" hint={`${(Number(form.memory_mb) / 1024).toFixed(2)} GiB`}>
                 <Input
                   required
                   value={form.memory_mb}
@@ -642,11 +628,22 @@ export function VmFormDialog({
                 />
               </Field>
             </div>
-            <details className="border-t pt-3">
+            <details open={showErrors && validation.steps[1].length > 0 ? true : undefined} className="border-t pt-3">
               <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
                 Advanced compute options
               </summary>
               <div className="mt-3 grid gap-4 sm:grid-cols-2">
+              <Field label="Clone attempts">
+                <Input
+                  value={form.clone_retries}
+                  onChange={(event) =>
+                    update("clone_retries", event.target.value)
+                  }
+                  type="number"
+                  min="0"
+                  max="10"
+                />
+              </Field>
                 <Field label="Disk interface">
                   <Input
                     required
@@ -666,10 +663,11 @@ export function VmFormDialog({
               </div>
             </details>
           </section>
-
+          </fieldset>
           </div>
           <div className="min-w-0 space-y-5">
-
+          <fieldset hidden={step !== 2} disabled={step !== 2}>
+            {step === 2 && environmentId && <VmIpamSelection key={environmentId} environmentId={environmentId} onUse={selection => setForm(current => ({...current, ipv4_mode: 'static', ipv4_address: selection.address, ipv4_prefix: selection.prefix, ipv4_gateway: selection.gateway}))} />}
           <section className="space-y-3 border-t pt-5">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold">Network & VM access</h3>
@@ -801,7 +799,7 @@ export function VmFormDialog({
                   inputMode="decimal"
                 />
               </Field>
-              <Field label="VM user">
+              <Field label="VM user" hint="Choose the account for this guest OS, for example debian or ubuntu. Saved VM templates can supply this value.">
                 <Input
                   required
                   value={form.username}
@@ -834,6 +832,9 @@ export function VmFormDialog({
             </details>
           </section>
 
+          </fieldset>
+          <fieldset hidden={step !== 3} disabled={step !== 3} className="space-y-5">
+          <p className="text-sm text-muted-foreground">Workflows are optional. Review their order and execution host before continuing.</p>
           <details className="group border-t pt-5">
             <summary className="cursor-pointer list-none select-none">
               <div className="flex items-center justify-between gap-3"><div><h3 className="text-sm font-semibold">Pre-deploy workflows</h3><p className="mt-0.5 text-xs text-muted-foreground">Run Ansible on an existing host before OpenTofu starts. A failed step stops the deployment.</p></div><span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{preDeploy.length} selected</span></div>
@@ -1011,16 +1012,31 @@ export function VmFormDialog({
               </label>
             </div>
           </details>
+          </fieldset>
           </div>
+          {step === 4 && <section aria-label="Review VM definition" className="space-y-4">
+            <h3 className="font-semibold">Review VM definition</h3>
+            {[
+              ['Identity', `${form.name || 'Name required'} · VM ${form.vm_id} · ${form.node_name} · template ${form.clone_vm_id}`],
+              ['Resources', `${form.cpu_cores} cores · ${form.memory_mb} MiB RAM · ${form.disk_size_gb} GiB disk on ${form.disk_datastore}`],
+              ['Network', `${form.bridge}${form.vlan_id ? ` · VLAN ${form.vlan_id}` : ''} · ${form.ipv4_mode === 'dhcp' ? 'DHCP' : `${form.ipv4_address}/${form.ipv4_prefix}`} · gateway ${form.ipv4_gateway || 'inherited / none'}`],
+              ['Access', `Login: ${form.username || 'required'} · DNS: ${form.dns_servers || 'inherited'} · SSH key variable: ${form.ssh_public_key_variable || 'none'}`],
+              ['Before deployment', `${preDeploy.join(' → ') || 'No workflows'}${preDeploy.length ? ` on ${hosts.find(host => host.id === preDeployTarget)?.name || preDeployTarget}` : ''}`],
+              ['After deployment', postDeploy.join(' → ') || 'No workflows'],
+              ['Options', `Guest agent configured: ${form.agent_enabled ? 'yes' : 'no'} · Start after deployment: ${form.started ? 'yes' : 'no'} · Clone attempts: ${form.clone_retries}`],
+            ].map(([label, value]) => <div key={label} className="rounded-md border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm break-words">{value}</p></div>)}
+            {!requiredValuesValid && <div role="alert" className="rounded-md border border-destructive p-3 text-sm"><p className="font-medium">Resolve these fields before saving:</p><ul>{Object.entries(validation.errors).map(([label, error]) => <li key={label}>{label}: {error}</li>)}</ul></div>}
+          </section>}
           {catalogQuery.isError && (
             <p className="text-sm text-destructive lg:col-span-2">
               Proxmox inventory could not be loaded. Retry the inventory load
               before saving this definition.
             </p>
           )}
-          {!formValid && !catalogQuery.isError && (
-            <p className="text-sm text-amber-700 dark:text-amber-300 lg:col-span-2">{validationMessage}</p>
-          )}
+          {catalogQuery.isFetching && <p role="status" className="text-sm text-muted-foreground">Refreshing platform inventory…</p>}
+          <aside className="sticky bottom-0 rounded-md border bg-background p-3 text-xs shadow-sm">
+            {form.name || 'New VM'} · {form.cpu_cores} cores · {(Number(form.memory_mb) / 1024).toFixed(2)} GiB RAM · {form.disk_size_gb} GiB disk · {form.node_name || 'Select node'}
+          </aside>
           <DialogFooter className="lg:col-span-2">
             <Button
               type="button"
@@ -1029,7 +1045,8 @@ export function VmFormDialog({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={saveMutation.isPending || !formValid}>
+            {step > 0 && <Button type="button" variant="outline" onClick={() => { setStep(step - 1); setShowErrors(false); }}>Back</Button>}
+            {step < 4 ? <Button type="submit">Continue</Button> : <Button type="submit" disabled={saveMutation.isPending || !formValid}>
               {saveMutation.isPending ? (
                 <RefreshCw className="animate-spin" />
               ) : (
@@ -1038,9 +1055,10 @@ export function VmFormDialog({
               {initialVm?.id
                 ? "Update VM definition"
                 : "Save VM definition"}
-            </Button>
+            </Button>}
           </DialogFooter>
         </form>
+        </FieldErrors.Provider>
       </DialogContent>
     </Dialog>
   );
@@ -1055,16 +1073,21 @@ function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  const id = useId();
+  const error = useContext(FieldErrors)[label];
   return (
     <div className="min-w-0 space-y-1.5">
-      <Label>{label}</Label>
-      {children}
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
+      <Label htmlFor={id}>{label}</Label>
+      {Children.map(children, child => isValidElement(child) && (child.type === Input || child.type === Select || child.type === 'select' || child.type === 'input') ? cloneElement(child as ReactElement<{ id?: string; 'aria-invalid'?: boolean; 'aria-describedby'?: string }>, { id, 'aria-invalid': Boolean(error), 'aria-describedby': `${id}-hint` }) : child)}
+      <div id={`${id}-hint`}>{hint && <p className="text-xs text-muted-foreground">{hint}</p>}{error && <p role="alert" className="text-xs text-destructive">{error}</p>}</div>
     </div>
   );
 }
 
 function Select({
+  id,
+  'aria-invalid': ariaInvalid,
+  'aria-describedby': describedBy,
   value,
   onChange,
   options,
@@ -1072,6 +1095,9 @@ function Select({
   value: string;
   onChange: (value: string) => void;
   options: Array<{ value: string; label: string; disabled?: boolean }>;
+  id?: string;
+  'aria-invalid'?: boolean;
+  'aria-describedby'?: string;
 }) {
   const allOptions =
     value && !options.some((option) => option.value === value)
@@ -1079,6 +1105,7 @@ function Select({
       : options;
   return (
     <select
+      id={id} aria-invalid={ariaInvalid} aria-describedby={describedBy}
       required
       value={value}
       onChange={(event) => onChange(event.target.value)}

@@ -95,21 +95,22 @@ function createServerActionsRouter({ broadcast } = {}) {
         { environmentId: server.environment_id || 'default' }
       );
 
-      const status = result.success ? 'success' : 'failed';
+      const status = result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed';
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
+      if (status === 'failed' && db.settings.get('notify_update_failed') !== '0') notify(`Update failed: ${server.name}`, 'The update failed. Review the host execution history for details.', false, { environmentId: server.environment_id || 'default', serverIds: [server.id] }).catch(() => {});
       db.auditLog.write('server.update', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
       db.updatesCache.delete(serverId);
       resourceAlerts.evaluateServer(serverId);
       emit({ type: 'cache_updated', scope: 'updates' });
       // Refresh system info so reboot_required reflects post-update state.
       refreshServerInfo(server);
-      emit({ type: 'update_complete', serverId, historyId, success: result.success });
+      emit({ type: 'update_complete', serverId, historyId, success: result.success, status: result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed' });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       db.auditLog.write('server.update', `server=${server.name} error=${error.message}`, req.ip, false, req.user?.username);
       resourceAlerts.evaluateServer(serverId);
       emit({ type: 'update_error', serverId, historyId, error: error.message });
-      if (db.settings.get('notify_update_failed') !== '0') notify(`Update failed: ${server.name}`, error.message, false).catch(() => {});
+      if (db.settings.get('notify_update_failed') !== '0') notify(`Update failed: ${server.name}`, error.message, false, { environmentId: server.environment_id || 'default', serverIds: [server.id] }).catch(() => {});
     }
   });
 
@@ -121,14 +122,22 @@ function createServerActionsRouter({ broadcast } = {}) {
   }, async (req, res) => {
     const environmentId = req.environmentId || 'default';
     const allServers = db.servers.getAll(environmentId);
-    const scopedServers = req.permissions.full || req.permissions.servers === 'all'
+    let scopedServers = req.permissions.full || req.permissions.servers === 'all'
       ? allServers
       : filterServers(allServers, req.permissions);
+    if (Object.prototype.hasOwnProperty.call(req.body || {}, 'server_ids')) {
+      const ids = req.body.server_ids;
+      if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || ids.some(id => typeof id !== 'string' || !id.trim())) {
+        return res.status(400).json({ error: 'Select between 1 and 500 valid host IDs.' });
+      }
+      const requested = new Set(ids);
+      const permitted = scopedServers.filter(server => requested.has(server.id));
+      if (permitted.length !== requested.size) return res.status(403).json({ error: 'At least one selected host is unavailable or outside your permissions.' });
+      scopedServers = permitted;
+    }
     if (scopedServers.length === 0) return res.status(403).json({ error: 'No permitted servers to update' });
 
-    const targets = req.permissions.full || req.permissions.servers === 'all'
-      ? 'all'
-      : scopedServers.map(s => s.name).join(',');
+    const targets = scopedServers.map(s => s.name).join(',');
 
     const resolvedTargets = scopedServers.map(server => server.name).join(',');
     const historyId = db.scheduleHistory.create(null, 'Bulk system update', 'update.yml', resolvedTargets, {
@@ -151,10 +160,11 @@ function createServerActionsRouter({ broadcast } = {}) {
         { environmentId }
       );
 
-      const status = result.success ? 'success' : 'failed';
+      const status = result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed';
       const output = outputLines.join('') || result.stdout + result.stderr;
       db.scheduleHistory.complete(historyId, status, output);
-      db.auditLog.write('server.update_all', `targets=${targets} status=${status}`, req.ip, result.success, req.user?.username);
+      if (status === 'failed' && db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', `Targets: ${targets}. Review the execution history for details.`, false, { environmentId, serverIds: scopedServers.map(server => server.id) }).catch(() => {});
+      db.auditLog.write('server.update_all', `targets=${targets} status=${status}`, req.ip, result.success, req.user?.username, environmentId);
       // Invalidate updates cache for all servers so the dashboard reflects the new state.
       if (result.success) {
         for (const s of scopedServers) {
@@ -166,13 +176,13 @@ function createServerActionsRouter({ broadcast } = {}) {
         // the post-update state. Background, fire-and-forget.
         for (const s of scopedServers) refreshServerInfo(s);
       }
-      emit({ type: 'bulk_update_complete', historyId, runId: historyId, environmentId, success: result.success });
+      emit({ type: 'bulk_update_complete', historyId, runId: historyId, environmentId, success: result.success, status: result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed' });
     } catch (error) {
       db.scheduleHistory.complete(historyId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
-      db.auditLog.write('server.update_all', `targets=${targets} error=${error.message}`, req.ip, false, req.user?.username);
+      db.auditLog.write('server.update_all', `targets=${targets} error=${error.message}`, req.ip, false, req.user?.username, environmentId);
       scopedServers.forEach(s => resourceAlerts.evaluateServer(s.id));
       emit({ type: 'bulk_update_error', historyId, runId: historyId, environmentId, error: error.message });
-      if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false).catch(() => {});
+      if (db.settings.get('notify_update_failed') !== '0') notify('Bulk update failed', error.message, false, { environmentId, serverIds: scopedServers.map(server => server.id) }).catch(() => {});
     }
   });
 
@@ -201,10 +211,10 @@ function createServerActionsRouter({ broadcast } = {}) {
         { become: true, environmentId: server.environment_id || 'default' }
       );
 
-      const status = result.success ? 'success' : 'failed';
+      const status = result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed';
       db.updateHistory.updateStatus(historyId, status, result.stdout + result.stderr);
       db.auditLog.write('server.reboot', `server=${server.name} status=${status}`, req.ip, result.success, req.user?.username);
-      emit({ type: 'update_complete', serverId, historyId, success: result.success });
+      emit({ type: 'update_complete', serverId, historyId, success: result.success, status: result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed' });
 
       if (result.success) {
         const refreshTimer = setTimeout(() => {
@@ -248,8 +258,8 @@ function createServerActionsRouter({ broadcast } = {}) {
         { become: true, environmentId: server.environment_id || 'default' }
       );
 
-      db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
-      emit({ type: 'update_complete', serverId, historyId, success: result.success });
+      db.updateHistory.updateStatus(historyId, result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed', result.stdout + result.stderr);
+      emit({ type: 'update_complete', serverId, historyId, success: result.success, status: result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed' });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       emit({ type: 'update_error', serverId, historyId, error: error.message });
@@ -289,11 +299,18 @@ function createServerActionsRouter({ broadcast } = {}) {
       const success = code === 0;
       db.updateHistory.updateStatus(historyId, success ? 'success' : 'failed', fullOutput);
       db.auditLog.write('custom_update.run', `server=${server.name} task=${task.name}`, req.ip, success, req.user?.username);
-      emit({ type: 'update_complete', serverId: server.id, historyId, success });
+      emit({ type: 'update_complete', serverId: server.id, historyId, success, status: success ? 'success' : 'failed' });
     } catch (error) {
       db.updateHistory.updateStatus(historyId, 'failed', error.message);
       emit({ type: 'update_error', serverId: server.id, historyId, error: error.message });
     }
+  });
+
+  router.post('/:id/docker/compose/validate', composeLimiter, guardServerAccess, (req, res) => {
+    if (!can(getPermissions(req.user), 'canManageDockerCompose')) return res.status(403).json({ error: 'Permission denied' });
+    const error = require('../utils/compose-validation').validateComposeContent(req.body.content);
+    if (error) return res.status(400).json({ error });
+    res.json({ valid: true, scope: 'yaml-and-basic-structure' });
   });
 
   router.post('/:id/docker/compose/write', composeLimiter, guardServerAccess, (req, res, next) => {
@@ -303,8 +320,11 @@ function createServerActionsRouter({ broadcast } = {}) {
     const { path: remotePath, content } = req.body;
     const server = req.server;
     if (!remotePath || !content) return res.status(400).json({ error: 'path and content required' });
-    if (!/^[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+    if (typeof remotePath !== 'string' || !/^\/[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Use an absolute directory path containing only letters, digits, slashes, dots, underscores or hyphens.' });
     if (isBlockedRemotePath(remotePath)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
+
+    const contentError = require('../utils/compose-validation').validateComposeContent(content);
+    if (contentError) return res.status(400).json({ error: contentError });
 
     let tempCompose;
     try {
@@ -354,7 +374,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     const requiredCap = action === 'pull' ? 'canPullDocker' : 'canManageDockerCompose';
     if (!can(perms, requiredCap)) return res.status(403).json({ error: 'Permission denied' });
     const server = req.server;
-    if (!/^[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+    if (typeof remotePath !== 'string' || !/^\/[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Use an absolute directory path containing only letters, digits, slashes, dots, underscores or hyphens.' });
     if (isBlockedRemotePath(remotePath)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
     const historyId = db.updateHistory.create(serverId, `compose_${action}_${remotePath.split('/').pop()}`, req.user?.username || null);
@@ -380,8 +400,8 @@ function createServerActionsRouter({ broadcast } = {}) {
         { become: true, environmentId: server.environment_id || 'default' }
       );
 
-      db.updateHistory.updateStatus(historyId, result.success ? 'success' : 'failed', result.stdout + result.stderr);
-      emit({ type: 'update_complete', serverId, historyId, success: result.success });
+      db.updateHistory.updateStatus(historyId, result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed', result.stdout + result.stderr);
+      emit({ type: 'update_complete', serverId, historyId, success: result.success, status: result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed' });
 
       // After a successful compose action the container inventory has changed
       // (new containers, stopped ones removed, image tags updated). Trigger a
@@ -406,7 +426,7 @@ function createServerActionsRouter({ broadcast } = {}) {
     const { id: serverId } = req.params;
     const { path: remotePath } = req.query;
     if (!remotePath || typeof remotePath !== 'string') return res.status(400).json({ error: 'path query param required' });
-    if (!/^[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Invalid path format' });
+    if (typeof remotePath !== 'string' || !/^\/[a-zA-Z0-9/_.-]+$/.test(remotePath) || remotePath.includes('..')) return res.status(400).json({ error: 'Use an absolute directory path containing only letters, digits, slashes, dots, underscores or hyphens.' });
     if (isBlockedRemotePath(remotePath)) return res.status(400).json({ error: 'Path not allowed: system directories are protected' });
 
     try {

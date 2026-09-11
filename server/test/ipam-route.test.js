@@ -819,3 +819,216 @@ test('restricted operators cannot use IPAM routes to cross an environment bounda
   });
   assert.equal(blockedCreate.status, 404);
 });
+
+test('review reservation flow uses next free address, persists Reserved and rejects out-of-prefix or competing writes', async () => {
+  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const created = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({
+    environment_id: environmentId, name: 'Reservation acceptance', cidr: '203.0.113.0/29', gateway: '203.0.113.1',
+  });
+  assert.equal(created.status, 201);
+  const subnetId = created.body.id;
+  const detail = await scoped(request(environmentAwareApp).get(`/api/ipam/subnets/${subnetId}`));
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.next_free_address, '203.0.113.2');
+  const address = detail.body.next_free_address;
+  const validate = await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${subnetId}/reservations/validate`)).send({kind:'address',address});
+  assert.equal(validate.status, 200);
+  assert.equal(validate.body.valid, true);
+  const reserved = await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${subnetId}/reservations`)).send({address,status:'reserved',hostname:'review-reserved'});
+  assert.equal(reserved.status, 201);
+  const stored = db.db.prepare('SELECT * FROM ipam_reservations WHERE subnet_id=? AND address=?').get(subnetId,address);
+  assert.equal(stored.status, 'reserved');
+  assert.equal(stored.source_type, 'manual');
+  const allocations = await scoped(request(environmentAwareApp).get(`/api/ipam/subnets/${subnetId}/allocations`));
+  assert.equal(allocations.body.find(row=>row.address===address).status, 'reserved');
+  const after = await scoped(request(environmentAwareApp).get(`/api/ipam/subnets/${subnetId}`));
+  assert.equal(after.body.next_free_address, '203.0.113.3');
+  const duplicate = await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${subnetId}/reservations`)).send({address,status:'reserved'});
+  assert.equal(duplicate.status, 409);
+  for (const invalid of ['198.51.100.2','203.0.113.0','203.0.113.7']) {
+    const response = await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${subnetId}/reservations`)).send({address:invalid,status:'reserved'});
+    assert.equal(response.status, 400);
+  }
+  assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_reservations WHERE subnet_id=?').get(subnetId).n,1);
+});
+
+test('reservation creation rolls back on audit failure and can be retried', async () => {
+  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const created = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Atomic reservation',cidr:'198.51.100.0/29'});
+  assert.equal(created.status,201);
+  const subnetId=created.body.id;
+  db.db.exec("CREATE TRIGGER reject_reservation_audit BEFORE INSERT ON audit_log WHEN NEW.action='ipam.reservation_create' BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END");
+  const reserve=()=>scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${subnetId}/reservations`)).send({address:'198.51.100.1',status:'reserved'});
+  try {
+    const failed=await reserve();
+    assert.equal(failed.status,409);
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_reservations WHERE subnet_id=?').get(subnetId).n,0);
+  } finally {db.db.exec('DROP TRIGGER reject_reservation_audit');}
+  assert.equal((await reserve()).status,201);
+  assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_reservations WHERE subnet_id=?').get(subnetId).n,1);
+});
+
+test('core IPAM mutations roll back data and audit together and succeed on retry', async t => {
+  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const prefix = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Atomic core mutations',cidr:'192.0.2.0/27'});
+  assert.equal(prefix.status,201);
+  const id=prefix.body.id;
+  const reservation=await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${id}/reservations`)).send({address:'192.0.2.2',status:'reserved',mac_address:'02:00:00:00:01:23'});
+  assert.equal(reservation.status,201);
+  assert.equal((await scoped(request(environmentAwareApp).post(`/api/ipam/subnets/${id}/reservations/range`)).send({start_address:'192.0.2.10',end_address:'192.0.2.12'})).status,201);
+  const range=db.db.prepare('SELECT id FROM ipam_ip_ranges WHERE subnet_id=?').get(id);
+  const cases=[
+    ['ipam.subnet_create','post','/subnets',{environment_id:environmentId,name:'Atomic new prefix',cidr:'192.0.2.64/27'},201,400],
+    ['ipam.subnet_update','put',`/subnets/${id}`,{name:'Updated prefix'},200,400],
+    ['ipam.subnet_status_update','patch',`/subnets/${id}/status`,{status:'reserved'},200,400],
+    ['ipam.reservation_update','put',`/reservations/${reservation.body.id}`,{address:'192.0.2.2',status:'active',mac_address:'02:00:00:00:01:23'},200,400],
+    ['ipam.device_name_update','patch',`/reservations/${reservation.body.id}/device-name`,{name:'Review device'},200,400],
+    ['ipam.reservation_range_create','post',`/subnets/${id}/reservations/range`,{start_address:'192.0.2.20',end_address:'192.0.2.21'},201,409],
+    ['ipam.reservation_delete','delete',`/reservations/${reservation.body.id}`,{},200,500],
+    ['ipam.reservation_range_delete','delete',`/ranges/${range.id}`,{},200,500],
+    ['ipam.subnet_delete','delete',`/subnets/${id}`,{},200,409],
+  ];
+  const snapshot=()=>Object.fromEntries(['ipam_subnets','ipam_reservations','ipam_ip_ranges','ipam_device_names','audit_log'].map(table=>[table,db.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+  for (const [action,method,url,body,success,failure] of cases) await t.test(action,async()=>{
+    const before=snapshot();
+    db.db.exec(`CREATE TRIGGER reject_core_ipam_audit BEFORE INSERT ON audit_log WHEN NEW.action='${action}' BEGIN SELECT RAISE(ABORT,'synthetic audit failure'); END`);
+    const send=()=>scoped(request(environmentAwareApp)[method](`/api/ipam${url}`)).send(body);
+    try {
+      assert.equal((await send()).status,failure);
+      assert.deepEqual(snapshot(),before);
+    } finally {db.db.exec('DROP TRIGGER reject_core_ipam_audit');}
+    assert.equal((await send()).status,success);
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM audit_log WHERE action=?').get(action).n,before.audit_log.filter(row=>row.action===action).length+1);
+  });
+});
+
+test('source configuration and imported inventory survive audit failures', async t => {
+  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const sourceBody={environment_id:environmentId,type:'pfsense',name:'Atomic source',endpoint:'https://controller.example.test',api_token:'synthetic-source-secret'};
+  const snapshot=()=>Object.fromEntries(['ipam_sync_sources','ipam_source_observations','ipam_reservations','ipam_sync_conflicts','audit_log'].map(table=>[table,db.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+  async function failureThenRetry(action,send,expectedFailure,expectedSuccess){
+    const before=snapshot();
+    db.db.exec(`CREATE TRIGGER reject_source_audit BEFORE INSERT ON audit_log WHEN NEW.action='${action}' BEGIN SELECT RAISE(ABORT,'synthetic source audit failure'); END`);
+    try{assert.equal((await send()).status,expectedFailure);assert.deepEqual(snapshot(),before);}
+    finally{db.db.exec('DROP TRIGGER reject_source_audit');}
+    const response=await send();assert.equal(response.status,expectedSuccess);
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM audit_log WHERE action=?').get(action).n,before.audit_log.filter(row=>row.action===action).length+1);
+    return response;
+  }
+  let sourceId;
+  await t.test('create',async()=>{
+    const result=await failureThenRetry('ipam.source_create',()=>scoped(request(environmentAwareApp).post('/api/ipam/sources')).send(sourceBody),400,201);
+    sourceId=result.body.id;assert.equal(result.body.api_token,undefined);
+  });
+  await t.test('update',async()=>{
+    const result=await failureThenRetry('ipam.source_update',()=>scoped(request(environmentAwareApp).put(`/api/ipam/sources/${sourceId}`)).send({name:'Updated atomic source',api_token:'synthetic-replacement-secret'}),400,200);
+    assert.equal(result.body.name,'Updated atomic source');assert.equal(result.body.api_token,undefined);
+  });
+  await t.test('delete reconciles observations and imported reservation atomically',async()=>{
+    const prefix=await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Source atomicity',cidr:'192.0.2.128/27'});
+    assert.equal(prefix.status,201);
+    const reservationId=db.uuidv4();const ref=`${sourceId}:lease`;
+    db.db.prepare('INSERT INTO ipam_reservations (id,subnet_id,address,source_type,source_ref) VALUES (?,?,?,?,?)').run(reservationId,prefix.body.id,'192.0.2.130','pfsense',ref);
+    db.db.prepare('INSERT INTO ipam_source_observations (id,environment_id,subnet_id,source_id,source_ref,reservation_id,address,last_seen_at) VALUES (?,?,?,?,?,?,?,?)').run(db.uuidv4(),environmentId,prefix.body.id,sourceId,ref,reservationId,'192.0.2.130','2026-09-11T00:00:00Z');
+    const result=await failureThenRetry('ipam.source_delete',()=>scoped(request(environmentAwareApp).delete(`/api/ipam/sources/${sourceId}`)),500,200);
+    assert.equal(result.body.reservations_removed,1);
+    assert.equal(db.db.prepare('SELECT id FROM ipam_reservations WHERE id=?').get(reservationId),undefined);
+    assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_source_observations WHERE source_id=?').get(sourceId).n,0);
+  });
+});
+
+test('source sync rolls back imports on success-audit failure and records failure atomically', async () => {
+  let records=[{ip_address:'192.0.2.194',hostname:'original',id:'original'}];
+  const controller=http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({data:records}));});
+  await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
+  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  try {
+    const prefix=await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Sync atomicity',cidr:'192.0.2.192/27'});
+    assert.equal(prefix.status,201);
+    const source=await scoped(request(environmentAwareApp).post('/api/ipam/sources')).send({environment_id:environmentId,type:'pfsense',name:'Sync atomicity',endpoint:`http://127.0.0.1:${controller.address().port}`,api_token:'synthetic-local-controller-token'});
+    assert.equal(source.status,201);
+    const sourceId=source.body.id;
+    const sync=()=>scoped(request(environmentAwareApp).post(`/api/ipam/sources/${sourceId}/sync`));
+    assert.equal((await sync()).status,200);
+    records=[{ip_address:'192.0.2.195',hostname:'replacement',id:'replacement'}];
+    const inventory=()=>Object.fromEntries(['ipam_reservations','ipam_source_observations','ipam_sync_conflicts'].map(table=>[table,db.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
+    const original=inventory();
+    for(const allAudits of [false,true]) {
+      const priorSource=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(sourceId);
+      const auditCount=db.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='ipam.source_sync'").get().n;
+      db.db.exec(`CREATE TRIGGER reject_sync_audit BEFORE INSERT ON audit_log WHEN NEW.action='ipam.source_sync'${allAudits?'':' AND NEW.success=1'} BEGIN SELECT RAISE(ABORT,'synthetic sync audit failure'); END`);
+      try {
+        assert.equal((await sync()).status,502);
+        assert.deepEqual(inventory(),original);
+        const afterSource=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(sourceId);
+        assert.equal(afterSource.last_synced_at,priorSource.last_synced_at);
+        if(allAudits)assert.deepEqual(afterSource,priorSource);
+        else assert.equal(afterSource.last_status,'failed');
+        assert.equal(db.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='ipam.source_sync'").get().n,auditCount+(allAudits?0:1));
+      } finally {db.db.exec('DROP TRIGGER reject_sync_audit');}
+    }
+    const retry=await sync();assert.equal(retry.status,200);assert.equal(retry.body.created,1);assert.equal(retry.body.removed,1);
+    assert.deepEqual(db.db.prepare('SELECT address FROM ipam_reservations WHERE subnet_id=?').all(prefix.body.id),[{address:'192.0.2.195'}]);
+  } finally {await new Promise(resolve=>controller.close(resolve));}
+});
+
+test('in-flight source results cannot overwrite changed, disabled or deleted configuration', async t => {
+  let received,respond;
+  const controller=http.createServer((_req,res)=>{respond=status=>{res.statusCode=status;res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{ip_address:'192.0.2.226',id:'late-lease'}]}));};received();});
+  await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
+  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  try {
+    const prefix=await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Deferred source response',cidr:'192.0.2.224/27'});
+    assert.equal(prefix.status,201);
+    for(const mode of ['changed','disabled','deleted','failed-response'])await t.test(mode,async()=>{
+      const source=await scoped(request(environmentAwareApp).post('/api/ipam/sources')).send({environment_id:environmentId,type:'pfsense',name:`Deferred ${mode}`,endpoint:`http://127.0.0.1:${controller.address().port}`,api_token:'synthetic-deferred-token'});
+      assert.equal(source.status,201);const id=source.body.id;
+      const started=new Promise(resolve=>{received=resolve;});
+      const pending=scoped(request(environmentAwareApp).post(`/api/ipam/sources/${id}/sync`)).then(value=>value);
+      await started;
+      let mutation;
+      if(mode==='deleted')mutation=await scoped(request(environmentAwareApp).delete(`/api/ipam/sources/${id}`));
+      else mutation=await scoped(request(environmentAwareApp).put(`/api/ipam/sources/${id}`)).send(mode==='disabled'?{enabled:false}:{name:'Changed while waiting',api_token:'new-synthetic-token'});
+      assert.equal(mutation.status,200);
+      const before=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id);
+      respond(mode==='failed-response'?503:200);
+      const result=await pending;assert.equal(result.status,409);assert.match(result.body.error,/source changed or was removed/);
+      assert.deepEqual(db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id),before);
+      assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_reservations WHERE subnet_id=?').get(prefix.body.id).n,0);
+      assert.equal(db.db.prepare('SELECT COUNT(*) n FROM ipam_source_observations WHERE source_id=?').get(id).n,0);
+    });
+  } finally {await new Promise(resolve=>controller.close(resolve));}
+});
+
+test('source connection test records outcomes atomically and discards outdated results', {timeout:15000}, async () => {
+  let hold=false,received,respond;
+  const controller=http.createServer((_req,res)=>{
+    const send=()=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[]}));};
+    if(hold){respond=send;received();}else send();
+  });
+  await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
+  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  try {
+    const source=await scoped(request(environmentAwareApp).post('/api/ipam/sources')).send({environment_id:environmentId,type:'pfsense',name:'Connection outcome',endpoint:`http://127.0.0.1:${controller.address().port}`,api_token:'synthetic-test-token'});
+    assert.equal(source.status,201);const id=source.body.id;
+    const run=()=>scoped(request(environmentAwareApp).post(`/api/ipam/sources/${id}/test`));
+    for(const allAudits of [false,true]){
+      const before=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id);
+      const auditCount=db.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='ipam.source_test'").get().n;
+      db.db.exec(`CREATE TRIGGER reject_connection_audit BEFORE INSERT ON audit_log WHEN NEW.action='ipam.source_test'${allAudits?'':' AND NEW.success=1'} BEGIN SELECT RAISE(ABORT,'synthetic connection audit failure'); END`);
+      try {
+        assert.equal((await run()).status,allAudits?500:502);
+        const after=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id);
+        if(allAudits)assert.deepEqual(after,before);else assert.equal(after.last_test_status,'failed');
+        assert.equal(db.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='ipam.source_test'").get().n,auditCount+(allAudits?0:1));
+      }finally{db.db.exec('DROP TRIGGER reject_connection_audit');}
+    }
+    assert.equal((await run()).status,200);
+    hold=true;
+    const started=new Promise(resolve=>{received=resolve;});const pending=run().then(result=>result);await started;
+    assert.equal((await scoped(request(environmentAwareApp).put(`/api/ipam/sources/${id}`)).send({enabled:false})).status,200);
+    const before=db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id);
+    respond();const result=await pending;assert.equal(result.status,409);assert.match(result.body.error,/connection test/);
+    assert.deepEqual(db.db.prepare('SELECT * FROM ipam_sync_sources WHERE id=?').get(id),before);
+  }finally{await new Promise(resolve=>controller.close(resolve));}
+});

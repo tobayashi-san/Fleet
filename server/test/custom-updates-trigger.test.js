@@ -111,3 +111,59 @@ test('GitHub custom update task compares the latest release to the version read 
   assert.equal(updated.last_version, '1.1.0');
   assert.equal(updated.has_update, 1);
 });
+
+test('trigger comparison preserves a leading v and ignores an inactive latest command', async () => {
+ const server=db.servers.create({name:'literal-trigger',hostname:'literal',ip_address:'192.0.2.91'});
+ const task=db.customUpdateTasks.create(server.id,{name:'Literal',type:'trigger',check_command:'check',trigger_output:'version available',latest_command:'must-not-run'});
+ const original=sshManager.execCommand;
+ const commands=[];
+ sshManager.execCommand=async(_server,command)=>{commands.push(command);return {code:0,stdout:'version available\n'}};
+ try { await scheduler.checkCustomTask(server,task); } finally { sshManager.execCommand=original; }
+ assert.deepEqual(commands,['check']);
+ assert.equal(db.customUpdateTasks.getById(task.id).has_update,1);
+});
+
+test('failed version checks retain prior values and successful-check timestamp', async () => {
+ const server=db.servers.create({name:'failed-check',hostname:'failed',ip_address:'192.0.2.92'});
+ const task=db.customUpdateTasks.create(server.id,{name:'Failure',type:'script',check_command:'installed',latest_command:'latest'});
+ db.customUpdateTasks.setVersionInfo(task.id,'1','2',true);
+ const before=db.customUpdateTasks.getById(task.id);
+ const original=sshManager.execCommand;
+ try {
+   for(const failure of [{code:1,stdout:'secret output'},{code:0,stdout:''}]) {
+     sshManager.execCommand=async(_server,command)=>command==='latest'?{code:0,stdout:'3'}:failure;
+     await assert.rejects(scheduler.checkCustomTask(server,before),/Installed-version check failed/);
+     const failed=db.customUpdateTasks.getById(task.id);
+     for(const field of ['current_version','last_version','has_update','last_checked_at']) assert.equal(failed[field],before[field]);
+     assert.ok(failed.last_attempted_at);
+     assert.match(failed.last_check_error,/Check failed/);
+     assert.equal(failed.last_check_error.includes('secret output'),false);
+   }
+   sshManager.execCommand=async()=>({code:0,stdout:'3'});
+   await scheduler.checkCustomTask(server,db.customUpdateTasks.getById(task.id));
+   assert.equal(db.customUpdateTasks.getById(task.id).last_check_error,null);
+ } finally { sshManager.execCommand=original; }
+});
+
+test('editing check rules clears old results and rejects late results from the previous rule', async () => {
+ const server=db.servers.create({name:'edited-check',hostname:'edited',ip_address:'192.0.2.93'});
+ const task=db.customUpdateTasks.create(server.id,{name:'Edited',type:'trigger',check_command:'old-check',trigger_output:'yes'});
+ db.customUpdateTasks.setVersionInfo(task.id,'yes','yes',true);
+ const originalState=db.customUpdateTasks.getById(task.id);
+ const renamed=db.customUpdateTasks.update(task.id,{...originalState,name:'Renamed'});
+ assert.equal(renamed.last_checked_at,originalState.last_checked_at);
+ assert.equal(renamed.has_update,1);
+ const original=sshManager.execCommand;
+ sshManager.execCommand=async()=>{
+   db.customUpdateTasks.update(task.id,{...renamed,check_command:'new-check'});
+   return {code:0,stdout:'yes'};
+ };
+ try { await scheduler.checkCustomTask(server,renamed); } finally { sshManager.execCommand=original; }
+ const changed=db.customUpdateTasks.getById(task.id);
+ assert.equal(changed.check_command,'new-check');
+ assert.equal(changed.last_checked_at,null);
+ assert.equal(changed.current_version,null);
+ assert.equal(changed.has_update,0);
+ db.customUpdateTasks.setCheckFailure(task.id,renamed);
+ assert.equal(db.customUpdateTasks.getById(task.id).last_check_error,null);
+});

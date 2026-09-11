@@ -16,6 +16,7 @@
     - name: Upgrade all packages (Debian/Ubuntu)
       apt:
         upgrade: full
+        force_apt_get: yes
         autoremove: yes
         dpkg_options: "force-confdef,force-confold"
       when: ansible_os_family == "Debian"

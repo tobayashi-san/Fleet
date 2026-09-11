@@ -122,7 +122,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
-  const otherPlugins = plugins.filter((plugin) => plugin.enabled && canSeePlugin(profile, plugin.id));
+  const otherPlugins = plugins.filter((plugin) => plugin.enabled && plugin.hasUi !== false && canSeePlugin(profile, plugin.id));
 
   useEffect(() => {
     if (path.startsWith("/infrastructure") || path.startsWith("/networks")) {
@@ -160,8 +160,12 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     onMobileClose?.();
   }, [path, onMobileClose]);
 
+  const resizeCleanup = useRef<(() => void) | null>(null);
+  useEffect(() => () => resizeCleanup.current?.(), []);
+
   const startResize = (event: React.PointerEvent<HTMLButtonElement>) => {
     if (collapsed || window.matchMedia("(max-width: 767px)").matches) return;
+    resizeCleanup.current?.();
     event.currentTarget.setPointerCapture(event.pointerId);
     const startX = event.clientX;
     const startWidth = sidebarWidth;
@@ -169,7 +173,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
     const stop = () => {
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", stop);
+      window.removeEventListener("pointercancel", stop);
+      resizeCleanup.current = null;
     };
+    resizeCleanup.current = stop;
+    window.addEventListener("pointercancel", stop);
     window.addEventListener("pointermove", move);
     window.addEventListener("pointerup", stop);
   };
@@ -246,7 +254,10 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
         </a>
       </div>
 
-      {!collapsed && <button type="button" onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground md:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
+      {!collapsed && <button type="button" role="separator" aria-orientation="vertical" aria-valuemin={224} aria-valuemax={384} aria-valuenow={sidebarWidth} onKeyDown={(event) => {
+        const next = event.key === 'ArrowLeft' ? sidebarWidth - 16 : event.key === 'ArrowRight' ? sidebarWidth + 16 : event.key === 'Home' ? 224 : event.key === 'End' ? 384 : null;
+        if (next !== null) { event.preventDefault(); setSidebarWidth(next); }
+      }} onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground focus-visible:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring md:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
     </aside>
   );
 }

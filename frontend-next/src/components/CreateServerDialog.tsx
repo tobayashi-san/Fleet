@@ -1,3 +1,5 @@
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { StringListInput, normalizeStringList } from "@/components/ui/string-list-input";
 import * as React from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -129,8 +131,9 @@ export function CreateServerDialog({
   const [hostname, setHostname] = React.useState("");
   const [sshUser, setSshUser] = React.useState("root");
   const [sshPort, setSshPort] = React.useState("22");
-  const [services, setServices] = React.useState("");
-  const [tags, setTags] = React.useState("");
+  const [owner, setOwner] = React.useState("");
+  const [services, setServices] = React.useState<string[]>([]);
+  const [tags, setTags] = React.useState<string[]>([]);
   const [links, setLinks] = React.useState<LinkEntry[]>([]);
   const [mounts, setMounts] = React.useState<MountEntry[]>([]);
   const [sshPassword, setSshPassword] = React.useState("");
@@ -138,45 +141,66 @@ export function CreateServerDialog({
   const [environmentId, setEnvironmentId] = React.useState(activeEnvironmentId);
   const [error, setError] = React.useState<string | null>(null);
   const [connectionTest, setConnectionTest] = React.useState<'idle' | 'testing' | 'success' | 'error'>('idle');
+  const [connectionTestError, setConnectionTestError] = React.useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = React.useState(isEdit);
+  const connectionRequest = React.useRef(0);
+  const invalidateConnectionTest = React.useCallback(() => {
+    connectionRequest.current += 1;
+    setConnectionTest('idle');
+    setConnectionTestError(null);
+  }, []);
+  const validSshPort = /^\d+$/.test(sshPort) && Number(sshPort) >= 1 && Number(sshPort) <= 65535;
+  React.useEffect(() => {
+    if (!open) invalidateConnectionTest();
+    return () => { connectionRequest.current += 1; };
+  }, [open, invalidateConnectionTest]);
+
+  const [baseline, setBaseline] = React.useState('');
+  const [discardOpen, setDiscardOpen] = React.useState(false);
+  const [draftEnvironment, setDraftEnvironment] = React.useState(activeEnvironmentId);
+  const [draftServerId, setDraftServerId] = React.useState(editServer?.id ?? null);
+  const currentDraft = JSON.stringify({ name, ip, hostname, sshUser, sshPort, owner, services, tags, links, mounts, sshPassword, dockerEnabled, environmentId });
+  const dirty = baseline !== '' && currentDraft !== baseline;
+  const contextChanged = draftEnvironment !== activeEnvironmentId || draftServerId !== (editServer?.id ?? null);
+  React.useEffect(() => { if (contextChanged) invalidateConnectionTest(); }, [contextChanged, invalidateConnectionTest]);
 
   const reset = React.useCallback(() => {
-    if (editServer) {
-      setName((editServer.name as string) || "");
-      setIp((editServer.ip_address as string) || "");
-      setHostname((editServer.hostname as string) || "");
-      setSshUser((editServer.ssh_user as string) || "root");
-      setSshPort(String(editServer.ssh_port ?? 22));
-      setServices(asArray<string>(editServer.services).join(", "));
-      setTags(asArray<string>(editServer.tags).join(", "));
-      const ls = asArray<LinkEntry>(editServer.links);
-      setLinks(ls.map((l) => ({ ...l })));
-      const ms = asArray<MountEntry>(editServer.storage_mounts);
-      setMounts(ms.map((m) => ({ ...m })));
-      setDockerEnabled(!!editServer.docker_enabled);
-      setEnvironmentId((editServer.environment_id as string) || "default");
-    } else {
-      setName((initialValues?.name as string) || "");
-      setIp((initialValues?.ip_address as string) || "");
-      setHostname((initialValues?.hostname as string) || "");
-      setSshUser((initialValues?.ssh_user as string) || "root");
-      setSshPort(String(initialValues?.ssh_port ?? 22));
-      setServices("");
-      setTags(asArray<string>(initialValues?.tags).join(", "));
-      setLinks([]);
-      setMounts([]);
-      setDockerEnabled(false);
-      setEnvironmentId((initialValues?.environment_id as string) || activeEnvironmentId);
-    }
-    setSshPassword("");
-    setError(null);
-    setConnectionTest('idle');
-    setAdvancedOpen(isEdit);
-  }, [editServer, initialValues, activeEnvironmentId, isEdit]);
+    const source = editServer || initialValues;
+    const draft = {
+      name: (source?.name as string) || '',
+      ip: (source?.ip_address as string) || '',
+      hostname: (source?.hostname as string) || '',
+      sshUser: (source?.ssh_user as string) || 'root',
+      sshPort: String(source?.ssh_port ?? 22),
+      owner: (source?.owner as string) || '',
+      services: editServer ? asArray<string>(editServer.services) : [],
+      tags: asArray<string>(source?.tags),
+      links: editServer ? asArray<LinkEntry>(editServer.links).map(item => ({ ...item })) : [],
+      mounts: editServer ? asArray<MountEntry>(editServer.storage_mounts).map(item => ({ ...item })) : [],
+      sshPassword: '',
+      dockerEnabled: !!editServer?.docker_enabled,
+      environmentId: (source?.environment_id as string) || (editServer ? 'default' : activeEnvironmentId),
+    };
+    setName(draft.name); setIp(draft.ip); setHostname(draft.hostname); setSshUser(draft.sshUser); setSshPort(draft.sshPort); setOwner(draft.owner);
+    setServices(draft.services); setTags(draft.tags); setLinks(draft.links); setMounts(draft.mounts);
+    setSshPassword(draft.sshPassword); setDockerEnabled(draft.dockerEnabled); setEnvironmentId(draft.environmentId);
+    setBaseline(JSON.stringify(draft));
+    setDraftEnvironment(activeEnvironmentId); setDraftServerId(editServer?.id ?? null);
+    setDiscardOpen(false); setError(null); invalidateConnectionTest(); setAdvancedOpen(isEdit);
+  }, [editServer, initialValues, activeEnvironmentId, isEdit, invalidateConnectionTest]);
+
+  const wasOpen = React.useRef(false);
+  React.useEffect(() => {
+    if (open && !wasOpen.current) reset();
+    wasOpen.current = open;
+  }, [open, reset]);
 
   React.useEffect(() => {
-    if (open) reset();
-  }, [open, reset]);
+    if (!open || !dirty) return;
+    const preventUnload = (event: BeforeUnloadEvent) => { event.preventDefault(); };
+    window.addEventListener('beforeunload', preventUnload);
+    return () => window.removeEventListener('beforeunload', preventUnload);
+  }, [open, dirty]);
 
   const setLink = (i: number, field: keyof LinkEntry, val: string) =>
     setLinks((prev) =>
@@ -196,20 +220,16 @@ export function CreateServerDialog({
 
   const mutation = useMutation({
     mutationFn: async (): Promise<AnyObj> => {
+      if (contextChanged) throw new Error('The active environment or host changed. Reopen this form before saving.');
       const data: AnyObj = {
         name: name.trim(),
         ip_address: ip.trim(),
         hostname: hostname.trim() || ip.trim(),
         ssh_user: sshUser.trim() || "root",
-        ssh_port: Math.min(65535, Math.max(1, parseInt(sshPort) || 22)),
-        services: services
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
-        tags: tags
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean),
+        ssh_port: Number(sshPort),
+        owner: owner.trim(),
+        services: normalizeStringList(services),
+        tags: normalizeStringList(tags),
         links: links.filter((l) => l.name || l.url),
         storage_mounts: mounts.filter((m) => m.path),
         environment_id: environmentId,
@@ -233,6 +253,7 @@ export function CreateServerDialog({
               ssh_user: data.ssh_user,
               password: sshPassword,
               ssh_port: data.ssh_port,
+              environment_id: data.environment_id,
             });
             showToast(t("add.transferred"), "success");
           } catch (err) {
@@ -255,28 +276,46 @@ export function CreateServerDialog({
     onError: (err) =>
       setError(err instanceof ApiError ? err.message : String(err)),
   });
+  const requestClose = () => {
+    if (mutation.isPending) return;
+    if (dirty) setDiscardOpen(true);
+    else setOpen(false);
+  };
   const testConnection = async () => {
+    if (!validSshPort || contextChanged) return;
+    const request = ++connectionRequest.current;
     setConnectionTest('testing');
+    setConnectionTestError(null);
     try {
       const result = await api.testNewServerConnection({
         ip_address: ip.trim(),
         ssh_user: sshUser.trim() || 'root',
-        ssh_port: Math.min(65535, Math.max(1, parseInt(sshPort) || 22)),
+        ssh_port: Number(sshPort),
         password: sshPassword,
+        environment_id: environmentId,
       });
+      if (request !== connectionRequest.current) return;
       setConnectionTest(result.connected ? 'success' : 'error');
-      if (!result.connected) showToast(result.error || 'Connection test failed.', 'error');
+      if (!result.connected) {
+        const cause = result.error || 'The host did not accept the supplied SSH connection details.';
+        setConnectionTestError(cause);
+        showToast(cause, 'error');
+      }
     } catch (testError) {
+      if (request !== connectionRequest.current) return;
       setConnectionTest('error');
-      showToast((testError as Error).message, 'error');
+      const cause = (testError as Error).message || 'Connection test failed.';
+      setConnectionTestError(cause);
+      showToast(cause, 'error');
     }
   };
 
   return (
+    <>
     <Dialog
       open={open}
       onOpenChange={(v) => {
-        setOpen(v);
+        if (v) setOpen(true); else requestClose();
       }}
     >
       {(!isControlled || trigger) && (
@@ -318,6 +357,11 @@ export function CreateServerDialog({
               setError(t("common.error"));
               return;
             }
+            if (!validSshPort) {
+              setError('SSH port must be a whole number between 1 and 65535.');
+              setAdvancedOpen(true);
+              return;
+            }
             mutation.mutate();
           }}
           className="flex-1 overflow-y-auto px-4 pb-4 pt-5 sm:px-6"
@@ -328,10 +372,48 @@ export function CreateServerDialog({
             title={t("add.sectionBasic")}
           />
 
+          <FieldRow
+            label="Environment"
+            hint={isEdit ? "The host belongs to this environment. Moving existing resources is not supported in this form." : "The host will be created in this environment."}
+            htmlFor="server-environment"
+          >
+            <div className="w-full space-y-2">
+              {environmentsQuery.isError && (
+                <QueryErrorState
+                  compact
+                  className="py-3"
+                  error={environmentsQuery.error}
+                  title="Environments could not be loaded"
+                  onRetry={() => void environmentsQuery.refetch()}
+                />
+              )}
+              <select
+                id="server-environment"
+                name="environmentId"
+                value={environmentId}
+                onChange={(e) => { setEnvironmentId(e.target.value); invalidateConnectionTest(); }}
+                disabled={isEdit || mutation.isPending || environmentsQuery.isLoading || environmentsQuery.isError}
+                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                {!environments.some((environment) => String(environment.id) === environmentId) && <option value={environmentId}>{environmentId}</option>}
+                {environments.map((environment) => (
+                  <option
+                    key={String(environment.id)}
+                    value={String(environment.id)}
+                  >
+                    {String(environment.name)}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </FieldRow>
+
+
           <FieldRow label={t("add.name")} required htmlFor="server-name">
             <Input
               id="server-name"
               name="serverName"
+              required
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -344,9 +426,10 @@ export function CreateServerDialog({
             <Input
               id="server-ip-address"
               name="serverIpAddress"
+              required
               placeholder="192.168.1.100"
               value={ip}
-              onChange={(e) => setIp(e.target.value)}
+              onChange={(e) => { setIp(e.target.value); invalidateConnectionTest(); }}
               className="w-full"
             />
           </FieldRow>
@@ -359,13 +442,13 @@ export function CreateServerDialog({
             >
               <div className="w-full space-y-1.5">
                 <div className="flex gap-2">
-                  <Input id="server-ssh-password" name="sshPassword" type="password" placeholder={t("add.sshPasswordPlaceholder")} value={sshPassword} onChange={(e) => { setSshPassword(e.target.value); setConnectionTest('idle'); }} autoComplete="current-password" className="w-full" />
-                  <Button type="button" variant="outline" size="sm" onClick={() => void testConnection()} disabled={!ip.trim() || !sshPassword || connectionTest === 'testing'}>
+                  <Input id="server-ssh-password" name="sshPassword" type="password" placeholder={t("add.sshPasswordPlaceholder")} value={sshPassword} onChange={(e) => { setSshPassword(e.target.value); invalidateConnectionTest(); }} autoComplete="current-password" className="w-full" />
+                  <Button type="button" variant="outline" size="sm" onClick={() => void testConnection()} disabled={contextChanged || !ip.trim() || !sshPassword || !validSshPort || connectionTest === 'testing'}>
                     <Wifi className={connectionTest === 'testing' ? 'h-4 w-4 animate-pulse' : 'h-4 w-4'} />Test
                   </Button>
                 </div>
                 {connectionTest === 'success' && <p role="status" className="text-xs text-success">Connection successful.</p>}
-                {connectionTest === 'error' && <p role="status" className="text-xs text-destructive">Connection failed. Review the connection details.</p>}
+                {connectionTest === 'error' && <p role="alert" className="text-xs text-destructive">Connection failed: {connectionTestError}</p>}
               </div>
             </FieldRow>
           )}
@@ -411,7 +494,7 @@ export function CreateServerDialog({
               autoComplete="username"
               placeholder="root"
               value={sshUser}
-              onChange={(e) => setSshUser(e.target.value)}
+              onChange={(e) => { setSshUser(e.target.value); invalidateConnectionTest(); }}
               className="w-full"
             />
           </FieldRow>
@@ -423,11 +506,17 @@ export function CreateServerDialog({
               type="number"
               min={1}
               max={65535}
+              required
+              step={1}
               value={sshPort}
-              onChange={(e) => setSshPort(e.target.value)}
+              onChange={(e) => { setSshPort(e.target.value); invalidateConnectionTest(); }}
+              aria-invalid={!validSshPort}
+              aria-describedby={!validSshPort ? "server-port-error" : undefined}
               className="w-full"
             />
           </FieldRow>
+
+          {!validSshPort && <p id="server-port-error" role="alert" className="text-xs text-destructive">SSH port must be a whole number between 1 and 65535.</p>}
 
           {/* ── Metadata ────────────────────────────────── */}
           <SectionHeading
@@ -436,70 +525,28 @@ export function CreateServerDialog({
           />
 
           <FieldRow
+            label="Owner / team"
+            hint="Optional operational owner shown in the host inventory."
+            htmlFor="server-owner"
+          >
+            <Input id="server-owner" name="serverOwner" value={owner} maxLength={100} onChange={(event) => setOwner(event.target.value)} placeholder="e.g. Platform Operations" className="w-full" />
+          </FieldRow>
+
+          <FieldRow
             label={t("add.services")}
-            hint={t("add.servicesHint")}
+            hint="Manage services as individual entries."
             htmlFor="server-services"
           >
-            <Input
-              id="server-services"
-              name="services"
-              placeholder="Plex, Docker, Nginx"
-              value={services}
-              onChange={(e) => setServices(e.target.value)}
-              className="w-full"
-            />
+            <StringListInput id="server-services" label="Service" values={services} onChange={setServices} disabled={mutation.isPending} />
           </FieldRow>
 
           <FieldRow
             label={t("add.tags")}
-            hint={t("add.tagsHint")}
+            hint="Manage tags as individual entries."
             htmlFor="server-tags"
           >
-            <Input
-              id="server-tags"
-              name="tags"
-              placeholder="production, media"
-              value={tags}
-              onChange={(e) => setTags(e.target.value)}
-              className="w-full"
-            />
+            <StringListInput id="server-tags" label="Tag" values={tags} onChange={setTags} disabled={mutation.isPending} />
           </FieldRow>
-          <FieldRow
-            label="Environment"
-            hint="Controls which console environment this host appears in."
-            htmlFor="server-environment"
-          >
-            <div className="w-full space-y-2">
-              {environmentsQuery.isError && (
-                <QueryErrorState
-                  compact
-                  className="py-3"
-                  error={environmentsQuery.error}
-                  title="Environments could not be loaded"
-                  onRetry={() => void environmentsQuery.refetch()}
-                />
-              )}
-              <select
-                id="server-environment"
-                name="environmentId"
-                value={environmentId}
-                onChange={(e) => setEnvironmentId(e.target.value)}
-                disabled={environmentsQuery.isLoading || environmentsQuery.isError}
-                className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                {!environments.some((environment) => String(environment.id) === environmentId) && <option value={environmentId}>{environmentId}</option>}
-                {environments.map((environment) => (
-                  <option
-                    key={String(environment.id)}
-                    value={String(environment.id)}
-                  >
-                    {String(environment.name)}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </FieldRow>
-
           {/* ── Links ───────────────────────────────────── */}
           <div className="flex items-center justify-between border-b pb-2 pt-5">
             <div className="flex items-center gap-2">
@@ -646,19 +693,21 @@ export function CreateServerDialog({
 
         {/* ── Sticky footer ───────────────────────────── */}
         <div className="flex flex-col gap-2 border-t bg-muted/30 px-4 py-3 sm:px-6">
+          {contextChanged && <p role="alert" className="text-sm text-destructive">The active environment or host changed. Your draft is preserved; return to the original context or reopen this form before saving.</p>}
+          {dirty && <p className="text-xs text-muted-foreground">Unsaved changes</p>}
           {error && <p className="text-sm text-destructive">{error}</p>}
           <div className="flex flex-wrap items-center justify-end gap-2">
             <Button
               type="button"
               variant="ghost"
-              onClick={() => setOpen(false)}
+              onClick={requestClose}
             >
               {t("common.cancel")}
             </Button>
             <Button
               type="submit"
               form="server-form"
-              disabled={mutation.isPending}
+              disabled={mutation.isPending || contextChanged}
             >
               {mutation.isPending
                 ? t("add.saving")
@@ -670,5 +719,7 @@ export function CreateServerDialog({
         </div>
       </DialogContent>
     </Dialog>
+    <ConfirmDialog open={discardOpen} onOpenChange={setDiscardOpen} title="Discard host changes?" description="Your unsaved host settings will be lost." confirmLabel="Discard changes" cancelLabel="Keep editing" onConfirm={() => { setDiscardOpen(false); setOpen(false); }} />
+    </>
   );
 }

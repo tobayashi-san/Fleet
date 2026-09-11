@@ -1,13 +1,13 @@
-const CURRENT_SCHEMA_VERSION = 8;
+const CURRENT_SCHEMA_VERSION = 13;
 
 const REQUIRED_COLUMNS = {
-  servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled'],
+  servers: ['id', 'name', 'hostname', 'ip_address', 'environment_id', 'host_fingerprint', 'docker_enabled', 'owner'],
   server_info: ['server_id', 'storage_mount_metrics', 'cpu_usage_pct', 'zfs_pools'],
   server_groups: ['id', 'environment_id'],
-  custom_update_tasks: ['id', 'trigger_output', 'latest_command'],
+  custom_update_tasks: ['id', 'trigger_output', 'latest_command', 'last_check_error', 'last_attempted_at'],
   audit_log: ['id', 'environment_id', 'user'],
   operation_acknowledgements: ['environment_id', 'operation_id', 'acknowledged_at', 'acknowledged_by'],
-  update_history: ['id', 'environment_id', 'server_id'],
+  update_history: ['id', 'environment_id', 'server_id', 'server_name_snapshot'],
   agent_config: ['server_id', 'token', 'pending_token'],
   environments: ['id', 'name'],
   ipam_subnets: ['id', 'environment_id', 'status', 'role', 'dhcp_start', 'dhcp_end'],
@@ -20,8 +20,8 @@ const REQUIRED_COLUMNS = {
   server_alert_settings: ['server_id', 'enabled', 'thresholds_json'],
   resource_alerts: ['id', 'server_id', 'type', 'status'],
   schedules: ['id', 'environment_id', 'extra_vars', 'check_mode', 'forks'],
-  schedule_history: ['id', 'environment_id', 'triggered_by', 'check_mode'],
-  ansible_vars: ['id', 'environment_id', 'key', 'value', 'is_secret'],
+  schedule_history: ['id', 'environment_id', 'triggered_by', 'check_mode', 'target_server_ids'],
+  ansible_vars: ['id', 'environment_id', 'key', 'value', 'is_secret', 'rotation_due', 'value_updated_at', 'value_type'],
   users: ['id', 'username', 'role', 'disabled', 'last_login_at', 'token_version'],
   docker_containers: ['id', 'server_id', 'container_name', 'cpu_percent', 'memory_usage', 'memory_percent'],
 };
@@ -86,12 +86,19 @@ function applyMigrations(db) {
   try {
     db.exec("ALTER TABLE custom_update_tasks ADD COLUMN latest_command TEXT");
   } catch {}
+  const customTaskColumns = new Set(db.prepare('PRAGMA table_info(custom_update_tasks)').all().map(column => column.name));
+  for (const column of ['last_check_error', 'last_attempted_at']) {
+    if (customTaskColumns.size > 0 && !customTaskColumns.has(column)) db.exec(`ALTER TABLE custom_update_tasks ADD COLUMN ${column} TEXT`);
+  }
   // Trust-on-first-use SSH host key fingerprint, sha256 base64 of server-presented host key.
   try {
     db.exec("ALTER TABLE servers ADD COLUMN host_fingerprint TEXT DEFAULT ''");
   } catch {}
   try {
     db.exec("ALTER TABLE servers ADD COLUMN docker_enabled INTEGER DEFAULT 0");
+  } catch {}
+  try {
+    db.exec("ALTER TABLE servers ADD COLUMN owner TEXT DEFAULT ''");
   } catch {}
   try {
     db.exec(
@@ -149,6 +156,29 @@ function applyMigrations(db) {
   try {
     db.exec("ALTER TABLE update_history ADD COLUMN environment_id TEXT NOT NULL DEFAULT 'default'");
   } catch {}
+  // Preserve execution evidence when a host is removed. Old history can only
+  // be backfilled while its host still exists; previously cascaded rows cannot
+  // be recovered by migration.
+  const historyColumns = new Set(db.prepare('PRAGMA table_info(update_history)').all().map(column => column.name));
+  if (historyColumns.size) {
+  if (!historyColumns.has('server_name_snapshot')) db.exec('ALTER TABLE update_history ADD COLUMN server_name_snapshot TEXT');
+  db.exec(`UPDATE update_history SET server_name_snapshot = (SELECT name FROM servers WHERE servers.id = update_history.server_id) WHERE server_name_snapshot IS NULL`);
+  if (db.prepare('PRAGMA foreign_key_list(update_history)').all().some(key => key.table === 'servers')) {
+    db.exec(`
+      CREATE TABLE update_history_retained (
+        id TEXT PRIMARY KEY, server_id TEXT NOT NULL, server_name_snapshot TEXT,
+        environment_id TEXT NOT NULL DEFAULT 'default', action TEXT NOT NULL,
+        status TEXT DEFAULT 'pending', output TEXT, started_at TEXT DEFAULT (datetime('now')),
+        completed_at TEXT, triggered_by TEXT
+      );
+      INSERT INTO update_history_retained SELECT id, server_id, server_name_snapshot, environment_id, action, status, output, started_at, completed_at, triggered_by FROM update_history;
+      DROP TABLE update_history;
+      ALTER TABLE update_history_retained RENAME TO update_history;
+      CREATE INDEX idx_update_history_server_id ON update_history(server_id);
+      CREATE INDEX idx_update_history_started_at ON update_history(started_at);
+    `);
+  }
+  }
   try {
     db.exec("CREATE INDEX IF NOT EXISTS idx_update_history_environment_started ON update_history(environment_id, started_at DESC)");
   } catch {}
@@ -467,6 +497,11 @@ function applyMigrations(db) {
   }
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedules_environment ON schedules(environment_id, created_at)"); } catch {}
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_schedule_history_environment ON schedule_history(environment_id, started_at DESC)"); } catch {}
+  const variableColumns = new Set(db.prepare('PRAGMA table_info(ansible_vars)').all().map(column => column.name));
+  for (const column of ['rotation_due', 'value_updated_at']) {
+    if (variableColumns.size && !variableColumns.has(column)) db.exec(`ALTER TABLE ansible_vars ADD COLUMN ${column} TEXT`);
+  }
+  if (variableColumns.size && !variableColumns.has('value_type')) db.exec("ALTER TABLE ansible_vars ADD COLUMN value_type TEXT NOT NULL DEFAULT 'string'");
   try { db.exec("CREATE INDEX IF NOT EXISTS idx_ansible_vars_environment ON ansible_vars(environment_id, key)"); } catch {}
   try {
     db.exec(`
@@ -485,6 +520,10 @@ function applyMigrations(db) {
     throw new Error(`failed to create operation acknowledgements: ${error.message}`);
   }
 
+    const workflowColumns = new Set(db.prepare('PRAGMA table_info(schedule_history)').all().map(column => column.name));
+    // Historical names cannot prove historical identity. Leave legacy rows
+    // unbound rather than linking them to today's inventory by name.
+    if (workflowColumns.size && !workflowColumns.has('target_server_ids')) db.exec('ALTER TABLE schedule_history ADD COLUMN target_server_ids TEXT');
     validateMigratedSchema(db);
     db.prepare('INSERT OR IGNORE INTO schema_migrations (version) VALUES (?)').run(CURRENT_SCHEMA_VERSION);
     db.exec('COMMIT');

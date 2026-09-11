@@ -1,5 +1,22 @@
 function applySchema(db) {
   db.exec(`
+    CREATE TABLE IF NOT EXISTS user_invitations (
+      id TEXT PRIMARY KEY,
+      token_hash TEXT NOT NULL UNIQUE,
+      username TEXT NOT NULL,
+      email TEXT NOT NULL DEFAULT '',
+      display_name TEXT NOT NULL DEFAULT '',
+      role TEXT NOT NULL,
+      role_revision TEXT NOT NULL,
+      issuer_id TEXT NOT NULL,
+      issuer_token_version INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      accepted_at INTEGER,
+      revoked_at INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_user_invitations_expiry ON user_invitations(expires_at);
+
     CREATE TABLE IF NOT EXISTS servers (
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
@@ -7,6 +24,7 @@ function applySchema(db) {
       ip_address TEXT NOT NULL,
       ssh_port INTEGER DEFAULT 22,
       ssh_user TEXT DEFAULT 'root',
+      owner TEXT DEFAULT '',
       tags TEXT DEFAULT '[]',
       services TEXT DEFAULT '[]',
       links TEXT DEFAULT '[]',
@@ -42,17 +60,33 @@ function applySchema(db) {
       FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
     );
 
+    CREATE TABLE IF NOT EXISTS server_info_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      server_id TEXT NOT NULL,
+      collected_at TEXT DEFAULT (datetime('now')),
+      source TEXT NOT NULL DEFAULT 'ssh',
+      cpu_usage_pct REAL,
+      ram_used_mb INTEGER,
+      ram_total_mb INTEGER,
+      disk_used_gb REAL,
+      disk_total_gb REAL,
+      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_server_info_history_server_time
+      ON server_info_history(server_id, collected_at DESC, id DESC);
+
     CREATE TABLE IF NOT EXISTS update_history (
       id TEXT PRIMARY KEY,
       server_id TEXT NOT NULL,
+      server_name_snapshot TEXT,
       environment_id TEXT NOT NULL DEFAULT 'default',
       action TEXT NOT NULL,
       status TEXT DEFAULT 'pending',
       output TEXT,
       started_at TEXT DEFAULT (datetime('now')),
       completed_at TEXT,
-      triggered_by TEXT,
-      FOREIGN KEY (server_id) REFERENCES servers(id) ON DELETE CASCADE
+      triggered_by TEXT
     );
 
     CREATE TABLE IF NOT EXISTS ssh_keys (
@@ -371,6 +405,26 @@ function applySchema(db) {
     CREATE INDEX IF NOT EXISTS idx_maintenance_windows_environment_time ON maintenance_windows(environment_id, starts_at, ends_at);
   `);
 
+  for (const [column, definition] of [['resource_ids', "TEXT NOT NULL DEFAULT '[]'"], ['change_reference', "TEXT NOT NULL DEFAULT ''"], ['series_id', 'TEXT'], ['series_index', 'INTEGER'], ['series_count', 'INTEGER'], ['recurrence_frequency', 'TEXT'], ['cancelled_at', 'TEXT'], ['cancelled_by', 'TEXT'], ['cancellation_reason', 'TEXT']]) {
+    if (!db.prepare('PRAGMA table_info(maintenance_windows)').all().some(row => row.name === column)) {
+      db.exec(`ALTER TABLE maintenance_windows ADD COLUMN ${column} ${definition}`);
+    }
+  }
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS notification_deliveries (
+      id TEXT PRIMARY KEY,
+      channel TEXT NOT NULL,
+      destination TEXT NOT NULL,
+      event_title TEXT NOT NULL,
+      status TEXT NOT NULL,
+      status_code INTEGER,
+      duration_ms INTEGER,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    CREATE INDEX IF NOT EXISTS idx_notification_deliveries_created ON notification_deliveries(created_at DESC);
+  `);
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_server_info_server_id      ON server_info(server_id);
     CREATE INDEX IF NOT EXISTS idx_update_history_server_id   ON update_history(server_id);
@@ -549,6 +603,7 @@ function applySchema(db) {
       schedule_name TEXT NOT NULL,
       playbook TEXT NOT NULL,
       targets TEXT DEFAULT 'all',
+      target_server_ids TEXT,
       triggered_by TEXT,
       check_mode INTEGER NOT NULL DEFAULT 0,
       started_at TEXT DEFAULT (datetime('now')),
@@ -602,6 +657,13 @@ function applySchema(db) {
       last_login_at TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
+    CREATE TABLE IF NOT EXISTS auth_sessions (
+      id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_version INTEGER NOT NULL, created_at INTEGER NOT NULL, last_seen_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL, revoked_at INTEGER, ip TEXT, user_agent TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id,expires_at);
+
   `);
   try {
     db.exec(
@@ -617,6 +679,25 @@ function applySchema(db) {
       permissions TEXT DEFAULT '{}'
     );
   `);
+  db.exec(`CREATE TABLE IF NOT EXISTS server_note_revisions (
+    server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+    revision INTEGER NOT NULL,
+    notes TEXT NOT NULL,
+    author TEXT,
+    created_at TEXT,
+    PRIMARY KEY (server_id, revision)
+  )`);
+  db.exec(`CREATE TABLE IF NOT EXISTS variable_change_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    environment_id TEXT NOT NULL REFERENCES environments(id) ON DELETE CASCADE,
+    variable_id TEXT NOT NULL,
+    variable_key TEXT NOT NULL,
+    action TEXT NOT NULL,
+    fields TEXT NOT NULL,
+    actor TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_variable_change_events_env ON variable_change_events(environment_id, id DESC);`);
 }
 
 module.exports = { applySchema };

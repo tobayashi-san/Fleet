@@ -186,3 +186,54 @@ Plugins run as **Node.js code on the server** with full access to the file syste
 - Only install plugins from sources you trust completely.
 - Shipyard shows a security warning dialog when you enable a plugin for the first time.
 - Plugin routes inherit Shipyard's JWT auth middleware — unauthenticated requests are rejected before reaching plugin code.
+
+## Runtime compatibility
+
+A manifest may declare `engines.node` and `engines.shipyard` using semantic-version ranges:
+
+```json
+{
+  "engines": {
+    "node": ">=22 <25",
+    "shipyard": ">=3.0.8-rc.26 <4"
+  }
+}
+```
+
+Choose ranges you have actually tested; the example is not a compatibility promise for your plugin. The loader checks declared ranges before requiring backend code. A mismatch or invalid declaration blocks loading and appears in Plugin Management. Missing declarations remain supported for existing packages but are displayed as unverified, not compatible.
+
+Prereleases follow standard semantic-version range rules. A broad stable range such as `^3.0.0` does not include `3.0.8-rc.26`; explicitly include the relevant prerelease when supporting it. Runtime checks cover version declarations only, not workflow behavior, dependencies, privileges or package trust. Changing manifest requirements changes the package digest, so an enforced digest allowlist must be reviewed and updated as part of the package change.
+
+## Reload behavior
+
+Reload clears CommonJS modules and JSON imports within the plugin's canonical directory before registering the new package. Modules in other plugin directories or shared server dependencies stay cached. This avoids mixing a new entry point with old helper modules. Loaded-module references held by the Node module cache are removed; active requests or resources held by plugin code can still reference old objects.
+
+This does not unload timers, listeners, connections or other side effects created by a plugin. It also does not clear Node's separate dynamic ESM import cache or provide package rollback. Plugins using persistent resources or dynamic imports require a controlled service restart to guarantee replacement of that state. Registration success alone is not proof that an update is safe or fully verified.
+
+## Package digest scope (v2)
+
+The `package-files-v2` SHA-256 digest covers every regular file in the plugin directory, including `node_modules` and `.bundle-version`. It hashes an unambiguous, sorted list of relative paths and individual file hashes. Symbolic links and special files are rejected; use a self-contained package with regular files. File reads reject final-component symlinks and detect changes in size/timestamps during each read.
+
+This replaces the earlier digest that excluded dependencies and installation metadata. Existing `SHIPYARD_TRUSTED_PLUGIN_SHA256` entries must be regenerated after reviewing the complete installed package; strict enforcement will block the old digest. Dependency changes require renewed review. The digest is a load-time snapshot, not a signature, continuous file monitor, immutable execution snapshot or sandbox. Stop concurrent package writes while loading. Runtime data written into the package directory changes its next digest; keep mutable application data outside the package.
+
+Inspect a package without executing its code:
+
+```sh
+node server/cli/plugin-digest.js /absolute/path/to/plugin
+```
+
+Compare the reviewed package and reported scheme/digest before putting `plugin-id:digest` in the allowlist. The command only computes a digest; it does not approve or load the package.
+
+Frontend entry points and assets are served only for successfully loaded packages. A failed single-package reload blocks API/UI access until a successful retry, even if access was enabled previously. Files and intermediate directories used for frontend assets must be regular files/directories, not symlinks. These request-time checks do not replace a read-only deployment: do not modify package files concurrently with serving requests.
+
+Enabling access through `POST /api/plugins/:id/enable` requires the `digest` and `scheme` from the reviewed inventory entry. Missing review metadata returns 428; a stale loaded digest, changed on-disk package or removed strict allowlist match returns 409. Reload the package and review the updated inventory before retrying. Successful activation audits the reviewed digest. Disabling access requires no digest. This check binds the activation decision to a package snapshot; it is not continuous integrity monitoring.
+
+Display metadata is validated before registration. `name` must be nonempty text (maximum 200 characters); optional `version`, `description` and `author` must be text with limits of 100, 4,000 and 200 characters. Optional `sidebar` must be an object with text `label`/`icon` values of at most 200 characters. Malformed metadata remains visible as a load error rather than reaching UI rendering. The inventory's `hasUi` field is computed from the loaded package's regular `ui.js` file; a manifest cannot override it. Backend-only packages have no navigation or Open action.
+
+## UI lifecycle
+
+The UI context includes `signal`, an AbortSignal triggered when the host page is left or initialization fails. Use it for fetches and other cancellable work. Subscriptions registered through `ctx.onWsMessage` are also removed by the host; late registration after disposal is ignored.
+
+Each mount receives its own container, detached on navigation. If an asynchronous mount completes after navigation, the host calls its module's `unmount()` once after completion and suppresses late host-state updates. Failed mounts are also cleaned up. Plugin-owned timers, global listeners and other resources still need cleanup in `unmount()`; a mount that never settles must cooperate with `ctx.signal` to release its own resources. A visible Retry loading plugin action starts a fresh host lifecycle after a load error.
+
+Changing the selected environment disposes the plugin view and mounts a new instance. `ctx.state.environmentId` identifies that instance's environment. Use `ctx.pluginApi.request` or `ctx.api.request` for requests bound to this environment: they combine caller cancellation with the host signal, pin the environment header, and reject calls after disposal. `refreshServersState` reads the same environment. Legacy named `ctx.api` helpers retain their documented arguments, but reject new calls once their host is disposed or the environment changes. Pending server-side work may already have started; cancellation does not undo it. Persist important editor state deliberately rather than assuming a view survives an environment change.

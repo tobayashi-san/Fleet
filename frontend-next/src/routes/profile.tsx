@@ -1,3 +1,4 @@
+import {SessionsCard} from '@/features/profile/SessionsCard';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -96,9 +97,9 @@ export function ProfilePage() {
   });
 
   // ─ 2FA
-  const totpStatus = useQuery<{ enabled: boolean }>({
+  const totpStatus = useQuery<{ enabled: boolean; required?: boolean }>({
     queryKey: ['totp-status'],
-    queryFn: () => api.totpStatus() as unknown as Promise<{ enabled: boolean }>,
+    queryFn: () => api.totpStatus() as unknown as Promise<{ enabled: boolean; required?: boolean }>,
   });
 
   const [setupData, setSetupData] = useState<{ qrDataUrl?: string; otpauthUrl?: string; secret: string } | null>(null);
@@ -324,14 +325,17 @@ export function ProfilePage() {
                 {t('profile.twoFactorEnabled')}
               </span>
               <button
-                className="inline-flex items-center gap-2 rounded-md border border-destructive/30 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
+                disabled={totpStatus.data?.required}
+                title={totpStatus.data?.required ? 'Required by workspace policy' : undefined}
+                className="disabled:opacity-50 inline-flex items-center gap-2 rounded-md border border-destructive/30 px-3 py-1.5 text-sm text-destructive hover:bg-destructive/10"
                 onClick={() => setShowDisable((v) => !v)}
               >
                 <ShieldOff className="h-3.5 w-3.5" />
                 {t('profile.disable2fa')}
               </button>
             </div>
-            {showDisable && (
+            {totpStatus.data?.required && <p className="text-sm text-muted-foreground">MFA is required by workspace policy. Contact an administrator if you need to recover your authenticator.</p>}
+            {showDisable && !totpStatus.data?.required && (
               <div className="space-y-3 rounded-md border bg-muted/30 p-4">
                 <p className="text-sm text-muted-foreground">{t('profile.twoFactorDisableHint')}</p>
                 <input
@@ -426,6 +430,7 @@ export function ProfilePage() {
         )}
       </Section>
 
+      <SessionsCard />
       <Section icon={Paintbrush} title="Personal appearance">
         <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
         <div className="space-y-5">

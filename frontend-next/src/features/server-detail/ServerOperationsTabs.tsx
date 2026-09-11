@@ -1,3 +1,6 @@
+import { historyIdentity } from "@/lib/history-identity";
+import { historyFailureCause } from "@/lib/history-failure";
+import { Timestamp } from '@/components/ui/timestamp';
 import {
   lazy,
   Suspense,
@@ -52,6 +55,7 @@ import {
   X,
   Network,
 } from "lucide-react";
+import { formatDateTime, parseApiDate } from "@/lib/utils";
 import { api, apiFetch, ApiError } from "@/lib/api";
 import { ws } from "@/lib/ws";
 import { useProfile, useSettings, hasCap } from "@/lib/queries";
@@ -104,7 +108,6 @@ import {
   type ServerInfo,
   CapacitySummary,
   formatBytes,
-  formatDate,
   formatUptime,
   HostStorageInventory,
   RecentHostTasks,
@@ -116,20 +119,23 @@ import type { ServerDetailController } from "./useServerDetailController";
 
 function historyDuration(item: Partial<HistoryRow>) {
   if (!item.started_at || !item.completed_at) return item.status === "running" ? "Running" : "—";
-  const milliseconds = new Date(item.completed_at).getTime() - new Date(item.started_at).getTime();
+  const milliseconds = parseApiDate(item.completed_at).getTime() - parseApiDate(item.started_at).getTime();
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return "—";
   const seconds = Math.round(milliseconds / 1000);
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-function historyFailureCause(item: HistoryRow) {
-  if (item.status !== "failed") return "—";
-  if (!item.output?.trim()) return "No error details were recorded.";
-  return item.output.split("\n").map((line) => line.trim()).filter(Boolean).at(-1) || "Task failed without an error message.";
-}
-
 export function ServerOperationsTabs({ controller }: { controller: ServerDetailController }) {
-  const [selectedHistory, setSelectedHistory] = useState<HistoryRow | null>(null);
+  const [historySelection, setHistorySelection] = useState<{ host: string; row: HistoryRow } | null>(null);
+  const setSelectedHistory = (row: HistoryRow | null) => setHistorySelection(row ? {host:controller.id,row} : null);
+  const selectedSnapshot = historySelection?.host === controller.id ? historySelection.row : null;
+  const selectedRunQuery = useQuery({
+    queryKey: ["server", controller.id, "historyRun", selectedSnapshot ? historyIdentity(selectedSnapshot) : null],
+    queryFn: () => apiFetch<HistoryRow>(`/servers/${encodeURIComponent(controller.id)}/history/${selectedSnapshot?._type === "schedule" ? "schedule" : "manual"}/${encodeURIComponent(String(selectedSnapshot?.id))}`),
+    enabled: Boolean(selectedSnapshot),
+    refetchInterval: query => ["running", "pending", "queued", "cancelling"].includes((query.state.data || selectedSnapshot)?.status || "") ? 3000 : false,
+  });
+  const selectedHistory = selectedSnapshot ? selectedRunQuery.data || selectedSnapshot : null;
   const {
     t,
     qc,
@@ -166,7 +172,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
     managedProxmoxDeployment,
@@ -186,6 +192,12 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     rawUpdates,
     history,
     notesData,
+    notesBaseline,
+    notesFailed,
+    refetchNotes,
+    notesReady,
+    notesDirty,
+    reloadNotesMut,
     customTasks,
     customTaskList,
     agentStatus,
@@ -197,9 +209,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -253,6 +263,14 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     histPage,
     setHistPage,
     histItems,
+    historyFilters,
+    historyActions = [],
+    setHistoryFilters,
+    historyCount,
+    historyMatchCount = histItems.length,
+    historyLoading,
+    historyFailed,
+    refetchHistory,
     histTotal,
     histSafe,
     histPage_,
@@ -271,7 +289,17 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     <>
         {/* ════ HISTORY ════ */}
         <TabsContent value="history" className="space-y-4">
-          {histItems.length === 0 ? (
+          <div className="flex flex-wrap items-end gap-3 rounded-md border bg-card p-3">
+            <label className="min-w-48 flex-1 text-xs">Search action, actor or log<Input value={historyFilters.query} onChange={event=>setHistoryFilters({...historyFilters,query:event.target.value})} /></label>
+            <label className="text-xs">Action type<select className="block h-9 rounded-md border bg-background px-2" value={historyFilters.action || ""} onChange={event=>setHistoryFilters({...historyFilters,action:event.target.value})}><option value="">All action types</option>{historyFilters.action && !historyActions.includes(historyFilters.action) && <option value={historyFilters.action}>{actionLabel(t,historyFilters.action)}</option>}{historyActions.map(action=><option key={action} value={action}>{actionLabel(t,action)}</option>)}</select></label>
+            <label className="text-xs">Status<select className="block h-9 rounded-md border bg-background px-2" value={historyFilters.status} onChange={event=>setHistoryFilters({...historyFilters,status:event.target.value})}><option value="">All statuses</option>{['success','failed','running','pending','queued','cancelling','cancelled','skipped'].map(status=><option key={status} value={status}>{statusLabel(t,status)}</option>)}</select></label>
+            <label className="text-xs">From · Europe/Zurich<Input type="date" value={historyFilters.from} onChange={event=>setHistoryFilters({...historyFilters,from:event.target.value})} /></label>
+            <label className="text-xs">Through · Europe/Zurich<Input type="date" value={historyFilters.to} onChange={event=>setHistoryFilters({...historyFilters,to:event.target.value})} /></label>
+            <Button size="sm" variant="outline" onClick={()=>setHistoryFilters({query:'',status:'',from:'',to:''})}>Clear filters</Button>
+            <p className="w-full text-xs text-muted-foreground">{historyFailed ? "Run counts are unavailable until history loads." : historyLoading ? "Loading run counts…" : `${historyMatchCount} of ${historyCount} runs match.`} Filters include older manual and scheduled runs.</p>
+            {historyFilters.from && historyFilters.to && historyFilters.from > historyFilters.to && <p role="alert" className="text-xs text-destructive">The end date must be on or after the start date.</p>}
+          </div>
+          {historyFailed ? <div role="alert" className="space-y-3 rounded-md border p-4"><p>History could not be loaded.</p><div className="flex gap-2"><Button variant="outline" size="sm" disabled={controller.historyFetching} onClick={()=>void refetchHistory()}>Retry</Button>{histPage > 1 && <Button variant="outline" size="sm" onClick={()=>setHistPage(1)}>Back to newest runs</Button>}</div></div> : historyLoading ? <p>Loading history…</p> : histItems.length === 0 ? (
             <Card>
               <CardHeader className="border-b bg-muted/15 px-4 py-3">
                 <CardTitle className="flex items-center gap-2 text-sm">
@@ -281,7 +309,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
               </CardHeader>
               <CardContent className="flex min-h-24 items-center gap-3 px-4 py-4 text-sm text-muted-foreground">
                 <History className="h-4 w-4 shrink-0" />
-                <span>{t("det.noHistory")}</span>
+                <span>{historyCount ? "No runs match these filters." : t("det.noHistory")}</span>
               </CardContent>
             </Card>
           ) : (
@@ -304,7 +332,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                 <>
                   <div className="divide-y md:hidden">
                     {histPage_.map((h) => (
-                      <div key={h.id} className="space-y-1.5 px-4 py-3">
+                      <div key={historyIdentity(h)} className="space-y-1.5 px-4 py-3">
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <div className="flex items-center gap-1.5">
@@ -320,8 +348,9 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                               </span>
                             </div>
                             <div className="mt-1 text-xs text-muted-foreground">
-                              {h.triggered_by || "system"} ·{" "}
-                              {formatDate(h.started_at, hour12)}
+                              {h.triggered_by || "system"} · Started:{" "}
+                              <Timestamp value={h.started_at} hour12={hour12} />
+                              {h.completed_at && <span className="block">Completed: <Timestamp value={h.completed_at} hour12={hour12} /></span>}
                             </div>
                           </div>
                           <StatusBadge
@@ -338,6 +367,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                           </StatusBadge>
                         </div>
                         <div className="text-xs text-muted-foreground">Duration: {historyDuration(h)}</div>
+                        {h.status !== "failed" && <button type="button" className="text-xs underline" onClick={() => setSelectedHistory(h)}>Open log</button>}
                         {h.status === "failed" && <div className="rounded-sm bg-destructive/5 p-2 text-xs text-destructive"><span className="font-medium">Cause: </span>{historyFailureCause(h)}<button type="button" className="ml-2 underline" onClick={() => setSelectedHistory(h)}>Open log</button></div>}
                       </div>
                     ))}
@@ -360,7 +390,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                       </thead>
                       <tbody className="divide-y">
                         {histPage_.map((h) => (
-                          <tr key={h.id}>
+                          <tr key={historyIdentity(h)}>
                             <td className="px-3 py-2 font-mono text-xs">
                               {h._type === "schedule" && (
                                 <StatusBadge tone="muted" className="mr-1">
@@ -388,14 +418,14 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                               </StatusBadge>
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
-                              {formatDate(h.started_at, hour12)}
+                              <Timestamp value={h.started_at} hour12={hour12} />
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">
-                              {formatDate(h.completed_at, hour12)}
+                              <Timestamp value={h.completed_at} hour12={hour12} />
                             </td>
                             <td className="px-3 py-2 text-xs text-muted-foreground tabular-nums">{historyDuration(h)}</td>
                             <td className="max-w-[22rem] px-3 py-2 text-xs">
-                              {h.status === "failed" ? <><span className="block truncate text-destructive" title={historyFailureCause(h)}>{historyFailureCause(h)}</span><button type="button" className="mt-0.5 text-primary underline" onClick={() => setSelectedHistory(h)}>Open log</button></> : <span className="text-muted-foreground">—</span>}
+                              {h.status === "failed" ? <><span className="block truncate text-destructive" title={historyFailureCause(h)}>{historyFailureCause(h)}</span><button type="button" className="mt-0.5 text-primary underline" onClick={() => setSelectedHistory(h)}>Open log</button></> : <button type="button" className="text-primary underline" onClick={() => setSelectedHistory(h)}>Open log</button>}
                             </td>
                           </tr>
                         ))}
@@ -409,15 +439,16 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                           from: (histSafe - 1) * HIST_PAGE_SIZE + 1,
                           to: Math.min(
                             histSafe * HIST_PAGE_SIZE,
-                            histItems.length,
+                            historyMatchCount,
                           ),
-                          total: histItems.length,
+                          total: historyMatchCount,
                         })}
                       </span>
                       <div className="flex items-center gap-1">
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label="Newer runs"
                           disabled={histSafe === 1}
                           onClick={() => setHistPage(histSafe - 1)}
                         >
@@ -441,6 +472,8 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                               <Button
                                 size="sm"
                                 variant={i === histSafe ? "default" : "ghost"}
+                                aria-label={`History page ${i}`}
+                                aria-current={i === histSafe ? "page" : undefined}
                                 onClick={() => setHistPage(i)}
                               >
                                 {i}
@@ -450,6 +483,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                         <Button
                           size="sm"
                           variant="ghost"
+                          aria-label="Older runs"
                           disabled={histSafe === histTotal}
                           onClick={() => setHistPage(histSafe + 1)}
                         >
@@ -478,11 +512,13 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                     label={t("det.agentMode")}
                     value={agentStatus?.mode || "legacy"}
                   />
-                  <StatCard
-                    icon={<Clock className="h-5 w-5" />}
-                    label={t("det.agentLastSeen")}
-                    value={agentStatus?.lastSeen || "—"}
-                  />
+                  <Card>
+                    <CardContent className="p-3">
+                      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground"><Clock className="h-4 w-4" />{t("det.agentLastSeen")}</div>
+                      <div className="mt-1 break-words text-sm">{agentStatus?.lastSeen ? <Timestamp value={agentStatus.lastSeen} hour12={hour12} /> : "No agent report recorded"}</div>
+                      <p className="mt-1 text-xs text-muted-foreground">Last received report; installation alone does not confirm current connectivity.</p>
+                    </CardContent>
+                  </Card>
                   <StatCard
                     icon={<Shield className="h-5 w-5" />}
                     label={t("det.agentRunnerVersion")}
@@ -584,7 +620,9 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
         <Dialog open={Boolean(selectedHistory)} onOpenChange={(open) => !open && setSelectedHistory(null)}>
           <DialogContent className="max-w-3xl">
             <DialogHeader><DialogTitle>Task log</DialogTitle></DialogHeader>
-            <div className="text-xs text-muted-foreground">{selectedHistory?.action || selectedHistory?.playbook_name || "Task"} · {historyDuration(selectedHistory || {})}</div>
+            <div className="text-xs text-muted-foreground">{selectedHistory?.action ? actionLabel(t, selectedHistory.action) : selectedHistory?.playbook_name || "Task"} · {historyDuration(selectedHistory || {})} · {statusLabel(t, selectedHistory?.status || "unknown")}</div>
+            <Button variant="outline" size="sm" disabled={selectedRunQuery.isFetching} onClick={() => void selectedRunQuery.refetch()}>Refresh log</Button>
+            {selectedRunQuery.isError && <p role="alert" className="text-sm text-destructive">Log refresh failed. The displayed log is the last loaded version.</p>}
             <pre className="max-h-[60vh] overflow-auto whitespace-pre-wrap rounded-md bg-slate-950 p-4 font-mono text-xs text-slate-100">{selectedHistory?.output || "No log output was recorded."}</pre>
           </DialogContent>
         </Dialog>
@@ -622,6 +660,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                       size="sm"
                       variant={notesEditing ? "secondary" : "ghost"}
                       className="h-7 px-2.5"
+                      disabled={!notesReady || saveNotesMut.isPending || reloadNotesMut.isPending}
                       onClick={() => setNotesEditing(true)}
                     >
                       <Pencil className="mr-1.5 h-3.5 w-3.5" />
@@ -631,6 +670,23 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                 )}
               </CardHeader>
               <CardContent className="p-5">
+                {!notesReady ? (notesFailed ? <p role="alert">Notes could not be loaded. <Button variant="link" onClick={() => void refetchNotes()}>Retry</Button></p> : <p role="status">Loading notes…</p>) : <>
+                {notesFailed && <p role="alert" className="mb-3 text-sm text-destructive">The latest notes could not be checked. Your current draft is retained. <Button variant="link" onClick={() => void refetchNotes()}>Retry</Button></p>}
+                <div className="mb-4 space-y-2 text-xs text-muted-foreground">
+                  <p>Opened version: {formatDateTime(notesBaseline?.updated_at)} · Author: {notesBaseline?.author || 'Not recorded'} · Revision {notesBaseline?.revision ?? 0}</p>
+                  {notesData && notesBaseline && notesData.revision !== notesBaseline.revision && <p role="status" className="text-warning">A different version is saved on the server (revision {notesData.revision}, {formatDateTime(notesData.updated_at)}). Your opened version and draft have been retained. Load the saved version to review it; copy any changes you want to keep first.</p>}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {hasCap(profile, 'canEditNotes') && <>
+                    <Button size="sm" disabled={!notesDirty || saveNotesMut.isPending || reloadNotesMut.isPending || !notesData} onClick={() => saveNotesMut.mutate(notes)}>Save notes</Button>
+                    {!notes.trim() && <Button size="sm" variant="outline" disabled={saveNotesMut.isPending || reloadNotesMut.isPending} onClick={() => { setNotes('# Runbook\n\n## Owner and escalation\n- Team / contact:\n\n## Purpose and dependencies\n\n## Routine checks\n\n## Recovery procedure\n\n## References\n'); setNotesEditing(true); }}>Insert runbook template</Button>}
+                    </>}
+                    <Button size="sm" variant="outline" disabled={saveNotesMut.isPending || reloadNotesMut.isPending} onClick={() => { if (!notesDirty || window.confirm('Discard your unsaved draft and load the latest saved notes? Copy anything you want to keep first.')) reloadNotesMut.mutate(); }}>Load saved version</Button>
+                    <span role="status">{saveNotesMut.isPending ? 'Saving…' : reloadNotesMut.isPending ? 'Loading saved version…' : notesDirty ? 'Unsaved changes' : 'No unsaved changes'}</span>
+                  </div>
+                  {saveNotesMut.isError && <p role="alert" className="text-destructive">{saveNotesMut.error.message} Your draft is still available below.</p>}
+                  {reloadNotesMut.isError && <p role="alert" className="text-destructive">{reloadNotesMut.error.message} Your draft has not been replaced.</p>}
+                  <NotesHistory hostId={id} />
+                </div>
                 {notesEditing ? (
                   <div className="grid gap-4 xl:grid-cols-2">
                     <section className="overflow-hidden rounded-md border bg-background">
@@ -641,16 +697,18 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                         <span className="text-xs text-muted-foreground">
                           {saveNotesMut.isPending
                             ? "Saving…"
-                            : "Saved automatically"}
+                            : notesDirty ? "Unsaved changes" : "Saved"}
                         </span>
                       </div>
                       <Textarea
                         value={notes}
+                        aria-label="Host notes Markdown"
+                        disabled={saveNotesMut.isPending || reloadNotesMut.isPending}
+                        maxLength={5000}
                         placeholder={t("det.notesPlaceholder")}
                         className="min-h-[360px] resize-y rounded-none border-0 bg-transparent px-3 py-3 font-mono text-sm leading-6 focus-visible:ring-0"
                         onChange={(e) => {
                           setNotes(e.target.value);
-                          autoSaveNotes(e.target.value);
                         }}
                       />
                     </section>
@@ -683,10 +741,24 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                     <span>{t("det.notesEmpty")}</span>
                   </div>
                 )}
+                </>}
               </CardContent>
             </Card>
           </TabsContent>
         )}
     </>
   );
+}
+
+function NotesHistory({ hostId }: { hostId: string }) {
+  const [open, setOpen] = useState(false);
+  const history = useQuery({
+    queryKey: ['server', hostId, 'notes-history'],
+    queryFn: () => apiFetch<{ revisions: { revision: number; notes: string; author: string | null; created_at: string | null }[] }>(`/servers/${encodeURIComponent(hostId)}/notes/history`),
+    enabled: open,
+  });
+  return <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer">Version history · latest 100 revisions</summary>
+    {history.isLoading ? <p>Loading history…</p> : history.isError ? <p role="alert">History could not be loaded. <button onClick={() => void history.refetch()} className="underline">Retry</button></p> : !history.data?.revisions.length ? <p>No revisions recorded yet.</p> : <div className="max-h-64 overflow-auto">{history.data.revisions.map((revision) => <details key={revision.revision} className="mt-2 border-t pt-2"><summary className="cursor-pointer">Revision {revision.revision} · {revision.author || 'Original content'} · {formatDateTime(revision.created_at)}</summary><pre className="whitespace-pre-wrap break-words p-2">{revision.notes || '(Empty notes)'}</pre></details>)}</div>}
+  </details>;
 }

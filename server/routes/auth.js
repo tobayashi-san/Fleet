@@ -1,3 +1,5 @@
+const {mfaPolicy,requiresMfa}=require('../utils/mfa-policy');
+const {createSession,revokeSession,revokeSignIn,validSession}=require('../utils/auth-sessions');
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
@@ -51,22 +53,62 @@ const setupLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+router.post('/invitations/preview',authSensitiveLimiter,(req,res)=>{
+  res.set('Cache-Control','no-store');
+  try { res.json(require('../services/user-invitations').previewInvitation(requestBody(req).token)); }
+  catch(error){if(error.status)return res.status(error.status).json({error:error.message});serverError(res,error,'preview invitation');}
+});
+
+router.post('/invitations/accept',authSensitiveLimiter,async(req,res)=>{
+  res.set('Cache-Control','no-store');
+  try{
+    const {token,password}=requestBody(req);
+    const result=await require('../services/user-invitations').acceptInvitation(token,password,req);
+    res.set('Cache-Control','no-store').status(201).json(result);
+  }catch(error){if(error.status)return res.status(error.status).json({error:error.message});serverError(res,error,'accept invitation');}
+});
+
 function verifyTotp(code, secret) {
-  const result = otplib.verifySync({ token: String(code).replace(/\s/g, ''), secret });
+  const token=String(code).replace(/\s/g, '');
+  if(!/^[0-9]{6}$/.test(token))return false;
+  const result = otplib.verifySync({ token, secret });
   return result.valid;
 }
 
-function makeToken(user) {
+function makeToken(user, req) {
+  const sid=createSession(user,req);
+  const enrollment=requiresMfa(user) && !user.totp_enabled;
   return jwt.sign(
-    { userId: user.id, username: user.username, role: user.role, tv: user.token_version || 0 },
+    { userId: user.id, username: user.username, role: user.role, sid, tv: user.token_version || 0, mfa: !!user.totp_enabled, ...(enrollment ? {mfa_enrollment:true} : {}) },
     getJwtSecret(),
-    { expiresIn: '8h' }
+    { expiresIn: enrollment ? '10m' : '8h' }
   );
 }
 
 function makeTempToken(payload) {
   return jwt.sign(payload, getJwtSecret(), { expiresIn: '5m' });
 }
+
+router.post('/logout', authSensitiveLimiter, authMiddleware, (req, res) => {
+ if (!revokeSignIn(req.user, req.authPayload, req.headers.authorization.slice(7))) {
+  return res.status(404).json({error:'Session not found'});
+ }
+ res.json({success:true});
+});
+
+router.get('/sessions', authSensitiveLimiter, authMiddleware, (req, res) => {
+ const offset = Number(req.query.offset || 0);
+ if (!Number.isSafeInteger(offset) || offset < 0) return res.status(400).json({error:'Invalid session offset'});
+ const scope = [req.user.id, req.user.token_version || 0, Date.now()];
+ const where = 'user_id=? AND token_version=? AND revoked_at IS NULL AND expires_at>?';
+ const total = db.db.prepare(`SELECT COUNT(*) AS count FROM auth_sessions WHERE ${where}`).get(...scope).count;
+ const sessions = db.db.prepare(`SELECT id,created_at,last_seen_at,expires_at,ip,user_agent FROM auth_sessions WHERE ${where} ORDER BY (id=?) DESC,created_at DESC,id DESC LIMIT 20 OFFSET ?`).all(...scope, req.sessionId || '', offset);
+ res.json({sessions:sessions.map(row=>({...row,current:row.id===req.sessionId})),total,offset,legacy_current:!req.sessionId});
+});
+router.delete('/sessions/:id', authSensitiveLimiter, authMiddleware, (req,res)=>{
+ if(!revokeSession(req.user.id,req.params.id))return res.status(404).json({error:'Session not found'});
+ res.json({success:true,current:req.params.id===req.sessionId});
+});
 
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
@@ -155,7 +197,7 @@ router.post('/setup', setupLimiter, async (req, res) => {
   }
 
   db.auditLog.write('auth.setup', `Initial admin user created: ${username}`, req.ip, true, username);
-  res.json({ token: makeToken(user) });
+  res.json({ token: makeToken(user, req) });
 });
 
 // POST /api/auth/login
@@ -188,6 +230,15 @@ router.post('/login', loginLimiter, async (req, res) => {
     db.auditLog.write('auth.login', `Failed login attempt for ${user.username}`, req.ip, false, user.username);
     return res.status(401).json({ error: 'Incorrect credentials' });
   }
+  // Password hashing yields: use the current account and MFA state, not the
+  // snapshot from before verification, when deciding which token to issue.
+  const verifiedHash=user.password_hash;
+  const verifiedVersion=user.token_version || 0;
+  const currentIdentity=db.users.getById(user.id);
+  user=currentIdentity ? db.users.getByUsername(currentIdentity.username) : null;
+  if(!user || user.password_hash!==verifiedHash || (user.token_version || 0)!==verifiedVersion) {
+    return res.status(401).json({error:'Credentials changed. Please sign in again.'});
+  }
   if (user.disabled) {
     db.auditLog.write('auth.login', `Login blocked for disabled account: ${user.username}`, req.ip, false, user.username);
     return res.status(401).json({ error: 'Account disabled' });
@@ -202,9 +253,14 @@ router.post('/login', loginLimiter, async (req, res) => {
     return res.json({ requires2FA: true, tempToken });
   }
 
+  if(requiresMfa(user)) {
+    db.auditLog.write('auth.mfa_enrollment','Password verified; MFA enrollment required',req.ip,true,user.username);
+    return res.set('Cache-Control','no-store').json({token:makeToken(user,req),requiresMfaEnrollment:true});
+  }
+
   db.users.markLogin(user.id);
   db.auditLog.write('auth.login', `Successful login: ${user.username}`, req.ip, true, user.username);
-  res.json({ token: makeToken(user) });
+  res.json({ token: makeToken(user, req) });
 });
 
 // POST /api/auth/change – change password (requires valid JWT)
@@ -228,7 +284,7 @@ router.post('/change', changeLimiter, authMiddleware, async (req, res) => {
   db.auditLog.write('auth.change', `Password changed for ${req.user.username}, user tokens invalidated`, req.ip, true, req.user.username);
   // Issue a fresh token so the user isn't logged out
   const updatedUser = db.users.getById(req.user.id);
-  res.json({ success: true, token: makeToken(updatedUser) });
+  res.json({ success: true, token: makeToken(updatedUser, req) });
 });
 
 // ── TOTP / 2FA ───────────────────────────────────────────────
@@ -262,71 +318,93 @@ router.post('/totp/login', loginLimiter, (req, res) => {
   }
   db.users.markLogin(user.id);
   db.auditLog.write('auth.login', `Successful login (2FA): ${user.username}`, req.ip, true, user.username);
-  res.json({ token: makeToken(user) });
+  res.json({ token: makeToken(user, req) });
 });
 
 // GET /api/auth/totp/status – is 2FA enabled?
 router.get('/totp/status', authSensitiveLimiter, authMiddleware, (req, res) => {
-  res.json({ enabled: !!req.user.totp_enabled });
+  res.json({ enabled: !!req.user.totp_enabled, required: requiresMfa(req.user), policy: mfaPolicy() });
 });
 
-// POST /api/auth/totp/setup – generate a new TOTP secret and return QR code
+function currentMfaUser(req) {
+  const user=db.users.getById(req.user.id);
+  if(!user || user.disabled || (user.token_version || 0)!==(req.user.token_version || 0)
+    || !validSession(req.authPayload,req.headers.authorization.slice(7))) {
+    throw Object.assign(new Error('Session changed. Sign in again before changing MFA.'),{status:401});
+  }
+  return user;
+}
+function mfaError(res,error,context) {
+  if(error.status)return res.status(error.status).json({error:error.message});
+  return serverError(res,error,context);
+}
+
+// Prepare the QR first; failed rendering must not replace a working pending setup.
 router.post('/totp/setup', authSensitiveLimiter, authMiddleware, async (req, res) => {
+  res.set('Cache-Control','no-store');
   try {
-    const secret = otplib.generateSecret();
-    const appName = db.settings.get('wl_app_name') || 'Shipyard';
-    const username = req.user?.username || 'admin';
-
-    db.users.setPendingTotp(req.user.id, secret);
-
-    const otpauthUrl = otplib.generateURI({ label: username, issuer: appName, secret });
-    const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
-
-    res.json({ secret, otpauthUrl, qrDataUrl });
-  } catch (e) {
-    serverError(res, e, 'totp setup');
-  }
+    if(req.user.totp_enabled)return res.status(409).json({error:'MFA is already enabled. Disable the existing factor before setting up a replacement.'});
+    const previousPending=db.users.getPendingTotpSecret(req.user.id);
+    const secret=previousPending || otplib.generateSecret();
+    const appName=db.settings.get('wl_app_name') || 'Shipyard';
+    const otpauthUrl=otplib.generateURI({label:req.user.username,issuer:appName,secret});
+    const qrDataUrl=await QRCode.toDataURL(otpauthUrl);
+    db.db.transaction(()=>{
+      const current=currentMfaUser(req);
+      if(current.totp_enabled || db.users.getPendingTotpSecret(current.id)!==previousPending) {
+        throw Object.assign(new Error('MFA setup changed. Reload before starting again.'),{status:409});
+      }
+      if(!previousPending) {
+        db.users.setPendingTotp(current.id,secret);
+        db.auditLog.write('auth.totp','MFA setup prepared',req.ip,true,current.username);
+      }
+    }).immediate();
+    res.json({secret,otpauthUrl,qrDataUrl});
+  } catch(error) { mfaError(res,error,'totp setup'); }
 });
 
-// POST /api/auth/totp/confirm – verify code, then enable 2FA
 router.post('/totp/confirm', authSensitiveLimiter, authMiddleware, (req, res) => {
-  const { code } = requestBody(req);
-  if (!code) return res.status(400).json({ error: 'code required' });
-
-  const fullUser = db.users.getByUsername(req.user.username);
-  const secret = fullUser ? db.users.getPendingTotpSecret(fullUser.id) : '';
-  if (!secret) return res.status(400).json({ error: 'No pending TOTP setup. Call /totp/setup first.' });
-  if (!verifyTotp(code, secret)) return res.status(400).json({ error: 'Invalid code – try again' });
-  db.users.setTotp(req.user.id, secret, true);
-  db.users.setPendingTotp(req.user.id, '');
-  // A token created before 2FA was enabled must never stay usable as a
-  // password-only session. Return a replacement so the active UI continues
-  // without interruption.
-  db.users.incrementTokenVersion(req.user.id);
-  const updatedUser = db.users.getById(req.user.id);
-
-  db.auditLog.write('auth.totp', '2FA enabled', req.ip, true, req.user?.username);
-  res.json({ success: true, token: makeToken(updatedUser) });
+  res.set('Cache-Control','no-store');
+  const {code}=requestBody(req);
+  if(!code)return res.status(400).json({error:'code required'});
+  try {
+    const token=db.db.transaction(()=>{
+      const current=currentMfaUser(req);
+      if(current.totp_enabled)throw Object.assign(new Error('MFA is already enabled.'),{status:409});
+      const secret=db.users.getPendingTotpSecret(current.id);
+      if(!secret)throw Object.assign(new Error('No pending TOTP setup. Call /totp/setup first.'),{status:400});
+      if(!verifyTotp(code,secret))throw Object.assign(new Error('Invalid code – try again'),{status:400});
+      db.users.setTotp(current.id,secret,true);
+      db.users.setPendingTotp(current.id,'');
+      db.users.incrementTokenVersion(current.id);
+      db.auditLog.write('auth.totp','2FA enabled',req.ip,true,current.username);
+      return makeToken(db.users.getById(current.id),req);
+    }).immediate();
+    res.json({success:true,token});
+  } catch(error) { mfaError(res,error,'totp confirm'); }
 });
 
-// DELETE /api/auth/totp – disable 2FA (requires password re-authentication)
-router.delete('/totp', authSensitiveLimiter, authMiddleware, async (req, res) => {
-  const { password } = requestBody(req);
-  if (!password || typeof password !== 'string') {
-    return res.status(400).json({ error: 'Password required to disable 2FA' });
-  }
-
-  const fullUser = db.users.getByUsername(req.user.username);
-  if (!fullUser) return res.status(404).json({ error: 'User not found' });
-  const valid = await bcrypt.compare(password, fullUser.password_hash);
-  if (!valid) return res.status(401).json({ error: 'Incorrect password' });
-  db.users.setTotp(req.user.id, '', false);
-  db.users.setPendingTotp(req.user.id, '');
-  db.users.incrementTokenVersion(req.user.id);
-  const updatedUser = db.users.getById(req.user.id);
-
-  db.auditLog.write('auth.totp', '2FA disabled', req.ip, true, req.user?.username);
-  res.json({ success: true, token: makeToken(updatedUser) });
+router.delete('/totp', authSensitiveLimiter, authMiddleware, async (req,res)=>{
+  res.set('Cache-Control','no-store');
+  const {password}=requestBody(req);
+  if(!password || typeof password!=='string')return res.status(400).json({error:'Password required to disable 2FA'});
+  try {
+    const full=db.users.getByUsername(req.user.username);
+    if(!full)return res.status(404).json({error:'User not found'});
+    if(!await bcrypt.compare(password,full.password_hash))return res.status(401).json({error:'Incorrect password'});
+    const token=db.db.transaction(()=>{
+      const current=currentMfaUser(req);
+      if(requiresMfa(current))throw Object.assign(new Error('MFA is required by workspace policy and cannot be disabled.'),{status:403});
+      const latest=db.users.getByUsername(current.username);
+      if(latest.password_hash!==full.password_hash)throw Object.assign(new Error('Credentials changed. Sign in again.'),{status:401});
+      db.users.setTotp(current.id,'',false);
+      db.users.setPendingTotp(current.id,'');
+      db.users.incrementTokenVersion(current.id);
+      db.auditLog.write('auth.totp','2FA disabled',req.ip,true,current.username);
+      return makeToken(db.users.getById(current.id),req);
+    }).immediate();
+    res.json({success:true,token});
+  } catch(error) { mfaError(res,error,'totp disable'); }
 });
 
 module.exports = { router };

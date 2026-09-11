@@ -118,7 +118,14 @@ router.put('/:id/files/upload', guardServerAccess, allow('canManageFiles'), asyn
     const declaredLength = Number(req.get('content-length') || 0);
     const maximum = maxTransferBytes();
     if (declaredLength > maximum) return res.status(413).json({ error: 'File exceeds the configured transfer limit' });
-    if (!overwrite && await sshManager.remoteFileExists(req.server, requestedPath)) {
+    if (req.aborted || res.destroyed) return;
+    const destinationExists = !overwrite && await sshManager.remoteFileExists(req.server, requestedPath);
+    // A disconnect can occur while the SSH preflight is pending, before the
+    // streaming listeners below exist. Do not miss that already-fired event.
+    if (req.aborted || res.destroyed) {
+      throw Object.assign(new Error('Upload canceled'), { code: 'UPLOAD_ABORTED', statusCode: 499 });
+    }
+    if (destinationExists) {
       return res.status(409).json({ error: 'A file already exists at the destination' });
     }
 

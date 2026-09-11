@@ -1,9 +1,18 @@
+import { platformCapacity } from './platform-capacity';
+import {guestAuditPresentation, parseAuditDetail} from '@/lib/audit-display';
 import { Activity, Server } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { formatDateTime } from "@/lib/utils";
 
 export interface Datastore {
+  capacity_history_hourly?: Array<{sampled_at: number; used: number; total: number; observations: number}>;
+  capacity_history?: Array<{sampled_at: number; used: number; total: number}>;
+  content?: string[] | null;
+  shared?: boolean | null;
+  active?: boolean | null;
+  enabled?: boolean | null;
+  capacity_reported?: boolean;
   id: string;
   node_name: string;
   type?: string;
@@ -11,15 +20,53 @@ export interface Datastore {
   total: number;
   available?: number;
 }
+export function datastoreContent(store: Datastore): string {
+  if (!store.content?.length) return 'Content types not reported';
+  const labels: Record<string, string> = {images:'VM disks',rootdir:'Container filesystems',iso:'ISO images',vztmpl:'Container templates',backup:'Backups',snippets:'Snippets'};
+  return store.content.map(type => labels[type] || type).join(', ');
+}
+
+export function filterDatastores(stores: Datastore[], query: string, status = 'all'): Datastore[] {
+  const text = query.trim().toLowerCase();
+  return stores.filter(store => (status === 'all' || datastoreStatus(store) === status) &&
+    (!text || [store.id, store.node_name, store.type || '', datastoreContent(store)].join(' ').toLowerCase().includes(text)));
+}
+
+export function datastoreStatus(store: Datastore): string {
+  if (store.enabled === false) return 'Disabled';
+  if (store.active === false) return 'Inactive';
+  if (store.active === true) return 'Active';
+  return 'Status not reported';
+}
+
+export function datastoreCapacityState(store: Datastore): 'unknown' | 'high' | 'normal' {
+  if (store.active === false || store.active === null || store.enabled === false || store.capacity_reported === false || !Number.isFinite(store.used) || !Number.isFinite(store.total) || store.total <= 0 || store.used < 0 || store.used > store.total) return 'unknown';
+  return store.used / store.total >= 0.85 ? 'high' : 'normal';
+}
+
 export interface Bridge {
+  address6?: string | null;
+  cidr6?: number | null;
+  gateway6?: string | null;
   name: string;
   type?: string;
-  active?: boolean;
+  active?: boolean | null;
   address?: string | null;
   cidr?: number | null;
   gateway?: string | null;
 }
+export function interfaceAddress(address?: string | null, prefix?: number | null, version: 4 | 6 = 4): string {
+  if (!address) return 'Not reported';
+  const valid = Number.isInteger(prefix) && Number(prefix) >= 0 && Number(prefix) <= (version === 6 ? 128 : 32);
+  return `${address}${valid ? `/${prefix}` : ''}`;
+}
+
 export interface Node {
+  network_interfaces?: Bridge[];
+  network_status?: "available" | "unavailable";
+  network_checked_at?: string;
+  datastores_status?: "available" | "unavailable";
+  datastores_checked_at?: string;
   name: string;
   status: string;
   cpu: number;
@@ -93,7 +140,7 @@ export function taskLabel(task: AuditTask) {
   const raw = String(task.action || "Action");
   const normalized = raw === "ipam.proxmox_sync"
     ? "IPAM sync"
-    : raw.replace(/[._-]+/g, " ").replace(/^\w/, (letter) => letter.toUpperCase());
+    : guestAuditPresentation(task).label;
   return task.grouped_count && task.grouped_count > 1
     ? `${normalized} ×${task.grouped_count}`
     : normalized;
@@ -122,7 +169,8 @@ export function statusLabel(value: string) {
   return labels[value.toLowerCase()] || value || "Unknown";
 }
 export function bytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (!Number.isFinite(value) || value < 0) return "—";
+  if (value === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(
     Math.floor(Math.log(value) / Math.log(1024)),
@@ -131,14 +179,13 @@ export function bytes(value: number) {
   return `${(value / 1024 ** index).toFixed(index >= 3 ? 1 : 0)} ${units[index]}`;
 }
 export function pct(value: number, total: number) {
-  return total ? `${Math.round((value / total) * 100)} %` : "—";
+  return Number.isFinite(value) && value >= 0 && Number.isFinite(total) && total > 0 ? `${Math.round((value / total) * 100)} %` : "—";
 }
 export function uptime(seconds: number) {
-  return seconds >= 86400
-    ? `${Math.floor(seconds / 86400)} d`
-    : seconds
-      ? `${Math.floor(seconds / 3600)} h`
-      : "—";
+  if (!Number.isFinite(seconds) || seconds < 0) return "—";
+  if (seconds >= 86400) return `${Math.floor(seconds / 86400)} d`;
+  if (seconds >= 3600) return `${Math.floor(seconds / 3600)} h`;
+  return `${Math.floor(seconds / 60)} min`;
 }
 export function taskDate(value?: string) {
   return formatDateTime(value);
@@ -157,7 +204,7 @@ export function capacityToneForPercentage(percentage: number) {
 // rather than exposing an incidental first response as "primary" storage.
 export function preferredDatastores(stores: Datastore[] = []) {
   const usable = stores.filter(
-    (store) => Number.isFinite(store.total) && store.total > 0,
+    (store) => datastoreCapacityState(store) !== "unknown",
   );
   const zfs = usable.filter((store) => /zfs/i.test(String(store.type || "")));
   return (zfs.length ? zfs : usable)
@@ -170,25 +217,22 @@ export function tasksForObject(
   cluster: Cluster,
   nodeName?: string,
 ) {
-  const needles = nodeName
-    ? [nodeName.toLowerCase()]
-    : [
-        cluster.endpoint.replace(/^https?:\/\//, "").toLowerCase(),
-        ...(cluster.connections ?? []).map((connection) =>
-          connection.name.toLowerCase(),
-        ),
-      ].filter((needle): needle is string => Boolean(needle));
-  const matching = rows
-    .filter((row) => {
-      const text = `${row.action ?? ""} ${row.detail ?? ""}`.toLowerCase();
-      return needles.some((needle) => text.includes(needle));
-    });
+  const connectionIds = new Set((cluster.connections ?? []).map(connection => connection.id));
+  const matching = rows.filter(row => {
+    const fields = parseAuditDetail(row.detail).fields;
+    const sources = fields.filter(field => field.key === 'source_id');
+    // Display names and free text cannot establish which platform owns an event.
+    if (sources.length !== 1 || !connectionIds.has(sources[0].value)) return false;
+    if (!nodeName) return true;
+    const nodes = fields.filter(field => field.key === 'node');
+    return nodes.length === 1 && nodes[0].value === nodeName;
+  });
 
   const grouped = new Map<string, AuditTask[]>();
   const visible: AuditTask[] = [];
   for (const row of matching) {
     const periodic = /(?:^|[._\s-])(sync|synchronize|refresh|inventory|gather)(?:$|[._\s-])/i.test(String(row.action || ""));
-    const succeeded = row.success !== false && row.success !== 0;
+    const succeeded = row.success === true || row.success === 1;
     if (!periodic || !succeeded) {
       visible.push(row);
       continue;
@@ -228,11 +272,13 @@ export function CapacityLine({
   total: number;
   unit?: "bytes" | "cores";
 }) {
-  const percentage =
-    total > 0 ? Math.min(100, Math.round((used / total) * 100)) : 0;
+  if (!Number.isFinite(used) || used < 0 || !Number.isFinite(total) || total <= 0) {
+    return <div className="console-capacity-line"><div className="console-capacity-heading"><span>{label}</span><span>Unavailable</span></div><p className="mt-1 text-xs text-muted-foreground">Usage or capacity was not reported for every included resource.</p></div>;
+  }
+  const percentage = Math.min(100, Math.round((used / total) * 100));
   const display =
     unit === "cores"
-      ? `${Math.round(used)} / ${Math.round(total)} cores`
+      ? `${used.toFixed(2)} / ${Math.round(total)} cores`
       : `${bytes(used)} / ${bytes(total)}`;
   const capacityTone = capacityToneForPercentage(percentage);
   return (
@@ -344,13 +390,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
   const onlineNodeCount = nodes.filter(
     (item) => item.status === "online",
   ).length;
-  const cpuTotal = nodes.reduce((sum, item) => sum + (item.maxcpu || 0), 0);
-  const cpuUsed = nodes.reduce(
-    (sum, item) => sum + (item.cpu || 0) * (item.maxcpu || 0),
-    0,
-  );
-  const memTotal = nodes.reduce((sum, item) => sum + (item.maxmem || 0), 0);
-  const memUsed = nodes.reduce((sum, item) => sum + (item.mem || 0), 0);
+  const { cpuTotal, cpuUsed, memTotal, memUsed } = platformCapacity(nodes);
   const stores = preferredDatastores(
     node?.datastores ?? cluster.datastores ?? [],
   );
@@ -386,7 +426,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
               label="VM operation"
               value={`${runningVmCount} running / ${nodeVmCount}`}
             />
-            <ObjectInfo label="Managed in Shipyard" value={managedVmCount} />
+            <ObjectInfo label="Host operations enabled" value={managedVmCount} />
             <ObjectInfo
               label={isNode ? "Uptime" : "Endpoint"}
               value={
@@ -397,7 +437,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
               mono
             />
             <ObjectInfo
-              label="Primary ZFS datastore"
+              label="Primary datastore"
               value={
                 primaryStore
                   ? `${primaryStore.id}${primaryStore.node_name ? ` · ${primaryStore.node_name}` : ""}`
@@ -412,6 +452,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
             <Activity className="h-4 w-4 text-muted-foreground" />
             Capacity
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">Source: Proxmox inventory. CPU and memory totals require every included node.</p>
           <div className="mt-3 space-y-3">
             <CapacityLine
               label="CPU"
@@ -425,7 +466,7 @@ export function ObjectOverview({ cluster, node }: { cluster: Cluster; node?: Nod
               total={memTotal}
             />
             <CapacityLine
-              label={storageTotal ? "ZFS-Datastores" : "Storage"}
+              label={stores.some(store => /zfs/i.test(store.type || "")) ? "ZFS pool capacity" : "Selected datastore capacity"}
               used={storageUsed}
               total={storageTotal}
             />
@@ -448,7 +489,7 @@ export function ObjectInfo({
   return (
     <div className="console-object-info">
       <div>{label}</div>
-      <div className={mono ? "font-mono" : ""}>{value || "—"}</div>
+      <div className={mono ? "font-mono" : ""}>{value === "" || value == null ? "—" : value}</div>
     </div>
   );
 }

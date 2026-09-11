@@ -1,3 +1,7 @@
+import { platformCapacity } from '@/features/infrastructure/platform-capacity';
+import { Timestamp } from '@/components/ui/timestamp';
+import { uptime, statusLabel, preferredDatastores, datastoreCapacityState, datastoreStatus } from '@/features/infrastructure/detail-model';
+import { platformHostIds } from '@/lib/resource-model';
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import {
@@ -20,28 +24,25 @@ import { showToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { ConfirmDeleteConnection } from '@/features/infrastructure/ConfirmDeleteConnection';
 import { PageHeader } from "@/components/ui/page-header";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { OverflowItem, OverflowMenu, OverflowSep } from "@/components/ui/overflow-menu";
 import { Skeleton } from "@/components/ui/skeleton";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { PlatformConnectionsDialog } from '@/features/infrastructure/PlatformConnectionsDialog';
 import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
-import { cn, formatDateTime } from "@/lib/utils";
+import { cn, formatDateTime, parseApiDate } from "@/lib/utils";
 import {
   ProxmoxConnectionDialog,
   type ProxmoxConnection,
 } from "@/features/infrastructure/ProxmoxConnectionDialog";
 
 interface DatastoreInfo {
+  active?: boolean | null;
+  enabled?: boolean | null;
+  capacity_reported?: boolean;
   id: string;
   node_name: string;
   type: string;
@@ -50,6 +51,7 @@ interface DatastoreInfo {
   available: number;
 }
 interface NodeInfo {
+  fleet_server_id?: string | null;
   name: string;
   status: string;
   cpu: number;
@@ -68,6 +70,8 @@ interface VmInfo {
   fleet_server_id?: string | null;
 }
 interface Cluster {
+  collected_at?: string | null;
+  stale?: boolean;
   id: string;
   endpoint: string;
   status: string;
@@ -77,6 +81,8 @@ interface Cluster {
   datastores?: DatastoreInfo[];
 }
 interface InfrastructureResponse {
+  refreshing?: boolean;
+  cached?: boolean;
   clusters?: Cluster[];
   warnings?: string[];
 }
@@ -106,7 +112,8 @@ function tone(status: string): StatusTone {
 }
 
 function bytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) return "—";
+  if (!Number.isFinite(value) || value < 0) return "—";
+  if (value === 0) return "0 B";
   const units = ["B", "KB", "MB", "GB", "TB"];
   const index = Math.min(
     Math.floor(Math.log(value) / Math.log(1024)),
@@ -116,30 +123,15 @@ function bytes(value: number) {
 }
 
 function percent(value: number, maximum: number) {
-  if (!maximum) return "—";
+  if (!Number.isFinite(value) || value < 0 || !Number.isFinite(maximum) || maximum <= 0) return "—";
   return `${Math.round((value / maximum) * 100)} %`;
 }
 
-function uptime(seconds: number) {
-  if (!seconds) return "—";
-  const days = Math.floor(seconds / 86400);
-  if (days) return `${days} d`;
-  return `${Math.floor(seconds / 3600)} h`;
-}
 
 // Proxmox does not guarantee an order for storage records.  Choosing the
 // first response made a directory/ISO store occasionally appear as the
 // platform's primary datastore.  Prefer actual ZFS pools and use capacity as
 // a stable, operator-readable tie breaker.
-function preferredDatastores(stores: DatastoreInfo[] = []) {
-  const usable = stores.filter(
-    (store) => Number.isFinite(store.total) && store.total > 0,
-  );
-  const zfs = usable.filter((store) => /zfs/i.test(String(store.type || "")));
-  return (zfs.length ? zfs : usable)
-    .slice()
-    .sort((left, right) => (right.total || 0) - (left.total || 0));
-}
 
 export function InfrastructurePage() {
   const routeSearch = useSearch({ from: "/_protected/infrastructure" });
@@ -161,6 +153,7 @@ export function InfrastructurePage() {
         `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
       ),
     staleTime: 15_000,
+    refetchInterval: (query) => query.state.status !== 'error' && query.state.data?.refreshing ? 2_000 : 30_000,
   });
   const connectionsQuery = useQuery({
     queryKey: ["opentofu", "proxmox-connections", environmentId],
@@ -191,16 +184,8 @@ export function InfrastructurePage() {
   // An adopted VM already belongs to the Proxmox inventory below. Rendering it
   // again as a host makes the console look as if it contained two
   // resources. Keep this section exclusively for standalone VPS/bare-metal
-  // hosts, just as vCenter separates inventory objects from external hosts.
-  const adoptedFleetHostIds = useMemo(
-    () =>
-      new Set(
-        clusters
-          .flatMap((cluster) => cluster.vms.map((vm) => vm.fleet_server_id))
-          .filter((id): id is string => Boolean(id)),
-      ),
-    [clusters],
-  );
+  // hosts, just as vCenter separates inventory objects from standalone hosts.
+  const adoptedFleetHostIds = useMemo(() => platformHostIds(clusters), [clusters]);
   const standaloneHosts = useMemo(
     () => hosts.filter((host) => !adoptedFleetHostIds.has(host.id)),
     [adoptedFleetHostIds, hosts],
@@ -223,8 +208,9 @@ export function InfrastructurePage() {
       ),
     [clusters],
   );
+  const serverRefreshing = !inventoryQuery.isError && inventoryQuery.data?.refreshing === true;
   const refreshing =
-    inventoryQuery.isFetching ||
+    inventoryQuery.isFetching || serverRefreshing ||
     hostsQuery.isFetching;
   const refresh = () => {
     void queryClient.invalidateQueries({
@@ -246,7 +232,7 @@ export function InfrastructurePage() {
         title="Infrastructure"
         description={
           clusters.length
-            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} external hosts` : ""}`
+            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} standalone hosts` : ""}`
             : "Read-only platform inventory for connected clusters, nodes, datastores, VMs, and LXC containers."
         }
         actions={
@@ -282,6 +268,7 @@ export function InfrastructurePage() {
         </div>
       ) : (
         <>
+          {serverRefreshing && <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><RefreshCw className="h-4 w-4 animate-spin" />Refreshing platform data; showing the last collected values.</p>}
           {inventoryQuery.data?.warnings?.length ? (
             <div className="rounded-md border border-warning/30 bg-warning/5 px-3 py-2 text-sm text-warning">
               <div className="flex items-center gap-2 font-medium">
@@ -344,16 +331,7 @@ export function InfrastructurePage() {
           {standaloneHosts.length > 0 && <ManagedHostsReference count={standaloneHosts.length} />}
         </>
       )}
-      <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto p-0">
-          <DialogHeader className="border-b px-5 py-4">
-            <DialogTitle>Platform connections</DialogTitle>
-            <DialogDescription>
-              These connections provide the current environment inventory.
-              Deployments can then select them as their infrastructure source.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="p-4">
+      <PlatformConnectionsDialog open={connectionsOpen && !connectionDialogOpen && !connectionToDelete} onOpenChange={setConnectionsOpen}>
             {connectionsQuery.isError ? (
               <QueryErrorState
                 compact
@@ -375,9 +353,7 @@ export function InfrastructurePage() {
               }}
               onDelete={setConnectionToDelete}
             />}
-          </div>
-        </DialogContent>
-      </Dialog>
+      </PlatformConnectionsDialog>
       <ProxmoxConnectionDialog
         environmentId={environmentId}
         connection={connectionToEdit}
@@ -446,10 +422,10 @@ export function ProxmoxConnectionsCard({
       : "Manual only";
   const lastSyncLabel = (connection: ProxmoxConnection) => {
     if (!connection.last_ipam_synced_at) return "Not synchronized yet";
-    const value = new Date(connection.last_ipam_synced_at);
+    const value = parseApiDate(connection.last_ipam_synced_at);
     return Number.isNaN(value.getTime())
       ? "Last synchronization unknown"
-      : `Last ${formatDateTime(value)}`;
+      : <span>Last synchronized: <Timestamp value={value} /></span>;
   };
   const inventoryId = (connection: ProxmoxConnection) => {
     try {
@@ -460,14 +436,14 @@ export function ProxmoxConnectionsCard({
     }
   };
   return (
-    <Card>
+    <Card className="min-w-0 w-full">
       <CardHeader className="flex-row flex-wrap items-start justify-between gap-3 border-b bg-muted/15 py-3">
-        <div>
+        <div className="min-w-0 flex-1 basis-64">
           <CardTitle className="flex items-center gap-2 text-base">
             <Database className="h-4 w-4" />
             Proxmox platforms
           </CardTitle>
-          <p className="mt-1 text-xs text-muted-foreground">
+          <p className="mt-1 break-words text-xs text-muted-foreground">
             Inventory sources for this environment. A connection can be assigned
             to multiple deployments.
           </p>
@@ -479,7 +455,7 @@ export function ProxmoxConnectionsCard({
           </Button>
         )}
       </CardHeader>
-      <CardContent className="p-0">
+      <CardContent className="min-w-0 p-0">
         {connections.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
             No Proxmox platform connected yet.
@@ -510,7 +486,7 @@ export function ProxmoxConnectionsCard({
                       dot
                     >
                       {connection.api_token_configured
-                        ? "Ready"
+                        ? connection.insecure ? "Token stored · TLS checks off" : connection.ca_certificate_configured ? "Token stored · private CA" : "Token stored · TLS verified"
                         : "Token missing"}
                     </StatusBadge>
                   </div>
@@ -575,7 +551,7 @@ export function ProxmoxConnectionsCard({
                 </div>
               ))}
             </div>
-            <div className="table-scroll hidden md:block">
+            <div className="table-scroll hidden min-w-0 max-w-full md:block" role="region" aria-label="Proxmox platform connections" tabIndex={0}>
               <table
                 data-density="compact"
                 className="w-full min-w-[840px] text-sm"
@@ -616,7 +592,7 @@ export function ProxmoxConnectionsCard({
                           dot
                         >
                           {connection.api_token_configured
-                            ? "Access configured"
+                            ? connection.insecure ? "Token stored · TLS checks off" : connection.ca_certificate_configured ? "Token stored · private CA" : "Token stored · TLS verified"
                             : "Token missing"}
                         </StatusBadge>
                       </td>
@@ -683,71 +659,13 @@ export function ProxmoxConnectionsCard({
   );
 }
 
-export function ConfirmDeleteConnection({
-  connection,
-  onOpenChange,
-  onDeleted,
-}: {
-  connection: ProxmoxConnection | null;
-  onOpenChange: (open: boolean) => void;
-  onDeleted: () => void;
-}) {
-  const queryClient = useQueryClient();
-  const deletion = useMutation({
-    mutationFn: () =>
-      apiFetch(
-        `/opentofu/proxmox-connections/${encodeURIComponent(connection?.id || "")}`,
-        { method: "DELETE" },
-      ),
-    onSuccess: async () => {
-      if (!connection) return;
-      showToast("Platform connection removed.", "success");
-      await queryClient.invalidateQueries({
-        queryKey: [
-          "opentofu",
-          "proxmox-connections",
-          connection.environment_id,
-        ],
-      });
-      await queryClient.invalidateQueries({
-        queryKey: ["opentofu", "infrastructure", connection.environment_id],
-      });
-      onDeleted();
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  return (
-    <ConfirmDialog
-      open={Boolean(connection)}
-      onOpenChange={onOpenChange}
-      title="Remove platform connection?"
-      description={
-        connection ? (
-          <>
-            The connection <strong>{connection.name}</strong> will be removed.
-            If deployments still use it, Shipyard protects the connection and
-            requires reassignment first.
-          </>
-        ) : (
-          ""
-        )
-      }
-      confirmLabel="Remove connection"
-      cancelLabel="Cancel"
-      variant="destructive"
-      onConfirm={() => deletion.mutate()}
-      isPending={deletion.isPending}
-    />
-  );
-}
-
 function ManagedHostsReference({ count }: { count: number }) {
   return (
     <Card>
       <CardContent className="flex flex-wrap items-center gap-3 p-4">
         <Server className="h-5 w-5 text-muted-foreground" />
         <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{count} external host{count === 1 ? "" : "s"}</div>
+          <div className="text-sm font-semibold">{count} standalone host{count === 1 ? "" : "s"}</div>
           <p className="mt-0.5 text-xs text-muted-foreground">Host health, updates, access, and bulk administration live in Hosts.</p>
         </div>
         <Button asChild size="sm" variant="outline"><Link to="/servers">Open hosts</Link></Button>
@@ -816,7 +734,7 @@ function FleetHostsCard({
                     value={
                       info?.ram_total_mb
                         ? percent(
-                            Number(info.ram_used_mb || 0),
+                            info.ram_used_mb ?? Number.NaN,
                             Number(info.ram_total_mb),
                           )
                         : "—"
@@ -827,7 +745,7 @@ function FleetHostsCard({
                     value={
                       info?.disk_total_gb
                         ? percent(
-                            Number(info.disk_used_gb || 0),
+                            info.disk_used_gb ?? Number.NaN,
                             Number(info.disk_total_gb),
                           )
                         : "—"
@@ -858,9 +776,9 @@ function FleetHostsCard({
                 const info = infos[index];
                 const cpu = Number(info?.cpu_usage_pct);
                 const cpuKnown = Number.isFinite(cpu);
-                const ramUsed = Number(info?.ram_used_mb || 0);
+                const ramUsed = info?.ram_used_mb ?? Number.NaN;
                 const ramTotal = Number(info?.ram_total_mb || 0);
-                const diskUsed = Number(info?.disk_used_gb || 0);
+                const diskUsed = info?.disk_used_gb ?? Number.NaN;
                 const diskTotal = Number(info?.disk_total_gb || 0);
                 return (
                   <tr key={host.id}>
@@ -921,7 +839,7 @@ function FleetHostsCard({
                       )}
                     </td>
                     <td className="font-mono text-xs">
-                      {uptime(Number(info?.uptime_seconds || 0))}
+                      {uptime(info?.uptime_seconds ?? Number.NaN)}
                     </td>
                   </tr>
                 );
@@ -954,20 +872,22 @@ function CapacityValue({
   used,
   total,
   detail,
+  label,
   format = bytes,
 }: {
   used: number;
   total: number;
   detail?: string;
+  label?: string;
   format?: (value: number) => string;
 }) {
-  if (!Number.isFinite(total) || total <= 0)
-    return <span className="font-mono text-xs text-muted-foreground">—</span>;
+  if (!Number.isFinite(used) || used < 0 || !Number.isFinite(total) || total <= 0)
+    return <span className="text-xs text-muted-foreground">{label ? `${label}: ` : ""}Unavailable · Usage or capacity was not reported.</span>;
   const value = Math.min(100, Math.max(0, Math.round((used / total) * 100)));
   return (
     <div className="min-w-[9rem]">
       <div className="whitespace-nowrap font-mono text-xs tabular-nums">
-        {format(used)} / {format(total)}{" "}
+        {label ? `${label}: ` : ""}{format(used)} / {format(total)}{" "}
         <span className="text-muted-foreground">· {value} %</span>
       </div>
       {detail && (
@@ -1026,16 +946,22 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
                     </div>
                   </div>
                   <StatusBadge tone={tone(cluster.status)} dot>
-                    {cluster.status === "online" ? "Connected" : "Offline"}
+                    {cluster.status === "online" ? "Connected" : statusLabel(cluster.status)}
                   </StatusBadge>
                 </div>
                 <div className="mt-2 text-[13px] text-muted-foreground">{metrics.onlineNodes} / {cluster.nodes.length} nodes reachable · {metrics.running} / {cluster.vms.length} virtual machines running</div>
+                <div className="mt-2 space-y-1">
+                  <CapacityValue label="CPU" used={metrics.cpuUsed} total={metrics.cpuTotal} format={value => `${value.toFixed(value < 10 ? 1 : 0)} cores`} />
+                  <CapacityValue label="Memory" used={metrics.memUsed} total={metrics.memTotal} />
+                  <p className="text-xs text-muted-foreground">Source: Proxmox node inventory; totals require every node.</p>
+                </div>
+                <p className={cn("mt-1 text-xs", cluster.stale ? "text-warning" : "text-muted-foreground")}>Last collected: {formatDateTime(cluster.collected_at)}{cluster.stale ? " · Refresh failed; retained data." : ""}</p>
               </Link>
             );
           })}
       </div>
-      <div className="hidden min-h-[24rem] lg:grid lg:grid-cols-[minmax(15rem,.7fr)_minmax(0,1.3fr)]">
-        <div className="border-r bg-muted/10 p-2" aria-label="Platform list">
+      <div className={cn("hidden lg:grid", clusters.length > 1 && "min-h-[24rem] lg:grid-cols-[minmax(15rem,.7fr)_minmax(0,1.3fr)]")}>
+        {clusters.length > 1 && <div className="border-r bg-muted/10 p-2" aria-label="Platform list">
           {clusters.map((cluster) => {
             const metrics = platformMetrics(cluster);
             const active = cluster.id === selected?.id;
@@ -1047,7 +973,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
                 className={`flex w-full min-w-0 items-start gap-3 rounded-sm px-3 py-2.5 text-left transition-colors ${active ? "bg-accent text-foreground" : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"}`}
                 aria-pressed={active}
               >
-                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${cluster.status === "online" ? "bg-success" : "bg-destructive"}`} />
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${cluster.status === "online" ? "bg-success" : cluster.status === "offline" ? "bg-destructive" : "bg-muted-foreground/50"}`} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium">{metrics.name}</span>
                   <span className="mt-0.5 block truncate font-mono text-xs text-muted-foreground">{cluster.endpoint.replace(/^https?:\/\//, "")}</span>
@@ -1056,7 +982,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
               </button>
             );
           })}
-        </div>
+        </div>}
         {selected && <PlatformPreview cluster={selected} />}
       </div>
     </section>
@@ -1066,6 +992,7 @@ function PlatformInventory({ clusters }: { clusters: Cluster[] }) {
 function PlatformPreview({ cluster }: { cluster: Cluster }) {
   const metrics = platformMetrics(cluster);
   const store = metrics.datastores[0];
+  const allDatastores = cluster.datastores ?? [];
   return (
     <div className="min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3 border-b px-5 py-4">
@@ -1074,35 +1001,38 @@ function PlatformPreview({ cluster }: { cluster: Cluster }) {
             <h3 className="truncate text-base font-semibold">
               <Link className="hover:text-primary hover:underline" to="/infrastructure/$clusterId" params={{ clusterId: cluster.id }}>{metrics.name}</Link>
             </h3>
-            <StatusBadge tone={tone(cluster.status)} dot>{cluster.status === "online" ? "Connected" : "Offline"}</StatusBadge>
+            <StatusBadge tone={tone(cluster.status)} dot>{cluster.status === "online" ? "Connected" : statusLabel(cluster.status)}</StatusBadge>
           </div>
           <p className="mt-1 truncate font-mono text-xs text-muted-foreground">{cluster.endpoint.replace(/^https?:\/\//, "")}</p>
+          <p className={cn("mt-1 text-xs", cluster.stale ? "text-warning" : "text-muted-foreground")}>Last collected: {formatDateTime(cluster.collected_at)}{cluster.stale ? " · Latest refresh failed; showing retained data." : ""}</p>
         </div>
       </div>
       <div className="grid grid-cols-2 border-b xl:grid-cols-4">
         <PreviewFact label="Nodes" value={`${metrics.onlineNodes} / ${cluster.nodes.length}`} />
         <PreviewFact label="Virtual machines" value={`${metrics.running} / ${cluster.vms.length}`} />
-        <PreviewFact label="CPU" value={metrics.cpuTotal ? `${Math.round((metrics.cpuUsed / metrics.cpuTotal) * 100)} %` : "—"} />
-        <PreviewFact label="Memory" value={metrics.memTotal ? `${Math.round((metrics.memUsed / metrics.memTotal) * 100)} %` : "—"} />
+        <PreviewFact label="CPU" value={Number.isFinite(metrics.cpuTotal) && metrics.cpuTotal > 0 ? `${Math.round((metrics.cpuUsed / metrics.cpuTotal) * 100)} %` : "Unavailable"} />
+        <PreviewFact label="Memory" value={Number.isFinite(metrics.memTotal) && metrics.memTotal > 0 ? `${Math.round((metrics.memUsed / metrics.memTotal) * 100)} %` : "Unavailable"} />
       </div>
       <div className="grid gap-5 p-5 xl:grid-cols-2">
         <div>
           <h4 className="text-[13px] font-semibold">Capacity</h4>
+          <p className="mt-1 text-xs text-muted-foreground">Source: Proxmox node inventory. Totals require measurements from every node.</p>
           <div className="mt-3 space-y-3">
-            <CapacityValue used={metrics.cpuUsed} total={metrics.cpuTotal} format={(value) => `${value.toFixed(value < 10 ? 1 : 0)} Cores`} />
-            <CapacityValue used={metrics.memUsed} total={metrics.memTotal} />
-            {store && <CapacityValue used={store.used} total={store.total} detail={store.id} />}
+            <CapacityValue label="CPU" used={metrics.cpuUsed} total={metrics.cpuTotal} format={(value) => `${value.toFixed(value < 10 ? 1 : 0)} Cores`} />
+            <CapacityValue label="Memory" used={metrics.memUsed} total={metrics.memTotal} />
+            {store && <CapacityValue used={store.used} total={store.total} detail={`${store.id} · ${store.node_name} · representative datastore`} />}
           </div>
         </div>
         <div id="infrastructure-nodes" className="scroll-mt-16">
           <h4 className="text-[13px] font-semibold">Nodes</h4>
           <div className="mt-2 divide-y border-y">
             {cluster.nodes.map((node) => (
-              <div key={node.name} className="flex items-center gap-2 py-2 text-[13px]">
-                <span className={`h-1.5 w-1.5 rounded-full ${node.status === "online" ? "bg-success" : "bg-destructive"}`} />
+              <Link key={node.name} to="/infrastructure/$clusterId/nodes/$nodeName" params={{clusterId:cluster.id,nodeName:node.name}} className="flex items-center gap-2 py-2 text-[13px] hover:text-primary">
+                <span className={`h-1.5 w-1.5 rounded-full ${node.status === "online" ? "bg-success" : node.status === "offline" ? "bg-destructive" : "bg-muted-foreground/50"}`} />
                 <span className="min-w-0 flex-1 truncate font-mono">{node.name}</span>
+                <span className="text-xs text-muted-foreground">{statusLabel(node.status)}</span>
                 <span className="text-muted-foreground">{percent(node.mem, node.maxmem)} RAM</span>
-              </div>
+              </Link>
             ))}
           </div>
         </div>
@@ -1122,18 +1052,19 @@ function PlatformPreview({ cluster }: { cluster: Cluster }) {
               </Link>
             ))}
             {cluster.vms.length === 0 && <p className="py-3 text-xs text-muted-foreground">No virtual machines or containers.</p>}
+            {cluster.vms.length > 8 && <Link to="/infrastructure/$clusterId" params={{clusterId:cluster.id}} hash="tab=vms" className="block py-3 text-xs font-medium text-primary hover:underline">View all {cluster.vms.length} virtual machines / containers ({cluster.vms.length - 8} more)</Link>}
           </div>
         </div>
         <div id="infrastructure-datastores" className="scroll-mt-16">
           <h4 className="text-[13px] font-semibold">Datastores</h4>
           <div className="mt-2 divide-y border-y">
-            {metrics.datastores.map((datastore) => (
+            {allDatastores.map((datastore) => (
               <div key={`${datastore.node_name}:${datastore.id}`} className="flex items-center gap-3 py-2 text-[13px]">
-                <span className="min-w-0 flex-1 truncate font-mono">{datastore.id}</span>
-                <span className="text-xs text-muted-foreground">{bytes(datastore.used)} / {bytes(datastore.total)}</span>
+                <span className="min-w-0 flex-1"><span className="block break-words font-mono">{datastore.id}</span><span className="block text-xs text-muted-foreground">{datastore.node_name} · {datastore.type || 'Type not reported'} · {datastoreStatus(datastore)}</span></span>
+                <span className="max-w-[50%] text-right text-xs text-muted-foreground">{datastoreCapacityState(datastore) === 'unknown' ? 'Capacity unavailable · Check storage status and collection in Proxmox.' : `${bytes(datastore.used)} / ${bytes(datastore.total)}`}</span>
               </div>
             ))}
-            {metrics.datastores.length === 0 && <p className="py-3 text-xs text-muted-foreground">No datastore capacity reported.</p>}
+            {allDatastores.length === 0 && <p className="py-3 text-xs text-muted-foreground">No datastores reported.</p>}
           </div>
         </div>
       </div>
@@ -1159,13 +1090,7 @@ function platformMetrics(cluster: Cluster) {
       "Proxmox platform",
     onlineNodes: nodes.filter((node) => node.status === "online").length,
     running: cluster.vms.filter((vm) => vm.status === "running").length,
-    cpuUsed: nodes.reduce(
-      (sum, node) => sum + (node.cpu || 0) * (node.maxcpu || 0),
-      0,
-    ),
-    cpuTotal: nodes.reduce((sum, node) => sum + (node.maxcpu || 0), 0),
-    memUsed: nodes.reduce((sum, node) => sum + (node.mem || 0), 0),
-    memTotal: nodes.reduce((sum, node) => sum + (node.maxmem || 0), 0),
+    ...platformCapacity(nodes),
     datastores,
   };
 }

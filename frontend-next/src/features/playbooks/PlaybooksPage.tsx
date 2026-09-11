@@ -62,7 +62,7 @@ import { useUi } from "@/lib/store";
 import { useProfile, hasCap } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { ws } from "@/lib/ws";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useLocation } from "@tanstack/react-router";
 import { useUrlTab } from "@/lib/use-url-tab";
 import {
   buildAllExceptTargets,
@@ -97,9 +97,14 @@ export function PlaybooksPage() {
   const { t } = useTranslation();
   const { data: profile } = useProfile();
   const navigate = useNavigate();
+  const location = useLocation();
+  const requestedFile = new URLSearchParams(location.searchStr).get("file") || undefined;
   const isAdmin = profile?.role === "admin";
   const [runPreset, setRunPreset] = useState("");
   const [createRequest, setCreateRequest] = useState(0);
+  const [createContext, setCreateContext] = useState<string | undefined>();
+  const nextCreateRequest = useRef(0);
+  const consumeCreateRequest = useCallback(() => setCreateRequest(0), []);
 
   const tabs = useMemo<{
     value: string;
@@ -150,7 +155,7 @@ export function PlaybooksPage() {
           <div className="flex flex-wrap items-center justify-end gap-2">
             {isAdmin && <GitWidget onGoSettings={() => navigate({ to: "/settings/$tab", params: { tab: "git" } })} />}
             {hasCap(profile, "canEditPlaybooks") && (
-              <Button onClick={() => { playbookTabs.onValueChange("templates"); setCreateRequest((value) => value + 1); }}>
+              <Button onClick={() => { playbookTabs.onValueChange("templates"); setCreateContext(requestedFile); setCreateRequest(++nextCreateRequest.current); }}>
                 <Plus />{t("pb.new")}
               </Button>
             )}
@@ -168,7 +173,7 @@ export function PlaybooksPage() {
         </TabsList>
 
         <TabsContent value="templates">
-          <TemplatesTab createRequest={createRequest} onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
+          <TemplatesTab key={requestedFile || "library"} initialFile={requestedFile} createRequest={createContext === requestedFile ? createRequest : 0} onCreateRequestHandled={consumeCreateRequest} onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
         </TabsContent>
         <TabsContent value="runs">
           <RunsTab initialPlaybook={runPreset} />
@@ -191,6 +196,7 @@ export function PlaybooksPage() {
 function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const [operationError, setOperationError] = useState("");
   const cfgQuery = useQuery({
     queryKey: ["git-config"],
     queryFn: () => api.getGitConfig() as Promise<Record<string, unknown>>,
@@ -198,21 +204,25 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
   const cfg = cfgQuery.data;
   const branch = (cfg?.branch as string) || "main";
   const configured = !!cfg?.repoUrl;
+  const readOnly = cfg?.readOnly === true;
 
   const pullMut = useMutation({
     mutationFn: () => api.gitPull(),
+    onMutate: () => setOperationError(""),
     onSuccess: () => {
       showToast(t("git.pulled"), "success");
       qc.invalidateQueries({ queryKey: ["playbooks"] });
+      qc.invalidateQueries({ queryKey: ["git-status"] });
+      qc.invalidateQueries({ queryKey: ["git-config"] });
+      qc.invalidateQueries({ queryKey: ["git-log"] });
     },
-    onError: (e: Error) =>
-      showToast(t("git.pullFailed", { msg: e.message }), "error"),
+    onError: (e: Error) => { setOperationError(e.message); showToast(t("git.pullFailed", { msg: e.message }), "error"); },
   });
   const pushMut = useMutation({
     mutationFn: () => api.gitPush(),
-    onSuccess: () => showToast(t("git.pushed"), "success"),
-    onError: (e: Error) =>
-      showToast(t("git.pushFailed", { msg: e.message }), "error"),
+    onMutate: () => setOperationError(""),
+    onSuccess: () => { showToast(t("git.pushed"), "success"); void qc.invalidateQueries({ queryKey: ["git-status"] }); void qc.invalidateQueries({ queryKey: ["git-log"] }); },
+    onError: (e: Error) => { setOperationError(e.message); showToast(t("git.pushFailed", { msg: e.message }), "error"); },
   });
 
   if (cfgQuery.isError) {
@@ -234,7 +244,7 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
       <div className="flex min-w-0 max-w-[220px] items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium text-muted-foreground">
         <GitBranch className="h-3.5 w-3.5" />
         <span className="truncate">
-          {configured ? branch : t("git.notConfigured")}
+          {cfgQuery.isPending ? "Loading Git status…" : configured ? `${branch}${readOnly ? " · Remote read-only" : ""}` : t("git.notConfigured")}
         </span>
       </div>
       <Button
@@ -242,8 +252,9 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
         size="icon"
         className="h-7 w-7"
         onClick={() => pullMut.mutate()}
-        disabled={pullMut.isPending}
+        disabled={!configured || cfgQuery.isPending || pullMut.isPending || pushMut.isPending}
         title={t("git.pullRemote")}
+        aria-label={t("git.pullRemote")}
       >
         <ArrowDown className="h-3.5 w-3.5" />
       </Button>
@@ -252,8 +263,9 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
         size="icon"
         className="h-7 w-7"
         onClick={() => pushMut.mutate()}
-        disabled={pushMut.isPending}
-        title={t("git.pushRemote")}
+        disabled={!configured || cfgQuery.isPending || readOnly || pushMut.isPending || pullMut.isPending}
+        title={readOnly ? "Publishing is disabled in remote read-only mode" : t("git.pushRemote")}
+        aria-label={t("git.pushRemote")}
       >
         <ArrowUp className="h-3.5 w-3.5" />
       </Button>
@@ -267,6 +279,8 @@ function GitWidget({ onGoSettings }: { onGoSettings: () => void }) {
         <Settings2 className="h-3.5 w-3.5" />
         Git settings
       </Button>
+      {(pullMut.isPending || pushMut.isPending) && <span role="status" className="text-xs text-muted-foreground">{pullMut.isPending ? 'Pulling from remote…' : 'Pushing to remote…'}</span>}
+      {operationError && <p role="alert" className="w-full text-right text-xs text-destructive">{operationError}</p>}
     </div>
   );
 }

@@ -6,6 +6,7 @@ const fs   = require('fs');
 
 process.env.DB_PATH  = path.join(os.tmpdir(), `lab_test_ssh_${Date.now()}.db`);
 process.env.NODE_ENV = 'test';
+process.env.SHIPYARD_SSH_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-ssh-manager-test-'));
 delete process.env.SHIPYARD_KEY_SECRET; // no AES wrapping during tests
 
 const { describe, it, before, after } = require('node:test');
@@ -15,7 +16,7 @@ const { execFileSync } = require('child_process');
 const sshManager = require('../services/ssh-manager');
 const db         = require('../db');
 
-const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
+const SSH_DIR = process.env.SHIPYARD_SSH_DIR;
 
 // Clean state: wipe ssh_keys table and disk files
 function resetKeys() {
@@ -78,7 +79,7 @@ describe('importKey', () => {
     sshManager.importKey(content, 'imported_pass', 'secret123');
 
     // Key on disk should now be passphrase-free
-    const keyPath = path.join(SSH_DIR, 'imported_pass');
+    const keyPath = sshManager.getKeyInfo().privateKeyPath;
     const pub = execFileSync('ssh-keygen', ['-y', '-f', keyPath], { encoding: 'utf8' });
     assert.ok(pub.startsWith('ssh-ed25519'));
   });
@@ -161,4 +162,22 @@ describe('removeKnownHostEntries', () => {
     assert.equal(fs.existsSync(outsideKey), true);
     fs.rmSync(outsideDir, { recursive: true, force: true });
   });
+});
+
+it('invalid repeated imports and audit failure preserve the active key and remove candidates',()=>{
+ resetKeys();const first=makeKey();sshManager.importKey(first,'same-name');
+ const active=sshManager.getKeyInfo();const previous=sshManager.getPrivateKeyExport();const dirs=fs.readdirSync(SSH_DIR).sort();
+ assert.throws(()=>sshManager.importKey('invalid private key','same-name'),/Invalid SSH/);
+ assert.equal(sshManager.getKeyInfo().privateKeyPath,active.privateKeyPath);assert.equal(sshManager.getPrivateKeyExport(),previous);assert.deepEqual(fs.readdirSync(SSH_DIR).sort(),dirs);
+ assert.throws(()=>sshManager.importKey(makeKey(),'same-name','',()=>{throw Error('synthetic audit failure');}),/synthetic audit/);
+ assert.equal(sshManager.getKeyInfo().publicKey,active.publicKey);assert.equal(sshManager.getPrivateKeyExport(),previous);assert.deepEqual(fs.readdirSync(SSH_DIR).sort(),dirs);
+});
+it('encrypted replacement validates separately and keeps the old key on wrong passphrase',()=>{
+ process.env.SHIPYARD_KEY_SECRET='synthetic-import-key';
+ try {
+  sshManager.importKey(makeKey(),'encrypted-import');const active=sshManager.getKeyInfo();const previous=sshManager.getPrivateKeyExport();
+  assert.equal(fs.existsSync(active.privateKeyPath),false);assert.ok(fs.existsSync(active.privateKeyPath+'.enc'));
+  assert.throws(()=>sshManager.importKey(makeKey('correct'),'encrypted-import','wrong'),/passphrase/);
+  assert.equal(sshManager.getPrivateKeyExport(),previous);assert.equal(sshManager.getKeyInfo().privateKeyPath,active.privateKeyPath);
+ }finally {delete process.env.SHIPYARD_KEY_SECRET;}
 });

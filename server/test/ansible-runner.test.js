@@ -109,11 +109,18 @@ test('runPlaybook merges environment variables and applies dry-run and fork opti
   const originalSpawn = ansibleRunner._spawnProcess;
   const originalGenerateInventory = ansibleRunner.generateInventory;
   let capturedArgs;
+  let capturedVars;
+  let variablesPath;
   let streamedOutput = '';
   ansibleRunner._resolveSshKey = () => ({ keyPath: '/tmp/test-key', cleanup: () => {} });
   ansibleRunner.generateInventory = () => '/tmp/test-inventory.ini';
   ansibleRunner._spawnProcess = async (_binary, args, onOutput) => {
     capturedArgs = args;
+    const argument=args[args.indexOf('-e')+1];
+    assert.ok(argument.startsWith('@'));variablesPath=argument.slice(1);
+    assert.equal(fs.statSync(variablesPath).mode & 0o777,0o600);
+    assert.equal(fs.statSync(path.dirname(variablesPath)).mode & 0o777,0o700);
+    capturedVars=JSON.parse(fs.readFileSync(variablesPath,'utf8'));
     onOutput('stdout', 'value=do-not-log');
     return { success: true, stdout: 'value=do-not-log', stderr: '', code: 0 };
   };
@@ -121,8 +128,9 @@ test('runPlaybook merges environment variables and applies dry-run and fork opti
     const result = await ansibleRunner.runPlaybook('update.yml', 'ubuntu-server-01', { run_value: 'manual' }, (_type, data) => { streamedOutput += data; }, {
       environmentId: 'default', checkMode: true, forks: 2, runId: 'run-test',
     });
-    const varsIndex = capturedArgs.indexOf('-e');
-    assert.deepEqual(JSON.parse(capturedArgs[varsIndex + 1]), { global_value: 'from-store', secret_value: 'do-not-log', run_value: 'manual' });
+    assert.ok(!JSON.stringify(capturedArgs).includes('do-not-log'));
+    assert.equal(fs.existsSync(path.dirname(variablesPath)),false);
+    assert.deepEqual(capturedVars, { global_value: 'from-store', secret_value: 'do-not-log', run_value: 'manual' });
     assert.ok(capturedArgs.includes('--check'));
     assert.ok(capturedArgs.includes('--diff'));
     assert.deepEqual(capturedArgs.slice(-2), ['--forks', '2']);
@@ -162,4 +170,36 @@ test('a prepared playbook run can be cancelled before Ansible is spawned', async
     ansibleRunner.generateInventory = originalGenerateInventory;
     ansibleRunner.clearRun(runId);
   }
+});
+
+test('typed variables retain native JSON values and temporary secrets are removed on spawn failure',async()=>{
+ const resolve=ansibleRunner._resolveSshKey, spawn=ansibleRunner._spawnProcess, inventory=ansibleRunner.generateInventory;
+ db.ansibleVars.create('typed_number','2.5','',{valueType:'number'});
+ db.ansibleVars.create('typed_boolean','false','',{valueType:'boolean'});
+ db.ansibleVars.create('typed_json','{"items":[1,true]}','',{valueType:'json'});
+ let variablesPath;
+ ansibleRunner._resolveSshKey=()=>({keyPath:'/tmp/test-key',cleanup:()=>{}});
+ ansibleRunner.generateInventory=()=>'/tmp/test-inventory.ini';
+ ansibleRunner._spawnProcess=async(_binary,args)=>{
+  variablesPath=args[args.indexOf('-e')+1].slice(1);
+  assert.deepEqual(JSON.parse(fs.readFileSync(variablesPath,'utf8')),{typed_number:7,typed_boolean:false,typed_json:{items:[1,true]}});
+  throw Error('synthetic spawn failure');
+ };
+ try {await assert.rejects(()=>ansibleRunner.runPlaybook('update.yml','all',{typed_number:7}),/synthetic spawn failure/);assert.equal(fs.existsSync(path.dirname(variablesPath)),false);}
+ finally {ansibleRunner._resolveSshKey=resolve;ansibleRunner._spawnProcess=spawn;ansibleRunner.generateInventory=inventory;db.db.prepare("DELETE FROM ansible_vars WHERE key LIKE 'typed_%'").run();}
+});
+
+test('live output masks split stored and overridden secrets independently on stdout and stderr',async()=>{
+ const resolve=ansibleRunner._resolveSshKey, spawn=ansibleRunner._spawnProcess, inventory=ansibleRunner.generateInventory;
+ db.ansibleVars.create('stream_secret','original-secret','',{isSecret:true});
+ ansibleRunner._resolveSshKey=()=>({keyPath:'/tmp/test-key',cleanup:()=>{}});ansibleRunner.generateInventory=()=>'/tmp/test-inventory.ini';
+ const output={stdout:'',stderr:''};
+ ansibleRunner._spawnProcess=async(_binary,_args,onOutput)=>{
+  onOutput('stdout','new-');onOutput('stderr','original-');onOutput('stdout','secret tail');onOutput('stderr','secret end');
+  return {success:true,stdout:'new-secret tail',stderr:'original-secret end',code:0};
+ };
+ try {
+  const result=await ansibleRunner.runPlaybook('update.yml','all',{stream_secret:'new-secret'},(type,value)=>{output[type]+=value;});
+  assert.deepEqual(output,{stdout:'******** tail',stderr:'******** end'});assert.equal(result.stdout,output.stdout);assert.equal(result.stderr,output.stderr);
+ }finally{ansibleRunner._resolveSshKey=resolve;ansibleRunner._spawnProcess=spawn;ansibleRunner.generateInventory=inventory;db.db.prepare("DELETE FROM ansible_vars WHERE key='stream_secret'").run();}
 });

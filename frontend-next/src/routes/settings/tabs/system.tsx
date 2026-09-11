@@ -1,14 +1,18 @@
+import { AgentOverview } from '@/features/system/AgentOverview';
+import { PollingRuntime } from '@/features/system/PollingRuntime';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Terminal, Clock, Bot, CheckCircle2, XCircle, Save, AlertTriangle, Download, RefreshCw } from 'lucide-react';
 import { api } from '@/lib/api';
+import { useUnsavedChanges } from '@/lib/use-unsaved-changes';
 import { showToast } from '@/lib/toast';
 import { useSettings } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { QueryErrorState } from '@/components/ui/query-error-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { SettingsRow, SettingsSection } from '../_row';
@@ -17,6 +21,7 @@ export function SystemTab() {
   const { t } = useTranslation();
   return (
     <div className="space-y-4">
+      <SettingsSection icon={<Clock className="h-4 w-4" />} title="Runtime status" description="Observe scheduled collection separately from installed tools and configuration."><PollingRuntime /></SettingsSection>
       <SettingsSection icon={<Terminal className="h-4 w-4" />} title={t('set.ansible')}>
         <AnsibleStatus />
       </SettingsSection>
@@ -51,6 +56,7 @@ export function SystemTab() {
         description={t('set.agentFeatureHint')}
       >
         <AgentToggle />
+        <AgentOverview />
       </SettingsSection>
     </div>
   );
@@ -185,20 +191,29 @@ const COMMON_TIMEZONES = [
 function SchedulerTimezone() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: settings } = useSettings();
+  const settingsQuery = useSettings();
+  const { data: settings } = settingsQuery;
   const current = String((settings as Record<string, unknown> | undefined)?.schedulerTimezone || 'Europe/Zurich');
-  const [timezone, setTimezone] = useState(current);
-
-  useEffect(() => { setTimezone(current); }, [current]);
+  const [editedTimezone, setEditedTimezone] = useState<string | null>(null);
+  const timezone = editedTimezone ?? current;
+  const timezoneDirty = timezone.trim() !== current;
+  useUnsavedChanges(timezoneDirty);
+  let validTimezone = false;
+  try { if (timezone.trim()) { new Intl.DateTimeFormat('en-GB', {timeZone: timezone.trim()}).format(); validTimezone = true; } } catch { /* Show field feedback below. */ }
 
   const save = useMutation({
     mutationFn: (value: string) => api.saveSettings({ schedulerTimezone: value.trim() }),
-    onSuccess: () => {
+    onSuccess: (_result, value) => {
+      qc.setQueryData(['settings'], (previous: Record<string, unknown> | undefined) => ({...previous, schedulerTimezone: value.trim()}));
+      setEditedTimezone(null);
       showToast(t('set.schedulerSaved'), 'success');
       qc.invalidateQueries({ queryKey: ['settings'] });
     },
     onError: (err) => showToast((err as Error).message, 'error'),
   });
+
+  if (settingsQuery.isError) return <SettingsRow noBorder><QueryErrorState compact title="Scheduler settings could not be loaded" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></SettingsRow>;
+  if (settingsQuery.isPending) return <SettingsRow noBorder><Skeleton className="h-9 w-64" /></SettingsRow>;
 
   return (
     <>
@@ -209,18 +224,27 @@ function SchedulerTimezone() {
             name="schedulerTimezone"
             list="shipyard-timezones"
             value={timezone}
-            onChange={(e) => setTimezone(e.target.value)}
+            onChange={(e) => setEditedTimezone(e.target.value)}
+            disabled={save.isPending}
+            aria-invalid={!validTimezone}
+            aria-describedby="scheduler-timezone-feedback"
             placeholder="Europe/Zurich"
             className="w-full sm:w-64"
           />
           <datalist id="shipyard-timezones">
             {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz} />)}
           </datalist>
-          <Button size="sm" onClick={() => save.mutate(timezone)} disabled={save.isPending || !timezone.trim()}>
-            <Save className="h-4 w-4" /> {t('common.save')}
+          <Button size="sm" onClick={() => save.mutate(timezone)} disabled={save.isPending || !validTimezone || !timezoneDirty}>
+            <Save className="h-4 w-4" /> Save scheduler timezone
           </Button>
+          {editedTimezone !== null && <Button variant="outline" disabled={save.isPending} onClick={() => setEditedTimezone(null)}>Discard timezone change</Button>}
         </div>
       </SettingsRow>
+      <div id="scheduler-timezone-feedback" className="space-y-2 text-sm">
+        {!validTimezone && <p role="alert" className="text-destructive">Enter a valid IANA timezone, such as Europe/Zurich or UTC.</p>}
+        {timezoneDirty && validTimezone && <p role="status" className="text-warning">Unsaved change: {current} → {timezone.trim()}. This changes the interpretation of cron times for active playbook schedules across environments. Review upcoming runs after saving, especially around daylight-saving changes.</p>}
+        {save.isError && <p role="alert" className="text-destructive">{save.error.message}</p>}
+      </div>
     </>
   );
 }
@@ -300,38 +324,31 @@ type PollerKey = 'info' | 'updates' | 'imageUpdates' | 'customUpdates';
 function PollingConfig() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data, isLoading, isError, error } = useQuery<PollingConfigResp>({
+  const pollingQuery = useQuery<PollingConfigResp>({
     queryKey: ['polling-config'],
     queryFn: () => api.getPollingConfig() as unknown as Promise<PollingConfigResp>,
   });
 
-  const [draft, setDraft] = useState<PollingConfigResp | null>(null);
-
-  useEffect(() => { if (data) setDraft(data); }, [data]);
+  const { data, isLoading, isError, error } = pollingQuery;
+  const [edited, setEdited] = useState<PollingConfigResp | null>(null);
+  const draft = edited ?? data;
+  const dirty = edited !== null && JSON.stringify(edited) !== JSON.stringify(data);
+  useUnsavedChanges(dirty);
 
   const save = useMutation({
     mutationFn: (body: PollingConfigResp) => api.savePollingConfig(body as unknown as Record<string, unknown>),
-    onSuccess: () => {
+    onSuccess: (_result, variables) => {
       showToast(t('set.pollSaved'), 'success');
+      qc.setQueryData(['polling-config'], variables);
+      setEdited(null);
       qc.invalidateQueries({ queryKey: ['polling-config'] });
+      qc.invalidateQueries({ queryKey: ['polling-runtime'] });
     },
     onError: (err) => showToast(t('common.errorPrefix', { msg: (err as Error).message }), 'error'),
   });
 
-  if (isLoading || !draft) {
-    return (
-      <SettingsRow noBorder>
-        <Skeleton className="h-4 w-full max-w-sm" />
-      </SettingsRow>
-    );
-  }
-  if (isError) {
-    return (
-      <SettingsRow noBorder>
-        <span className="text-sm text-destructive">{(error as Error)?.message || t('common.error')}</span>
-      </SettingsRow>
-    );
-  }
+  if (isError) return <SettingsRow noBorder><QueryErrorState compact title="Polling configuration could not be loaded" error={error} onRetry={() => void pollingQuery.refetch()} /></SettingsRow>;
+  if (isLoading || !draft) return <SettingsRow noBorder><Skeleton className="h-4 w-full max-w-sm" /></SettingsRow>;
 
   const pollers: { key: PollerKey; label: string; hint: string }[] = [
     { key: 'info',          label: t('set.pollSysInfo'),       hint: t('set.pollSysInfoHint') },
@@ -340,8 +357,10 @@ function PollingConfig() {
     { key: 'customUpdates', label: t('set.pollCustomUpdates'), hint: t('set.pollCustomUpdatesHint') },
   ];
 
+  const invalidInterval = Object.values(draft).some(cfg => !Number.isInteger(cfg.intervalMin) || cfg.intervalMin < 1 || cfg.intervalMin > 9999);
+
   const update = (key: PollerKey, patch: Partial<PollerCfg>) =>
-    setDraft((prev) => (prev ? { ...prev, [key]: { ...prev[key], ...patch } } : prev));
+    setEdited({ ...draft, [key]: { ...draft[key], ...patch } });
 
   return (
     <>
@@ -353,6 +372,7 @@ function PollingConfig() {
               <Switch
                 aria-label={p.label}
                 checked={cfg.enabled}
+                disabled={save.isPending}
                 onCheckedChange={(v) => update(p.key, { enabled: v })}
               />
               <Input
@@ -361,9 +381,9 @@ function PollingConfig() {
                 type="number"
                 min={1}
                 max={9999}
-                value={cfg.intervalMin}
-                disabled={!cfg.enabled}
-                onChange={(e) => update(p.key, { intervalMin: parseInt(e.target.value, 10) || cfg.intervalMin })}
+                value={Number.isNaN(cfg.intervalMin) ? '' : cfg.intervalMin}
+                disabled={!cfg.enabled || save.isPending}
+                onChange={(e) => update(p.key, { intervalMin: e.target.value === '' ? NaN : Number(e.target.value) })}
                 className="w-20 text-center"
               />
               <span className="text-xs text-muted-foreground">{t('set.minutesShort')}</span>
@@ -372,14 +392,19 @@ function PollingConfig() {
         );
       })}
 
+      <SettingsRow label="Effect of saving" hint="Applies to background polling across environments."><p className="max-w-xl text-xs text-muted-foreground">Shorter intervals increase SSH and API traffic; longer intervals make observations older. Saving reschedules future checks without starting an immediate collection. Disabling a poller stops future scheduled checks; work already running may finish.</p></SettingsRow>
+      {dirty && <p role="status" className="text-sm text-muted-foreground">Unsaved polling changes</p>}
+      {invalidInterval && <p role="alert" className="text-sm text-destructive">Polling intervals must be whole numbers from 1 to 9999 minutes.</p>}
+      {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
       <SettingsRow noBorder>
         <Button
           size="sm"
           onClick={() => save.mutate(draft)}
-          disabled={save.isPending}
+          disabled={save.isPending || invalidInterval || !dirty}
         >
-          <Save className="h-4 w-4" /> {t('common.save')}
+          <Save className="h-4 w-4" /> Save polling settings
         </Button>
+        {edited && <Button variant="outline" disabled={save.isPending} onClick={() => setEdited(null)}>Discard polling changes</Button>}
       </SettingsRow>
     </>
   );
@@ -392,7 +417,8 @@ function PollingConfig() {
 function AgentToggle() {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: settings } = useSettings();
+  const settingsQuery = useSettings();
+  const { data: settings } = settingsQuery;
   const agentEnabled = Boolean((settings as Record<string, unknown>)?.agentEnabled);
   const [checked, setChecked] = useState<boolean>(agentEnabled);
 
@@ -404,12 +430,16 @@ function AgentToggle() {
       showToast(t('set.agentFeatureSaved'), 'success');
       qc.invalidateQueries({ queryKey: ['settings'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
+      qc.invalidateQueries({ queryKey: ['agent-overview'] });
     },
     onError: (err) => {
       setChecked((c) => !c); // revert
       showToast((err as Error).message, 'error');
     },
   });
+
+  if (settingsQuery.isError) return <SettingsRow noBorder><QueryErrorState compact title="Agent settings could not be loaded" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></SettingsRow>;
+  if (settingsQuery.isPending) return <SettingsRow noBorder><Skeleton className="h-6 w-24" /></SettingsRow>;
 
   return (
     <SettingsRow label={t('set.agentFeatureToggle')} noBorder>

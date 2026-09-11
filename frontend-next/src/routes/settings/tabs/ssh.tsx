@@ -1,3 +1,4 @@
+import { formatDateTime } from '@/lib/utils';
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
@@ -31,6 +32,9 @@ import { SettingsRow, SettingsSection } from "../_row";
 
 interface SSHKey {
   publicKey: string;
+  algorithm?: string | null;
+  fingerprint?: string | null;
+  registeredAt?: string | null;
   exists?: boolean;
   name?: string;
 }
@@ -82,7 +86,7 @@ export function SshTab() {
         icon={<Link2 className="h-4 w-4" />}
         title="Key assignments"
       >
-        <KeyAssignments environmentId={environmentId} />
+        <KeyAssignments key={environmentId} environmentId={environmentId} />
       </SettingsSection>
 
       <SettingsSection
@@ -98,7 +102,6 @@ export function SshTab() {
 function KeyAssignments({ environmentId }: { environmentId: string }) {
   const qc = useQueryClient();
   const [type, setType] = useState<KeyAssignment["target_type"]>("server");
-  const [loadTargets, setLoadTargets] = useState(false);
   const assignments = useQuery<KeyAssignment[]>({
     queryKey: ["ssh-key-assignments", environmentId],
     queryFn: () =>
@@ -110,7 +113,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
       api.getSSHKeyAssignmentTargets(
         environmentId,
       ) as Promise<KeyAssignmentTargets>,
-    enabled: loadTargets,
+    staleTime: 30_000,
   });
   const choices =
     targets.data?.[
@@ -155,7 +158,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
     <div className="space-y-3 py-3.5">
       <p className="text-sm text-muted-foreground">
         Define which resources should use the central Shipyard key. Private keys
-        are not duplicated.
+        are not duplicated. Removing an assignment does not revoke the public key on a host.
       </p>
       <div className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
         <select
@@ -173,13 +176,12 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
         </select>
         <select
           value={targetId}
-          onFocus={() => setLoadTargets(true)}
           onChange={(event) => setTargetId(event.target.value)}
           className="h-9 min-w-0 rounded-sm border border-input bg-background px-2.5 text-[13px]"
           aria-label="Select target"
         >
           <option value="">
-            {!loadTargets || targets.isLoading
+            {targets.isLoading
               ? "Loading targets…"
               : targets.isError
                 ? "Targets unavailable"
@@ -198,12 +200,12 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
           size="sm"
           className="h-9 px-3"
           onClick={() => save.mutate()}
-          disabled={!targetId || save.isPending}
+          disabled={!targetId || !choices.some(choice => choice.id === targetId) || targets.isFetching || targets.isError || save.isPending}
         >
           Assign
         </Button>
       </div>
-      {loadTargets && targets.isError && (
+      {targets.isError && (
         <QueryErrorState
           compact
           className="py-3"
@@ -249,7 +251,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
         </div>
       ) : (
         <p className="rounded-md border border-dashed px-3 py-3 text-sm text-muted-foreground">
-          No resources assigned yet.
+          No intended-use assignments recorded. Hosts may already trust this key; this list is not a scan of remote authorized_keys.
         </p>
       )}
     </div>
@@ -291,7 +293,7 @@ function SshKeyView({
         <span className="font-mono text-sm">{ssh.name || "shipyard"}</span>
       </SettingsRow>
       <SettingsRow label={t("set.sshType")}>
-        <span className="font-mono text-sm">ED25519</span>
+        <span className="font-mono text-sm">{ssh.algorithm || ssh.publicKey.trim().split(/\s+/)[0] || "Unavailable"}</span>
       </SettingsRow>
       <SettingsRow label={t("set.sshStatus")}>
         {ssh.exists !== false ? (
@@ -305,6 +307,12 @@ function SshKeyView({
         )}
       </SettingsRow>
 
+      <SettingsRow label="SHA-256 fingerprint" hint="Compare this fingerprint with the trusted key on your hosts.">
+        <span className="break-all font-mono text-xs">{ssh.fingerprint || 'Unavailable'}</span>
+      </SettingsRow>
+      <SettingsRow label="Registered in Shipyard" hint="Registration or replacement time; an imported key may have been created earlier.">
+        <span className="text-sm">{formatDateTime(ssh.registeredAt)}</span>
+      </SettingsRow>
       <SettingsRow label={t("set.sshPublicKey")} align="start">
         <div className="w-full min-w-0 rounded-md border bg-muted/40 p-3">
           <div className="font-mono text-xs leading-relaxed break-all">
@@ -444,16 +452,24 @@ function ExportKeyDialog({
   const { t } = useTranslation();
   const [pass, setPass] = useState("");
   const [pass2, setPass2] = useState("");
+  const [password, setPassword] = useState("");
+  const [code, setCode] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const clear = () => {setPass("");setPass2("");setPassword("");setCode("");};
+  const close = (value: boolean) => {if (busy) return; if (!value) {clear();setError(null);} onOpenChange(value);};
   const [busy, setBusy] = useState(false);
 
   const submit = async () => {
+    if (busy) return;
+    if (!password) return;
+    setError(null);
     if (pass !== pass2) {
-      showToast(t("set.exportKeyMismatch"), "error");
+      setError(t("set.exportKeyMismatch"));
       return;
     }
     setBusy(true);
     try {
-      const res = (await api.exportSSHKey(pass)) as { privateKey: string };
+      const res = (await api.exportSSHKey(pass, password, code)) as { privateKey: string };
       const blob = new Blob([res.privateKey], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
@@ -464,25 +480,23 @@ function ExportKeyDialog({
       setPass("");
       setPass2("");
     } catch (err) {
-      showToast(
-        t("common.errorPrefix", { msg: (err as Error).message }),
-        "error",
-      );
+      setError((err as Error).message);
     } finally {
+      clear();
       setBusy(false);
     }
   };
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={close}>
       <DialogContent className="max-w-sm">
         <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="contents">
         <DialogHeader>
           <DialogTitle>{t("set.exportKeyTitle")}</DialogTitle>
         </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          {t("set.exportKeyHint")}
-        </p>
+        <p className="text-sm text-muted-foreground">Confirm with your current account password. If MFA is enabled, also enter your authenticator code. The optional export passphrase protects the downloaded file; leaving it empty exports an unprotected private key.</p>
+        <Input aria-label="Current account password" placeholder="Current account password" type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required disabled={busy}/>
+        <Input aria-label="Authenticator code" placeholder="Authenticator code (if enabled)" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} onChange={event => setCode(event.target.value)} disabled={busy}/>
         <Input
           aria-label={t("set.exportKeyPlaceholder")}
           name="exportKeyPassphrase"
@@ -500,15 +514,13 @@ function ExportKeyDialog({
           onChange={(e) => setPass2(e.target.value)}
           placeholder={t("set.exportKeyConfirm")}
           autoComplete="new-password"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void submit();
-          }}
         />
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
-          <Button type="button" variant="secondary" onClick={() => onOpenChange(false)}>
+          <Button type="button" variant="secondary" disabled={busy} onClick={() => close(false)}>
             {t("common.cancel")}
           </Button>
-          <Button type="submit" disabled={busy}>
+          <Button type="submit" disabled={busy || !password}>
             <Download className="h-4 w-4" /> {t("set.exportKeyBtn")}
           </Button>
         </DialogFooter>
@@ -518,88 +530,60 @@ function ExportKeyDialog({
   );
 }
 
-function ImportKeyDialog({
-  file,
-  onClose,
-  onImported,
-}: {
-  file: File | null;
-  onClose: () => void;
-  onImported: () => void;
-}) {
-  const { t } = useTranslation();
-  const [pass, setPass] = useState("");
-  const [busy, setBusy] = useState(false);
-
-  const submit = async () => {
-    if (!file) return;
-    setBusy(true);
+export function ImportKeyDialog({file,onClose,onImported}: {file:File|null;onClose:()=>void;onImported:()=>void}) {
+  const {t}=useTranslation();
+  const [pass,setPass]=useState('');
+  const [busy,setBusy]=useState(false);
+  const [copied,setCopied]=useState(false);
+  const [error,setError]=useState<string|null>(null);
+  const [review,setReview]=useState<Awaited<ReturnType<typeof api.previewSSHKeyImport>>|null>(null);
+  const clear=()=>{setPass('');setReview(null);setError(null);setCopied(false);};
+  const close=()=>{if(!busy){clear();onClose();}};
+  const submit=async()=>{
+    if(!file || busy)return;
+    setBusy(true);setError(null);
     try {
-      await new Promise<void>((resolve) =>
-        requestAnimationFrame(() => resolve()),
-      );
-      const content = await file.text();
-      await api.importSSHKey(content, pass || "");
-      showToast(t("set.importKeySuccess"), "success");
-      setPass("");
-      onImported();
-    } catch (err) {
-      showToast((err as Error).message, "error");
-    } finally {
-      setBusy(false);
-    }
+      if(file.size>65536)throw new Error('Select a private key file of at most 64 KiB.');
+      const content=await file.text();
+      if(!review){setCopied(false);setReview(await api.previewSSHKeyImport(content,pass));return;}
+      await api.importSSHKey(content,pass,{expectedKeyId:review.current?.id || null,expectedFingerprint:review.candidate.fingerprint});
+      clear();showToast(t('set.importKeySuccess'),'success');onImported();
+    }catch(error){setError((error as Error).message);setReview(null);setPass('');}
+    finally{setBusy(false);}
   };
-
-  return (
-    <Dialog
-      open={file !== null}
-      onOpenChange={(v) => {
-        if (!v) {
-          setPass("");
-          onClose();
-        }
-      }}
-    >
-      <DialogContent className="max-w-sm" disableMotion>
-        <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="contents">
-        <DialogHeader>
-          <DialogTitle>{t("set.importKeyTitle")}</DialogTitle>
-        </DialogHeader>
-        <p className="text-sm text-muted-foreground">
-          {t("set.importKeyHint")}
-        </p>
-        {file && (
-          <p
-            className="truncate text-xs text-muted-foreground"
-            title={file.name}
-          >
-            {file.name}
-          </p>
-        )}
-        <Input
-          aria-label={t("set.importKeyPlaceholder")}
-          name="importKeyPassphrase"
-          type="password"
-          value={pass}
-          onChange={(e) => setPass(e.target.value)}
-          placeholder={t("set.importKeyPlaceholder")}
-          autoComplete="current-password"
-          onKeyDown={(e) => {
-            if (e.key === "Enter") void submit();
-          }}
-        />
-        <DialogFooter>
-          <Button type="button" variant="secondary" onClick={onClose}>
-            {t("common.cancel")}
-          </Button>
-          <Button type="submit" disabled={busy}>
-            <Upload className="h-4 w-4" /> {t("set.importKeyBtn")}
-          </Button>
+  return <Dialog open={file!==null} onOpenChange={value=>{if(!value)close();}}>
+    <DialogContent className="flex max-w-lg flex-col overflow-hidden" disableMotion>
+      <form onSubmit={event=>{event.preventDefault();void submit();}} className="flex min-h-0 flex-col gap-4">
+        <DialogHeader className="shrink-0"><DialogTitle>{review?'Review SSH key replacement':t('set.importKeyTitle')}</DialogTitle></DialogHeader>
+        <div className="min-h-0 space-y-4 overflow-y-auto pr-1">
+        <p className="break-all text-xs text-muted-foreground">{file?.name}</p>
+        {review ? <>
+          <dl className="space-y-3 text-sm [overflow-wrap:anywhere]">
+            <div><dt className="font-medium">Current key</dt><dd>{review.current ? `${review.current.algorithm} · ${review.current.fingerprint}` : 'No active key'}</dd></div>
+            <div><dt className="font-medium">Selected key</dt><dd>{review.candidate.algorithm} · {review.candidate.fingerprint}</dd></div>
+          </dl>
+          <details className="rounded-md border p-3 text-sm">
+            <summary className="cursor-pointer font-medium">Prepare the new public key</summary>
+            <p className="my-2 text-xs text-muted-foreground">Add this public key to the intended remote account before activation. This does not change Shipyard's active key or contact any host.</p>
+            <textarea readOnly aria-label="Selected public key" value={review.candidate.publicKey} rows={3} className="w-full resize-y rounded-md border bg-background p-2 font-mono text-xs"/>
+            <Button type="button" size="sm" variant="secondary" className="mt-2" onClick={()=>{void navigator.clipboard.writeText(review.candidate.publicKey).then(()=>setCopied(true)).catch(()=>setError('Could not copy. Select and copy the public key from the field.'));}}>{copied?'Copied':'Copy public key'}</Button>
+          </details>
+          <p className="text-sm text-warning">Import replaces the central key used for new Shipyard SSH connections across environments. Hosts that do not trust the selected key can become unreachable. Existing remote authorized_keys entries are neither updated nor revoked.</p>
+          <p className="text-sm text-muted-foreground">Prepare access using the new public key and retain a recovery copy of the old key before replacing it. Intended-use assignments do not prove which hosts trust the key.</p>
+        </> : <>
+          <p className="text-sm text-muted-foreground">Validate the selected file and compare fingerprints before activating it. Preview does not replace the current key.</p>
+          <Input aria-label={t('set.importKeyPlaceholder')} name="importKeyPassphrase" type="password" value={pass} onChange={event=>setPass(event.target.value)} placeholder={t('set.importKeyPlaceholder')} autoComplete="off" disabled={busy}/>
+        </>}
+        </div>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <DialogFooter className="shrink-0">
+          <Button type="button" variant="secondary" disabled={busy} onClick={close}>{t('common.cancel')}</Button>
+          {review && <Button type="button" variant="secondary" disabled={busy} onClick={()=>setReview(null)}>Back</Button>}
+          <Button type="submit" variant={review?.current ? "destructive" : "default"} disabled={busy}>{busy?'Working…':review?(review.current?'Replace key':'Activate key'):'Preview key'}</Button>
         </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
-  );
+      </form>
+    </DialogContent>
+  </Dialog>;
 }
 
 function DeployForm() {

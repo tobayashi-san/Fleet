@@ -1,3 +1,4 @@
+import { prefixInputErrors } from "@/lib/ipam-form-validation";
 import { cloneElement, isValidElement, useDeferredValue, useEffect, useId, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -646,7 +647,16 @@ function GlobalIpamSearch({ environmentId }: { environmentId: string }) {
   );
 }
 
-export function IpamSourcesDialog({
+interface IpamSourcesProps {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  environmentId: string;
+  embedded?: boolean;
+}
+export function IpamSourcesDialog(props: IpamSourcesProps) {
+  return <IpamSourcesContent key={props.environmentId} {...props} />;
+}
+function IpamSourcesContent({
   open = true,
   onOpenChange = () => undefined,
   environmentId,
@@ -683,6 +693,7 @@ export function IpamSourcesDialog({
     queryFn: () =>
       apiFetch<SyncSource[]>(
         `/ipam/sources?environment_id=${encodeURIComponent(environmentId)}`,
+        { environmentId },
       ),
     enabled: open || embedded,
   });
@@ -709,6 +720,7 @@ export function IpamSourcesDialog({
       editingSource
         ? apiFetch(`/ipam/sources/${encodeURIComponent(editingSource.id)}`, {
             method: "PUT",
+            environmentId,
             body: {
               type,
               name,
@@ -724,6 +736,7 @@ export function IpamSourcesDialog({
           })
         : apiFetch("/ipam/sources", {
             method: "POST",
+            environmentId,
             body: {
               environment_id: environmentId,
               type,
@@ -753,7 +766,7 @@ export function IpamSourcesDialog({
     mutationFn: (source: SyncSource) =>
       apiFetch<SourceTestResult>(
         `/ipam/sources/${encodeURIComponent(source.id)}/test`,
-        { method: "POST" },
+        { method: "POST", environmentId },
       ),
     onSuccess: (result, source) => {
       refresh();
@@ -776,8 +789,9 @@ export function IpamSourcesDialog({
         removed: number;
         conflicts: number;
         ignored: number;
-      }>(`/ipam/sources/${encodeURIComponent(id)}/sync`, { method: "POST" }),
+      }>(`/ipam/sources/${encodeURIComponent(id)}/sync`, { method: "POST", environmentId }),
     onSuccess: (result) => {
+      setSourceToSync(null);
       refresh();
       void queryClient.invalidateQueries({ queryKey: ["ipam"] });
       const changes = [
@@ -800,7 +814,7 @@ export function IpamSourcesDialog({
   });
   const remove = useMutation({
     mutationFn: (id: string) =>
-      apiFetch(`/ipam/sources/${encodeURIComponent(id)}`, { method: "DELETE" }),
+      apiFetch(`/ipam/sources/${encodeURIComponent(id)}`, { method: "DELETE", environmentId }),
     onSuccess: () => {
       setSourceToRemove(null);
       refresh();
@@ -813,11 +827,13 @@ export function IpamSourcesDialog({
     onError: (error: Error) => showToast(error.message, "error"),
   });
   const beginCreate = () => {
+    save.reset();
     resetForm();
     setType("unifi");
     setCreating(true);
   };
   const beginEdit = (source: SyncSource) => {
+    save.reset();
     setEditingSource(source);
     setType(source.type);
     setName(source.name);
@@ -972,7 +988,7 @@ export function IpamSourcesDialog({
                                 aria-label={`${tr("sync")} ${source.name}`}
                                 disabled={syncing || !source.enabled}
                                 className="w-full min-w-0 max-w-full overflow-hidden px-2 text-xs sm:w-auto sm:px-3 sm:text-sm"
-                                onClick={() => setSourceToSync(source)}
+                                onClick={() => { sync.reset(); setSourceToSync(source); }}
                               >
                                 <DatabaseZap className="hidden h-4 w-4 sm:mr-1.5 sm:block" />
                                 <span className="sm:hidden">{tr("sync")}</span>
@@ -995,7 +1011,7 @@ export function IpamSourcesDialog({
                                 title={tr("removeSource")}
                                 aria-label={`${tr("removeSource")} ${source.name}`}
                                 className="text-destructive hover:text-destructive"
-                                onClick={() => setSourceToRemove(source)}
+                                onClick={() => { remove.reset(); setSourceToRemove(source); }}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
@@ -1260,6 +1276,7 @@ export function IpamSourcesDialog({
                   <Button type="button" variant="outline" onClick={resetForm}>
                     {tr("cancel")}
                   </Button>
+                  {save.error && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
                   <Button type="submit" disabled={save.isPending}>
                     <Settings2 />
                     {editingSource
@@ -1301,6 +1318,9 @@ export function IpamSourcesDialog({
       )}
       <ConfirmDialog
         open={Boolean(sourceToSync)}
+        targetEnvironmentId={environmentId}
+        closeOnConfirm={false}
+        error={sync.error?.message}
         onOpenChange={(nextOpen) => !nextOpen && setSourceToSync(null)}
         title={tr("confirmSyncTitle")}
         description={sourceToSync ? tr("confirmSyncDescription", { name: sourceToSync.name }) : ""}
@@ -1312,6 +1332,9 @@ export function IpamSourcesDialog({
       />
       <ConfirmDialog
         open={Boolean(sourceToRemove)}
+        targetEnvironmentId={environmentId}
+        closeOnConfirm={false}
+        error={remove.error?.message}
         onOpenChange={(nextOpen) => !nextOpen && setSourceToRemove(null)}
         title={tr("confirmRemoveSource")}
         description={sourceToRemove ? tr("confirmRemoveSourceDescription", {
@@ -1605,6 +1628,7 @@ function CreatePrefixDialog({
   const [description, setDescription] = useState("");
   const [status, setStatus] = useState("active");
   const [role, setRole] = useState("");
+  const inputErrors = prefixInputErrors(vlan, dhcpStart, dhcpEnd);
   const create = useMutation({
     mutationFn: () =>
       apiFetch("/ipam/subnets", {
@@ -1616,7 +1640,7 @@ function CreatePrefixDialog({
           gateway,
           dhcp_start: dhcpStart,
           dhcp_end: dhcpEnd,
-          vlan_id: vlan,
+          vlan_id: vlan.trim(),
           bridge,
           description,
           status,
@@ -1647,6 +1671,7 @@ function CreatePrefixDialog({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
+            if (create.isPending || inputErrors.length) return;
             create.mutate();
           }}
         >
@@ -1752,6 +1777,7 @@ function CreatePrefixDialog({
               </div>
             </div>
           </details>
+          {inputErrors.map(key => <p key={key} role="alert" className="text-sm text-destructive">{tr(key)}</p>)}
           <DialogFooter>
             <Button
               type="button"
@@ -1760,7 +1786,7 @@ function CreatePrefixDialog({
             >
               {tr("cancel")}
             </Button>
-            <Button type="submit" disabled={create.isPending}>
+            <Button type="submit" disabled={create.isPending || inputErrors.length > 0}>
               {tr("addPrefix")}
             </Button>
           </DialogFooter>

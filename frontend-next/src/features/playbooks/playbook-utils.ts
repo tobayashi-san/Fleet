@@ -92,7 +92,7 @@ export function formatDate(date?: string) {
 }
 
 export function loadCollapsedCategories(): Set<string> {
-  try { const raw = localStorage.getItem(COLLAPSED_KEY); const values = raw ? JSON.parse(raw) : []; return new Set(Array.isArray(values) ? values.filter((value: unknown) => typeof value === 'string') : []); } catch { return new Set(); }
+  try { const raw = localStorage.getItem(COLLAPSED_KEY); const values = raw ? JSON.parse(raw) : ['internal:Internal (System)']; return new Set(Array.isArray(values) ? values.filter((value: unknown) => typeof value === 'string') : []); } catch { return new Set(['internal:Internal (System)']); }
 }
 
 export function saveCollapsedCategories(categories: Set<string>) {

@@ -52,7 +52,7 @@ function registerIsolatedVmRoutes({
 }) {
   const selectVm = `
     SELECT vm.*, workspace.environment_id, workspace.proxmox_connection_id,
-           workspace.path AS workspace_path, workspace.workspace_kind,
+           workspace.path AS workspace_path, workspace.name AS workspace_name, workspace.workspace_kind,
            source.name AS connection_name, source.endpoint AS connection_endpoint,
            last_run.id AS last_run_id, last_run.action AS last_run_action,
            last_run.status AS last_run_status, last_run.plan_summary AS last_run_plan_summary,
@@ -267,6 +267,15 @@ function registerIsolatedVmRoutes({
   router.get('/vms/:vmId/runs', rewrite('/runs'));
   router.get('/vms/:vmId/runs/:runId', (req, res, next) => rewrite(`/runs/${encodeURIComponent(req.params.runId)}`)(req, res, next));
   router.get('/vms/:vmId/state', rewrite('/state'));
+  router.get('/vms/:vmId/state-safety', rewrite('/state-safety'));
+  router.get('/vms/:vmId/state-backups', rewrite('/state-backups'));
+  router.post('/vms/:vmId/state-backups/restore', (req, res, next) => {
+    const row = getVmRow(req.params.vmId);
+    if (!row) return res.status(404).json({ error: 'VM not found' });
+    if (req.body?.confirmation !== `RESTORE STATE ${row.name}`) return res.status(400).json({ error: `Confirm with "RESTORE STATE ${row.name}".` });
+    req.body = { ...(req.body || {}), confirmation: `RESTORE STATE ${row.workspace_name}` };
+    rewrite('/state-backups/restore')(req, res, next);
+  });
   router.get('/vms/:vmId/actual', rewrite('/resources-overview'));
   router.get('/vms/:vmId/catalog', rewrite('/proxmox-catalog'));
 

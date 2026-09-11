@@ -1,4 +1,9 @@
+const {agentReportStatus} = require('../utils/agent-report-status');
+const pollingObservations = require('../utils/polling-observations').createPollingObservations();
 const cron = require("node-cron");
+const { workflowHostIds } = require("../utils/workflow-history-scope");
+const { notify } = require("./notifier");
+const { nextMatches } = require("../utils/cron-next-matches");
 const log = require("../utils/logger").child("scheduler");
 const db = require("../db");
 const ansibleRunner = require("./ansible-runner");
@@ -100,6 +105,7 @@ function makePoller(pollFn, label, intervalMs) {
 async function pollIpamSources() {
   if (ipamSourcesPolling) return;
   ipamSourcesPolling = true;
+  const observation = pollingObservations.begin('ipamSources');
   try {
     const now = Date.now();
     const sources = db.db
@@ -164,6 +170,7 @@ async function pollIpamSources() {
     const proxmoxFailed = proxmoxResults.filter(
       (result) => result.status === "rejected",
     ).length;
+    observation.errors += sourceFailed + proxmoxFailed;
     if (due.length || dueProxmox.length) {
       broadcast({ type: "cache_updated", scope: "ipam" });
       log.info(
@@ -179,8 +186,10 @@ async function pollIpamSources() {
       );
     }
   } catch (err) {
+    observation.errors++;
     log.error({ err }, "IPAM source poll failed");
   } finally {
+    pollingObservations.finish('ipamSources', observation);
     ipamSourcesPolling = false;
   }
 }
@@ -232,9 +241,7 @@ function init(broadcastFn) {
  * Register a cron job for a schedule row.
  */
 function register(schedule) {
-  if (jobs.has(schedule.id)) {
-    jobs.get(schedule.id).stop();
-  }
+  unregister(schedule.id);
 
   if (!cron.validate(schedule.cron_expression)) {
     log.error(
@@ -244,10 +251,27 @@ function register(schedule) {
     return;
   }
 
-  const task = cron.schedule(
+  const task = cron.createTask(
     schedule.cron_expression,
     async () => {
+      // A callback may already be queued when a reset/delete destroys its task.
+      // Recheck persisted state before any history, broadcasts or remote work.
+      const current = db.schedules.getById(schedule.id);
+      if (!current || !current.enabled) return;
       if (running.has(schedule.id)) {
+        const environmentId = current.environment_id || "default";
+        const targets = resolveTargets(current.targets, db.servers.getAll().filter(server =>
+          String(server.environment_id || "default") === String(environmentId)));
+        const skippedId = db.db.transaction(() => {
+          const id = db.scheduleHistory.create(current.id, current.name, current.playbook, targets, {
+            environmentId, triggeredBy: "scheduler", checkMode: Boolean(current.check_mode),
+          });
+          db.scheduleHistory.complete(id, "skipped",
+            "Skipped because a previous execution of this schedule is still running. This occurrence was not queued and will not be retried. The next regular occurrence follows the schedule.");
+          db.scheduleHistory.prune();
+          return id;
+        })();
+        broadcast({ type: "schedule_skipped", scheduleId: current.id, runId: skippedId, name: current.name, status: "skipped" });
         log.info(
           { schedule: schedule.name },
           "Skipping – previous run still in progress",
@@ -285,6 +309,7 @@ function register(schedule) {
           checkMode: Boolean(schedule.check_mode),
         },
       );
+      const notificationServerIds = workflowHostIds(db.scheduleHistory.getById(histId));
       ansibleRunner.prepareRun(histId);
       const outputLines = [];
 
@@ -318,6 +343,7 @@ function register(schedule) {
         const status = result.cancelled ? "cancelled" : result.success ? "success" : "failed";
         db.schedules.updateLastRun(schedule.id, status);
         db.scheduleHistory.complete(histId, status, outputLines.join(""));
+        if (status === 'failed' && db.settings.get('notify_playbook_failed') !== '0') notify(`Scheduled playbook failed: ${schedule.name}`, `Playbook: ${schedule.playbook}. Targets: ${resolvedTargets}. Review execution history for details.`, false, {environmentId: schedule.environment_id || 'default', serverIds: notificationServerIds}).catch(() => {});
         db.scheduleHistory.prune();
         broadcast({
           type: "schedule_complete",
@@ -344,6 +370,7 @@ function register(schedule) {
           name: schedule.name,
           error: error.message,
         });
+        if (db.settings.get('notify_playbook_failed') !== '0') notify(`Scheduled playbook failed: ${schedule.name}`, error.message, false, {environmentId: schedule.environment_id || 'default', serverIds: notificationServerIds}).catch(() => {});
         log.error({ err: error, schedule: schedule.name }, "Schedule error");
       } finally {
         running.delete(schedule.id);
@@ -352,6 +379,13 @@ function register(schedule) {
     { timezone: getSchedulerTimezone() },
   );
 
+  // Share the DST-correct next-match calculation with the form preview.
+  task.timeMatcher.getNextMatch = (from) => {
+    const next = nextMatches(task.timeMatcher, from, 1)[0];
+    if (!next) throw new Error('No execution found within the next 13 years.');
+    return next;
+  };
+  try { task.start(); } catch (error) { task.destroy(); throw error; }
   jobs.set(schedule.id, task);
 }
 
@@ -360,7 +394,7 @@ function register(schedule) {
  */
 function unregister(scheduleId) {
   if (jobs.has(scheduleId)) {
-    jobs.get(scheduleId).stop();
+    jobs.get(scheduleId).destroy();
     jobs.delete(scheduleId);
   }
 }
@@ -415,31 +449,24 @@ function reloadAllSchedules() {
 async function pollSystemInfo() {
   if (infoPolling) return;
   infoPolling = true;
+  const observation = pollingObservations.begin('info');
   lastInfoPollTime = Date.now();
   try {
     const servers = db.servers.getAll();
     const agentEnabled = db.settings.get("agent_enabled") === "1";
-    await Promise.allSettled(
+    const outcomes = await Promise.allSettled(
       servers.map(async (server) => {
         const agentCfg = agentEnabled
           ? db.agentConfig.getByServerId(server.id)
           : null;
         if (agentCfg?.mode === "push") {
-          const intervalSec = Math.max(
-            5,
-            parseInt(agentCfg.interval, 10) || 30,
-          );
-          const lastSeenMs = agentCfg.last_seen
-            ? new Date(agentCfg.last_seen).getTime()
-            : 0;
-          if (
-            lastSeenMs &&
-            Date.now() - lastSeenMs <= intervalSec * 10 * 1000
-          ) {
+          const report = agentReportStatus(agentCfg);
+          if (report.state === 'recent') {
             db.servers.updateStatus(server.id, "online");
             return;
           }
-          if (lastSeenMs) {
+          if (report.state !== 'never') {
+            observation.errors++;
             // Agent has reported before but is now overdue — mark offline
             db.servers.updateStatus(server.id, "offline");
             return;
@@ -450,19 +477,11 @@ async function pollSystemInfo() {
         if (agentCfg?.mode === "pull") {
           const r = await pullModeManager.pollServer(server);
           if (r.ok) {
-            const intervalSec = Math.max(
-              5,
-              parseInt(agentCfg.interval, 10) || 30,
-            );
-            const lastSeenMs = agentCfg.last_seen
-              ? new Date(agentCfg.last_seen).getTime()
-              : 0;
-            if (
-              lastSeenMs &&
-              Date.now() - lastSeenMs <= intervalSec * 10 * 1000
-            ) {
+            const report = agentReportStatus(db.agentConfig.getByServerId(server.id));
+            if (report.state === 'recent') {
               db.servers.updateStatus(server.id, "online");
             } else if (!r.report) {
+              observation.errors++;
               db.servers.updateStatus(server.id, "offline");
             }
             return;
@@ -474,15 +493,21 @@ async function pollSystemInfo() {
           db.serverInfo.upsert(server.id, info);
           db.servers.updateStatus(server.id, "online");
         } catch (err) {
+          observation.errors++;
           log.debug({ err, server: server.name }, "System info poll failed");
           db.servers.updateStatus(server.id, "offline");
         }
       }),
     );
+    observation.errors += outcomes.filter(result => result.status === 'rejected').length;
     resourceAlerts.evaluateAll();
     broadcast({ type: "cache_updated", scope: "info" });
     log.info({ count: servers.length }, "System info refreshed");
+  } catch (error) {
+    observation.errors++;
+    throw error;
   } finally {
+    pollingObservations.finish('info', observation);
     infoPolling = false;
   }
 }
@@ -511,22 +536,29 @@ function startAgentMetricsRetention() {
 async function pollUpdates() {
   if (updatesPolling) return;
   updatesPolling = true;
+  const observation = pollingObservations.begin('updates');
   try {
     const servers = db.servers.getAll();
-    await Promise.allSettled(
+    const outcomes = await Promise.allSettled(
       servers.map(async (server) => {
         try {
           const updates = await systemInfo.getAvailableUpdates(server);
           db.updatesCache.set(server.id, updates);
         } catch (err) {
+          observation.errors++;
           log.debug({ err, server: server.name }, "Updates poll failed");
         }
       }),
     );
+    observation.errors += outcomes.filter(result => result.status === 'rejected').length;
     resourceAlerts.evaluateAll();
     broadcast({ type: "cache_updated", scope: "updates" });
     log.info({ count: servers.length }, "Updates cache refreshed");
+  } catch (error) {
+    observation.errors++;
+    throw error;
   } finally {
+    pollingObservations.finish('updates', observation);
     updatesPolling = false;
   }
 }
@@ -537,9 +569,10 @@ async function pollUpdates() {
 async function pollImageUpdates() {
   if (imageUpdatesPolling) return;
   imageUpdatesPolling = true;
+  const observation = pollingObservations.begin('imageUpdates');
   try {
     const servers = db.servers.getAll().filter((s) => s.status === "online");
-    await Promise.allSettled(
+    const outcomes = await Promise.allSettled(
       servers.map(async (server) => {
         try {
           const result = await ansibleRunner.runPlaybook(
@@ -551,19 +584,26 @@ async function pollImageUpdates() {
           );
           const report = parseImageUpdateReport(result.stdout);
           if (!result.success || !report.complete) {
+            observation.errors++;
             log.warn({ server: server.name, exitCode: result.code }, "Image updates poll returned no complete result; keeping cached status");
             return;
           }
           db.dockerImageUpdatesCache.set(server.id, report.results);
         } catch (err) {
+          observation.errors++;
           log.debug({ err, server: server.name }, "Image updates poll failed");
         }
       }),
     );
+    observation.errors += outcomes.filter(result => result.status === 'rejected').length;
     resourceAlerts.evaluateAll();
     broadcast({ type: "cache_updated", scope: "image_updates" });
     log.info({ count: servers.length }, "Docker image updates checked");
+  } catch (error) {
+    observation.errors++;
+    throw error;
   } finally {
+    pollingObservations.finish('imageUpdates', observation);
     imageUpdatesPolling = false;
   }
 }
@@ -573,6 +613,21 @@ async function pollImageUpdates() {
  * run the check_command via SSH to determine current version.
  */
 async function checkCustomTask(server, task) {
+  try {
+    const result = await performCustomTaskCheck(server, task);
+    db.customUpdateTasks.setVersionInfo(task.id, result.current_version, result.last_version, result.has_update, task);
+    return result;
+  }
+  catch (error) {
+    db.customUpdateTasks.setCheckFailure(task.id, task);
+    throw error;
+  }
+}
+
+async function performCustomTaskCheck(server, task) {
+  if (!task.check_command?.trim() || (task.type === 'script' && !task.latest_command?.trim()) || (task.type === 'github' && !task.github_repo) || (task.type === 'trigger' && !task.trigger_output?.trim())) {
+    throw new Error('The check configuration is incomplete. Edit this custom update task.');
+  }
   let lastVersion = task.last_version;
   let currentVersion = task.current_version;
   let hasUpdate = false;
@@ -591,41 +646,48 @@ async function checkCustomTask(server, task) {
       );
       if (res.ok) {
         const data = await res.json();
-        lastVersion = data.tag_name || lastVersion;
-      }
+        if (typeof data.tag_name !== "string" || !data.tag_name.trim()) throw new Error("Release tag missing");
+        lastVersion = data.tag_name;
+      } else { throw new Error("Release lookup rejected"); }
     } catch (err) {
       log.debug({ err, repo: task.github_repo }, "GitHub release check failed");
+      throw new Error("GitHub release check failed. Previous check results were retained.");
     }
   }
 
-  if (task.latest_command) {
+  if (task.type === "script" && task.latest_command) {
     try {
-      const result = await sshManager.execCommand(server, task.latest_command);
-      if (result.code === 0) lastVersion = result.stdout.trim() || lastVersion;
+      const result = await sshManager.execCommand(server, task.latest_command, { timeoutMs: 30000 });
+      if (result.code !== 0 || !result.stdout.trim()) throw new Error("No successful version output");
+      lastVersion = result.stdout.trim();
     } catch (err) {
       log.debug(
         { err, server: server.name, task: task.name },
         "Latest version command failed",
       );
+      throw new Error("Latest-version command failed or returned no version. Previous check results were retained.");
     }
   }
 
   if (task.check_command) {
     try {
-      const result = await sshManager.execCommand(server, task.check_command);
-      if (result.code === 0)
-        currentVersion = result.stdout.trim() || currentVersion;
+      const result = await sshManager.execCommand(server, task.check_command, { timeoutMs: 30000 });
+      if (result.code !== 0 || (task.type !== "trigger" && !result.stdout.trim())) throw new Error("No successful version output");
+      currentVersion = result.stdout.trim();
     } catch (err) {
       log.debug(
         { err, server: server.name, task: task.name },
         "Custom update check command failed",
       );
+      throw new Error("Installed-version check failed or returned no version. Previous check results were retained.");
     }
   }
 
   const normalize = (v) => (v ? v.trim().replace(/^v/i, "") : v);
-  currentVersion = normalize(currentVersion);
-  lastVersion = normalize(lastVersion);
+  if (task.type !== "trigger") {
+    currentVersion = normalize(currentVersion);
+    lastVersion = normalize(lastVersion);
+  }
 
   if (task.type === "trigger") {
     lastVersion = task.trigger_output || null;
@@ -641,12 +703,7 @@ async function checkCustomTask(server, task) {
     );
   }
 
-  db.customUpdateTasks.setVersionInfo(
-    task.id,
-    currentVersion,
-    lastVersion,
-    hasUpdate,
-  );
+  return { current_version: currentVersion || null, last_version: lastVersion || null, has_update: hasUpdate };
 }
 
 /**
@@ -655,27 +712,34 @@ async function checkCustomTask(server, task) {
 async function pollCustomUpdates() {
   if (customUpdatesPolling) return;
   customUpdatesPolling = true;
+  const observation = pollingObservations.begin('customUpdates');
   try {
     const servers = db.servers.getAll();
-    await Promise.allSettled(
+    const outcomes = await Promise.allSettled(
       servers.map(async (server) => {
         const tasks = db.customUpdateTasks.getByServer(server.id);
         await Promise.allSettled(
           tasks.map((task) =>
-            checkCustomTask(server, task).catch((err) =>
-              log.debug(
+            checkCustomTask(server, task).catch((err) => {
+              observation.errors++;
+              return log.debug(
                 { err, server: server.name },
                 "Custom task check failed",
-              ),
+              ); },
             ),
           ),
         );
       }),
     );
+    observation.errors += outcomes.filter(result => result.status === 'rejected').length;
     resourceAlerts.evaluateAll();
     broadcast({ type: "cache_updated", scope: "custom_updates" });
     log.info("Custom update tasks checked");
+  } catch (error) {
+    observation.errors++;
+    throw error;
   } finally {
+    pollingObservations.finish('customUpdates', observation);
     customUpdatesPolling = false;
   }
 }
@@ -842,6 +906,20 @@ function shutdown() {
   stopJobs();
 }
 
+function getRuntimeStatus() {
+  const config = getPollingConfig();
+  const scheduled = {info:!!infoPoller,updates:!!updatesPoller,imageUpdates:!!imageUpdatesPoller,customUpdates:!!customUpdatesPoller,ipamSources:!!ipamSourcesPoller};
+  const active = {info:infoPolling,updates:updatesPolling,imageUpdates:imageUpdatesPolling,customUpdates:customUpdatesPolling,ipamSources:ipamSourcesPolling};
+  return {
+    checkedAt:new Date().toISOString(),
+    scope:'current-process',
+    restartPending:!!restartPollingTimer,
+    registeredSchedules:jobs.size,
+    runningSchedules:running.size,
+    pollers:Object.entries(config).map(([id,value])=>({id,enabled:value.enabled,intervalMin:value.intervalMs/60000,scheduled:scheduled[id],running:active[id],observations:pollingObservations.snapshot(id)})),
+  };
+}
+
 module.exports = {
   init,
   register,
@@ -856,9 +934,12 @@ module.exports = {
   flushRestartPolling,
   onClientConnect,
   checkCustomTask,
+  previewCustomTask: performCustomTaskCheck,
   pollIpamSources,
   getPollingConfig,
+  getRuntimeStatus,
   getSchedulerTimezone,
   getNextRun,
+  getRegistrationStatus: (schedule) => !schedule.enabled ? 'paused' : jobs.has(schedule.id) ? 'registered' : 'unregistered',
   DEFAULTS,
 };

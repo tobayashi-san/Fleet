@@ -1,7 +1,12 @@
+import { completionStatus } from '@/lib/execution-status';
+import { statusLabel } from '@/lib/history-labels';
+import { getRunStart, subscribeRunStart, trackRunStart, clearRunStart } from './run-start-tracker';
+import { activeRunKey } from './active-run-key';
+import { CancelRunDialog, type CancelRunTarget } from './components/CancelRunDialog';
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useQuery } from "@tanstack/react-query";
-import { History, Play, Search, Terminal, X } from "lucide-react";
+import { History, Play, Plus, Search, Terminal, X } from "lucide-react";
 import { api } from "@/lib/api";
 import { asArray } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
@@ -19,7 +24,9 @@ import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { ws } from "@/lib/ws";
+import { filterTargetHosts } from "./target-hosts";
 import { buildAllExceptTargets } from "./playbook-utils";
+import { parseRunVariableDrafts, type RunVariableDraft, type RunVariableType } from "./run-extra-vars";
 import type { AnsibleVar, HistoryEntry, Playbook } from "./playbook-types";
 import { HistoryTab } from "./PlaybookHistory";
 
@@ -39,8 +46,25 @@ export function RunsTab({ initialPlaybook }: { initialPlaybook?: string }) {
 }
 
 export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string }) {
+  const environmentId = useUi(state => state.environmentId);
+  const profile = useProfile();
+  if (profile.isError) return <QueryErrorState compact title="Account context unavailable" error={profile.error} onRetry={() => void profile.refetch()} />;
+  if (profile.isPending) return <p role="status">Loading account context…</p>;
+  const userId = profile.data?.id;
+  if (userId === undefined || userId === null || String(userId) === '') return <p role="alert">Account identity is unavailable. Reload the page before starting a playbook.</p>;
+  const storageKey = activeRunKey(userId, environmentId);
+  return <QuickRunSession key={storageKey} initialPlaybook={initialPlaybook} environmentId={environmentId} storageKey={storageKey} />;
+}
+
+function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initialPlaybook: string; environmentId: string; storageKey: string }) {
   const { t } = useTranslation();
-  const environmentId = useUi((state) => state.environmentId);
+  const mounted = useRef(true);
+  const unsubscribeRun = useRef<(() => void) | null>(null);
+  const [runConnectionError, setRunConnectionError] = useState<string | null>(null);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; unsubscribeRun.current?.(); unsubscribeRun.current = null; };
+  }, []);
   const playbooksQuery = useQuery<Playbook[]>({
     queryKey: ["playbooks"],
     queryFn: () => api.getPlaybooks() as unknown as Promise<Playbook[]>,
@@ -66,8 +90,12 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   const [selPb, setSelPb] = useState(initialPlaybook);
   const [allChecked, setAllChecked] = useState(false);
   const [checked, setChecked] = useState<Set<string>>(new Set());
-  const [extraVars, setExtraVars] = useState("");
+  const [extraVars, setExtraVars] = useState<RunVariableDraft[]>([]);
+  const [extraVarsError, setExtraVarsError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [outputRestricted, setOutputRestricted] = useState(false);
+  const [runStatus, setRunStatus] = useState<string | null>(null);
+  const [startingRun, setStartingRun] = useState(false);
   const [lines, setLines] = useState<{ text: string; cls: string }[]>([]);
   const [started, setStarted] = useState(false);
   const [confirmAllOpen, setConfirmAllOpen] = useState(false);
@@ -79,8 +107,20 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   const [hostSearch, setHostSearch] = useState("");
   const [groupFilter, setGroupFilter] = useState("");
   const [tagFilter, setTagFilter] = useState("");
+  const [cancelTarget, setCancelTarget] = useState<CancelRunTarget | null>(null);
   const [activeRunId, setActiveRunId] = useState<string | null>(null);
   const bodyRef = useRef<HTMLDivElement>(null);
+  const nextVariableId = useRef(0);
+
+  const addExtraVariable = () => {
+    nextVariableId.current += 1;
+    setExtraVars((rows) => [...rows, { id: `run-var-${nextVariableId.current}`, key: "", value: "", type: "string" }]);
+    setExtraVarsError(null);
+  };
+  const updateExtraVariable = (id: string, patch: Partial<RunVariableDraft>) => {
+    setExtraVars((rows) => rows.map((row) => row.id === id ? { ...row, ...patch } : row));
+    setExtraVarsError(null);
+  };
 
   const addLine = (text: string, cls: string) => {
     setLines((prev) => [...prev, { text, cls }]);
@@ -91,31 +131,52 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   useEffect(() => {
     if (initialPlaybook) setSelPb(initialPlaybook);
   }, [initialPlaybook]);
-  const activeRunStorageKey = `fleet.active-playbook-run.${environmentId}`;
+  const activeRunStorageKey = storageKey;
   useEffect(() => {
-    const stored = window.sessionStorage.getItem(activeRunStorageKey);
-    if (!stored) return;
-    setActiveRunId(stored);
-    setBusy(true);
-    setStarted(true);
+    const restore = () => {
+      const starting = getRunStart(activeRunStorageKey);
+      setStartingRun(Boolean(starting?.pending));
+      if (starting?.pending) {
+        setRunStatus(null);
+        setRunConnectionError(null);
+        setBusy(true); setStarted(true); setActiveRunId(null);
+        return;
+      }
+      const stored = starting?.runId || window.sessionStorage.getItem(activeRunStorageKey);
+      if (stored) { setActiveRunId(stored); setBusy(true); setStarted(true); }
+      else if (starting?.error) { setBusy(false); setRunConnectionError(starting.error); }
+    };
+    restore();
+    return subscribeRunStart(activeRunStorageKey, restore);
   }, [activeRunStorageKey]);
   useEffect(() => {
     if (!activeRunId) return;
     let stopped = false;
+    let refreshing = false;
     const refreshRun = async () => {
+      if (refreshing || stopped) return;
+      refreshing = true;
       try {
-        const entry = await api.getScheduleHistoryEntry(activeRunId) as unknown as HistoryEntry;
+        const entry = await api.getPlaybookRunStatus(activeRunId, environmentId) as unknown as HistoryEntry & {output_available?: boolean};
         if (stopped) return;
+        setRunConnectionError(null);
+        setRunStatus(entry.status);
+        setOutputRestricted(entry.output_available === false);
+        if (entry.output_available === false) setLines([]);
         if (entry.output) setLines([{ text: entry.output, cls: "" }]);
-        if (entry.status !== "running") {
+        const terminal = ['success','successful','completed','failed','error','cancelled','canceled'].includes(entry.status);
+        if (!terminal && !['running','queued','pending'].includes(entry.status)) setRunConnectionError(`Unrecognized run state: ${entry.status}`);
+        if (terminal) {
           setBusy(false);
           setActiveRunId(null);
           window.sessionStorage.removeItem(activeRunStorageKey);
+          clearRunStart(activeRunStorageKey);
           showToast(entry.status === "success" ? "Playbook run completed." : `Playbook run ${entry.status}.`, entry.status === "success" ? "success" : "warning");
         }
-      } catch {
-        // A temporary reconnect failure must not lose the active run marker.
-      }
+      } catch (error) {
+        if (!stopped) setRunConnectionError(error instanceof Error ? error.message : 'Run status unavailable');
+        // Preserve the active marker until an authoritative terminal state.
+      } finally { refreshing = false; }
     };
     void refreshRun();
     const timer = window.setInterval(() => void refreshRun(), 2_000);
@@ -125,19 +186,7 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
   const allTags = useMemo(() => [...new Set(srvList.flatMap((server) => (
     Array.isArray(server.tags) ? server.tags.map(String) : []
   )))].sort((a, b) => a.localeCompare(b)), [srvList]);
-  const visibleServers = useMemo(() => {
-    const needle = hostSearch.trim().toLowerCase();
-    return srvList.filter((server) => {
-      const tags = Array.isArray(server.tags) ? server.tags.map(String) : [];
-      const searchable = [server.name, server.hostname, server.ip_address, ...tags]
-        .map(String)
-        .join(" ")
-        .toLowerCase();
-      return (!needle || searchable.includes(needle)) &&
-        (!groupFilter || String(server.group_id || "") === groupFilter) &&
-        (!tagFilter || tags.includes(tagFilter));
-    });
-  }, [groupFilter, hostSearch, srvList, tagFilter]);
+  const visibleServers = useMemo(() => filterTargetHosts(srvList, {search:hostSearch,group:groupFilter,tag:tagFilter}), [groupFilter,hostSearch,srvList,tagFilter]);
   const previewTargets = allChecked
     ? srvList.map((server) => String(server.name)).filter((name) => !checked.has(name))
     : [...checked].filter((name) => name !== "localhost");
@@ -181,14 +230,14 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
       return;
     }
     let overrides: Record<string, unknown> = {};
-    if (extraVars.trim()) {
-      try {
-        overrides = JSON.parse(extraVars);
-        if (!overrides || Array.isArray(overrides) || typeof overrides !== "object") throw new Error();
-      } catch {
-        showToast(t("run.invalidJson"), "error");
-        return;
-      }
+    try {
+      overrides = parseRunVariableDrafts(extraVars);
+      setExtraVarsError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("run.invalidJson");
+      setExtraVarsError(message);
+      showToast(message, "error");
+      return;
     }
     const inherited = Object.fromEntries(asArray<AnsibleVar>(environmentVars.data).map((variable) => [
       variable.key,
@@ -212,47 +261,50 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
       targets = [...checked].join(",");
     }
     let ev: Record<string, unknown> = {};
-    if (extraVars.trim()) {
-      try {
-        ev = JSON.parse(extraVars);
-      } catch {
-        showToast(t("run.invalidJson"), "error");
-        return;
-      }
+    try {
+      ev = parseRunVariableDrafts(extraVars);
+      setExtraVarsError(null);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : t("run.invalidJson");
+      setExtraVarsError(message);
+      showToast(message, "error");
+      return;
     }
     setBusy(true);
     setStarted(true);
     setLines([]);
     try {
-      const res = (await api.runPlaybook(selPb, targets, ev, {
+      const res = await trackRunStart(activeRunStorageKey, async () => (await api.runPlaybook(selPb, targets, ev, {
         environment_id: environmentId,
         checkMode,
         forks,
       })) as unknown as {
         historyId?: string;
         runId?: string;
-      };
+      });
+      if (!mounted.current) return;
       addLine(t("pb.started"), "text-green-500");
       if (res?.historyId) {
         setActiveRunId(res.runId || null);
-        if (res.runId) window.sessionStorage.setItem(activeRunStorageKey, res.runId);
+        unsubscribeRun.current?.();
         const unsub = ws.subscribe((msg: unknown) => {
           const m = msg as Record<string, unknown>;
-          if (m.historyId !== res.historyId) return;
+          if (!mounted.current || m.historyId !== res.historyId) return;
           if (m.type === "ansible_output")
             addLine(
               String(m.data ?? ""),
               m.stream === "stderr" ? "text-red-400" : "",
             );
           else if (m.type === "ansible_complete") {
-            addLine(
-              m.success ? t("ws.completed") : t("ws.failed"),
-              m.success ? "text-green-500" : "text-red-400",
-            );
+            const status = completionStatus(m);
+            addLine(statusLabel(t, status), status === 'success' ? 'text-green-500' : status === 'failed' ? 'text-red-400' : 'text-muted-foreground');
+            setRunStatus(status);
+            if (status === 'unknown') { setRunConnectionError('Completion state is unknown; checking persisted status'); return; }
             unsub();
             setBusy(false);
             setActiveRunId(null);
             window.sessionStorage.removeItem(activeRunStorageKey);
+            clearRunStart(activeRunStorageKey);
           } else if (m.type === "ansible_error") {
             addLine(
               t("ws.error", { msg: String(m.error ?? "") }),
@@ -262,13 +314,16 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
             setBusy(false);
             setActiveRunId(null);
             window.sessionStorage.removeItem(activeRunStorageKey);
+            clearRunStart(activeRunStorageKey);
           }
         });
+        unsubscribeRun.current = unsub;
         ws.connect();
       } else {
         setBusy(false);
       }
     } catch (e: unknown) {
+      if (!mounted.current) return;
       addLine((e as Error).message, "text-red-400");
       setBusy(false);
     }
@@ -418,7 +473,7 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
                   checked={checked.has("localhost")}
                   onChange={() => toggleServer("localhost")}
                 />
-                <span>localhost</span>
+                <span className="min-w-0 flex-1"><span className="block font-medium">localhost</span><span className="block text-[11px] text-muted-foreground">Runs inside the Shipyard runtime, not on a remote host.</span></span>
                 {allChecked && checked.has("localhost") && (
                   <span className="text-xs font-medium text-destructive">
                     {t("run.excluded")}
@@ -434,28 +489,35 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
               {selectedTargets.length > shortTargetPreview.length ? ` +${selectedTargets.length - shortTargetPreview.length} more` : ""}
             </p>
           </div>
-          <div className="space-y-1">
-            <Label>
-              {t("qr.extraVars")}{" "}
-              <span className="text-muted-foreground font-normal">
-                ({t("common.optional")})
-              </span>
-            </Label>
-            <Input
-              value={extraVars}
-              onChange={(e) => setExtraVars(e.target.value)}
-              placeholder='{"key": "value"}'
-              className="font-mono text-sm"
-            />
-            <p className="text-xs text-muted-foreground">Environment variables and encrypted secrets are merged automatically. Values entered here override them for this run.</p>
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-3">
+              <Label>Run-specific variables <span className="font-normal text-muted-foreground">({t("common.optional")})</span></Label>
+              <Button type="button" variant="outline" size="sm" onClick={addExtraVariable}><Plus className="h-4 w-4" /> Add variable</Button>
+            </div>
+            {extraVars.length === 0 ? <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No run-specific variables. Stored environment variables and encrypted secrets are still supplied automatically.</p> : (
+              <div className="space-y-2">
+                {extraVars.map((row, index) => (
+                  <div key={row.id} className="grid gap-2 rounded-md border p-2 sm:grid-cols-[minmax(8rem,1fr)_8rem_minmax(8rem,1.4fr)_2.25rem]">
+                    <Input aria-label={`Variable ${index + 1} key`} value={row.key} onChange={(event) => updateExtraVariable(row.id, { key: event.target.value })} placeholder="variable_name" className="font-mono text-sm" />
+                    <select aria-label={`Variable ${index + 1} type`} value={row.type} onChange={(event) => updateExtraVariable(row.id, { type: event.target.value as RunVariableType, value: event.target.value === "boolean" ? "false" : row.value })} className="h-9 rounded-md border border-input bg-background px-2 text-sm">
+                      <option value="string">Text</option><option value="number">Number</option><option value="boolean">Boolean</option><option value="json">JSON</option>
+                    </select>
+                    {row.type === "boolean" ? <select aria-label={`Variable ${index + 1} value`} value={row.value || "false"} onChange={(event) => updateExtraVariable(row.id, { value: event.target.value })} className="h-9 rounded-md border border-input bg-background px-2 text-sm"><option value="false">false</option><option value="true">true</option></select> : <Input aria-label={`Variable ${index + 1} value`} value={row.value} onChange={(event) => updateExtraVariable(row.id, { value: event.target.value })} placeholder={row.type === "json" ? '{"enabled":true}' : "Value"} className="font-mono text-sm" />}
+                    <Button type="button" variant="ghost" size="icon" aria-label={`Remove variable ${index + 1}`} onClick={() => { setExtraVars((rows) => rows.filter((item) => item.id !== row.id)); setExtraVarsError(null); }}><X className="h-4 w-4" /></Button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <p className="text-xs text-muted-foreground">Values keep the selected type. Run-specific entries override stored environment variables with the same key.</p>
+            {extraVarsError && <p role="alert" className="text-xs text-destructive">{extraVarsError}</p>}
           </div>
+          <label className="flex items-center justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2 text-sm">
+            <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Ansible check mode with diff; review changes without applying them where modules support it.</span></span>
+            <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
+          </label>
           <details className="rounded-md border bg-muted/10 px-3 py-2">
-            <summary className="cursor-pointer text-sm font-medium">Advanced options</summary>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <label className="flex items-center justify-between gap-3 rounded-md border bg-background px-3 py-2 text-sm">
-                <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Ansible check mode with diff</span></span>
-                <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
-              </label>
+            <summary className="cursor-pointer text-sm font-medium">Advanced execution options</summary>
+            <div className="mt-3">
               <div className="space-y-1">
                 <Label htmlFor="playbook-forks">Parallel hosts</Label>
                 <Input id="playbook-forks" type="number" min={1} max={50} value={forks} onChange={(event) => setForks(Math.min(50, Math.max(1, Number(event.target.value) || 1)))} />
@@ -463,16 +525,18 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
               </div>
             </div>
           </details>
+          {runConnectionError && <p role="alert" className="text-sm text-destructive">Run status could not be refreshed: {runConnectionError}. The run is still tracked; status will be retried.</p>}
           <div className="flex flex-wrap gap-2">
             <Button onClick={run} disabled={busy}>
-              <Play className="h-4 w-4" /> {busy ? t("qr.running") : checkMode ? "Start dry run" : t("qr.run")}
+              <Play className="h-4 w-4" /> {busy ? (startingRun ? "Starting…" : t("qr.running")) : checkMode ? "Start dry run" : t("qr.run")}
             </Button>
             {busy && activeRunId && (
-              <Button variant="destructive" onClick={() => void api.cancelPlaybookRun(activeRunId)}>
+              <Button variant="destructive" onClick={() => setCancelTarget({id:activeRunId,environment:environmentId})}>
                 <X className="h-4 w-4" /> Cancel run
               </Button>
             )}
           </div>
+          <CancelRunDialog target={cancelTarget} onClose={() => setCancelTarget(null)} />
           <ConfirmDialog
             open={confirmAllOpen}
             onOpenChange={setConfirmAllOpen}
@@ -538,6 +602,8 @@ export function QuickRunTab({ initialPlaybook = "" }: { initialPlaybook?: string
           <div className="flex items-center gap-2 text-sm font-semibold mb-3">
             <Terminal className="h-4 w-4" /> {t("pb.output")}
           </div>
+          {runStatus && <p role="status" className="mb-2 text-sm">Run status: {runStatus}</p>}
+          {outputRestricted && <p className="mb-3 text-sm text-muted-foreground">Your role can track this run. Viewing its output requires workflow history access.</p>}
           {!started ? (
             <div className="flex flex-1 items-center justify-center">
               <EmptyState

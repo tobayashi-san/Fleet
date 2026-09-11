@@ -1,3 +1,5 @@
+import { parsePlanSummary } from "./plan-summary";
+import { isActiveRunStatus, runActionLabel, runStatusLabel, runDurationLabel } from "./run-status";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, Clipboard, FileOutput, RefreshCw, Square } from "lucide-react";
 import { apiFetch } from "@/lib/api";
@@ -36,35 +38,33 @@ function formatDate(value?: string) {
 }
 
 export function RunDetailsDialog({
-  workspaceId,
+  workspaceId = "",
+  vmId,
   runId,
   open,
   onOpenChange,
 }: {
-  workspaceId: string;
+  workspaceId?: string;
+  vmId?: string;
   runId?: string | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
   const queryClient = useQueryClient();
   const runQuery = useQuery({
-    queryKey: ["opentofu", "workspace", workspaceId, "run", runId],
+    queryKey: ["opentofu", vmId ? "vm" : "workspace", vmId || workspaceId, "run", runId],
     queryFn: () =>
       apiFetch<RunDetails>(
-        `/opentofu/workspaces/${encodeURIComponent(workspaceId)}/runs/${encodeURIComponent(runId || "")}`,
+        `/opentofu/${vmId ? "vms" : "workspaces"}/${encodeURIComponent(vmId || workspaceId)}/runs/${encodeURIComponent(runId || "")}`,
       ),
     enabled: open && Boolean(runId),
     refetchInterval: (query) =>
-      ["running", "queued"].includes(String(query.state.data?.status || ""))
+      isActiveRunStatus(query.state.data?.status)
         ? 2_000
         : false,
   });
-  const run = runQuery.data;
-  const summary = (() => {
-    if (!run?.plan_summary) return null;
-    if (typeof run.plan_summary === "object") return run.plan_summary;
-    try { return JSON.parse(run.plan_summary) as { create?: number; update?: number; delete?: number; replace?: number }; } catch { return null; }
-  })();
+  const run = runQuery.isError ? undefined : runQuery.data;
+  const summary = parsePlanSummary(run?.plan_summary);
   const cancelMutation = useMutation({
     mutationFn: () =>
       apiFetch(
@@ -98,19 +98,23 @@ export function RunDetailsDialog({
         <DialogHeader>
           <DialogTitle className="flex flex-wrap items-center gap-2">
             <FileOutput className="h-5 w-5" />
-            {run?.action || "OpenTofu run"}
+            {runActionLabel(run?.action)}
             {run && (
               <StatusBadge tone={tone(run.status)} dot>
-                {run.status || "—"}
+                {runStatusLabel(run.status)}
               </StatusBadge>
             )}
           </DialogTitle>
           <DialogDescription>
             {run
               ? `Started: ${formatDate(run.started_at)}${run.completed_at ? ` · Completed: ${formatDate(run.completed_at)}` : ""}`
-              : "Loading run…"}
+              : runQuery.isError ? "Run details unavailable. Refresh to try again." : "Loading run…"}
           </DialogDescription>
         </DialogHeader>
+        {run && <p className="text-xs text-muted-foreground">Duration: {runDurationLabel(run)}</p>}
+        {run && !summary && (run.action === "plan" || run.plan_summary != null) && (
+          <p className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 text-sm">Plan summary unavailable. Review the run output; missing statistics do not confirm a plan without changes.</p>
+        )}
         {summary && (
           <div className="grid grid-cols-4 gap-2 rounded-md border bg-muted/20 p-3 text-center text-xs">
             <div><strong className="block text-base">{summary.create || 0}</strong>Create</div>
@@ -132,14 +136,14 @@ export function RunDetailsDialog({
           ) : (
             <pre className="whitespace-pre-wrap break-words">
               {run?.output ||
-                (run?.status === "running"
+                (isActiveRunStatus(run?.status)
                   ? "Waiting for output…"
                   : "No output available.")}
             </pre>
           )}
         </div>
         <DialogFooter>
-          {["running", "cancelling"].includes(String(run?.status || "")) && (
+          {!vmId && ["running", "cancelling"].includes(String(run?.status || "")) && (
             <Button
               type="button"
               variant="destructive"

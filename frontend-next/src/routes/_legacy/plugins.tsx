@@ -1,3 +1,5 @@
+import { pluginRequest } from '@/lib/plugin-request';
+import { startPluginMount } from '@/lib/plugin-mount';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -21,9 +23,11 @@ interface PluginInfo {
   author?: string;
   enabled?: boolean;
   hasUi?: boolean;
+  loaded?: boolean;
 }
 
 interface PluginCtxState {
+  environmentId: string;
   currentView: string;
   selectedServerId: string | number | null;
   servers: unknown[];
@@ -33,6 +37,7 @@ interface PluginCtxState {
 }
 
 interface PluginCtx {
+  signal: AbortSignal;
   api: { request: typeof apiFetch } & typeof api;
   pluginApi: { request: (path: string, options?: Parameters<typeof apiFetch>[1]) => Promise<unknown> };
   state: PluginCtxState;
@@ -56,10 +61,6 @@ export function PluginsPage() {
     queryFn: async () => asArray<PluginInfo>(await api.getPlugins()),
   });
 
-  const enable = useMutation({
-    mutationFn: (id: string) => api.enablePlugin(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins'] }),
-  });
   const disable = useMutation({
     mutationFn: (id: string) => api.disablePlugin(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['plugins'] }),
@@ -123,9 +124,7 @@ export function PluginsPage() {
                       {t('plugins.disable')}
                     </Button>
                   ) : (
-                    <Button variant="outline" size="sm" onClick={() => enable.mutate(p.id)} disabled={enable.isPending}>
-                      {t('plugins.enable')}
-                    </Button>
+                    <Button variant="outline" size="sm" asChild><Link to="/settings/$tab" params={{tab:'plugins'}}>Review and enable</Link></Button>
                   )}
                   {p.enabled && p.hasUi !== false && (
                     <Link to="/plugins/$id" params={{ id: p.id }}>
@@ -148,17 +147,19 @@ export function PluginHostPage() {
   const { id } = useParams({ from: '/_protected/plugins/$id' });
   const navigate = useNavigate();
   const containerRef = useRef<HTMLDivElement | null>(null);
-  const moduleRef = useRef<PluginModule | null>(null);
+  const [attempt,setAttempt]=useState(0);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
   const environmentId = useUi((state) => state.environmentId);
 
-  const { data: plugins } = useQuery<PluginInfo[]>({
+  const pluginsQuery = useQuery<PluginInfo[]>({
     queryKey: ['plugins'],
     queryFn: async () => asArray<PluginInfo>(await api.getPlugins()),
+    refetchInterval:30_000,
   });
+  const {data:plugins}=pluginsQuery;
   const { data: servers } = useQuery<unknown[]>({
     queryKey: ['servers', environmentId],
     queryFn: async () => asArray(await api.getServers(environmentId)),
@@ -168,6 +169,7 @@ export function PluginHostPage() {
   // Re-mounting on every server update used to reset OpenTofu back to its
   // dashboard after an init/apply run completed.
   const pluginStateRef = useRef<PluginCtxState>({
+    environmentId,
     currentView: 'plugin',
     selectedServerId: null,
     servers: [],
@@ -176,6 +178,7 @@ export function PluginHostPage() {
     whiteLabel: {},
   });
   pluginStateRef.current = {
+    environmentId,
     currentView: 'plugin',
     selectedServerId: null,
     servers: asArray(servers),
@@ -185,6 +188,9 @@ export function PluginHostPage() {
   };
 
   const pluginInfo = asArray<PluginInfo>(plugins).find(p => p.id === id);
+  const accessState=pluginsQuery.isPending ? 'checking' : pluginsQuery.isError ? 'error' : !pluginInfo ? 'missing' : pluginInfo.loaded===false ? 'unavailable' : !pluginInfo.enabled ? 'disabled' : pluginInfo.hasUi===false ? 'no_ui' : 'allowed';
+  const accessMessages={checking:'Checking plugin access…',error:'Plugin access could not be verified. Check again before continuing.',missing:'This plugin is unavailable or your account no longer has access.',unavailable:'This plugin failed to load. An administrator must resolve the package error.',disabled:'Access to this plugin has been disabled.',no_ui:'This package has no web interface.'};
+
 
   useEffect(() => {
     ws.connect();
@@ -194,30 +200,28 @@ export function PluginHostPage() {
     let cancelled = false;
     setError(null);
     setLoading(true);
+    if(accessState!=='allowed'){setLoading(false);return;}
 
-    (async () => {
-      try {
-        const mod: PluginModule = await import(/* @vite-ignore */ `/plugins/${id}/ui.js?v=${Date.now()}`);
-        if (cancelled) return;
-        moduleRef.current = mod;
-
-        const container = containerRef.current;
-        if (!container) return;
-        container.innerHTML = '';
-
-        if (typeof mod.mount !== 'function') {
-          setError(t('plugins.noUi'));
-          setLoading(false);
-          return;
-        }
-
+    const host=containerRef.current;
+    if(!host)return;
+    const container=document.createElement('div');
+    host.replaceChildren(container);
+    const subscriptions=new Set<()=>void>();
+    const abort=new AbortController();
+    const request=pluginRequest(environmentId,abort.signal);
+    const guardedApi=Object.fromEntries(Object.entries(api).map(([name,method])=>[name,(...args:unknown[])=>{
+      if(cancelled || useUi.getState().environmentId!==environmentId)return Promise.reject(new DOMException('Plugin view is no longer active','AbortError'));
+      return Reflect.apply(method,api,args);
+    }])) as typeof api;
         const ctx: PluginCtx = {
-          api: { request: apiFetch, ...api },
+          signal:abort.signal,
+          api: { ...guardedApi, request },
           pluginApi: {
-            request: (path, options) => apiFetch(`/plugin/${id}${path}`, options),
+            request: (path, options) => request(`/plugin/${id}${path}`, options),
           },
           state: pluginStateRef.current,
           navigate: (to: string) => {
+            if(cancelled)return;
             // Map legacy shorthand routes to full paths used by the new frontend
             const routeMap: Record<string, string> = {
               dashboard: '/',
@@ -229,7 +233,7 @@ export function PluginHostPage() {
           },
           refreshServersState: async () => {
             try {
-              const nextServers = asArray(await api.getServers());
+              const nextServers = asArray(await request(`/servers?environment_id=${encodeURIComponent(environmentId)}`));
               await Promise.all([
                 qc.invalidateQueries({ queryKey: ['servers'] }),
                 qc.invalidateQueries({ queryKey: ['server'] }),
@@ -238,40 +242,41 @@ export function PluginHostPage() {
             }
             catch { return []; }
           },
-          showToast: (msg, kind) => { pushToast(msg, (kind as 'success' | 'error' | 'warning' | 'info' | undefined) ?? 'info'); },
+          showToast: (msg, kind) => { if(cancelled)return;pushToast(msg, (kind as 'success' | 'error' | 'warning' | 'info' | undefined) ?? 'info'); },
           showConfirm: async (msg, options) => {
+            if(cancelled)return false;
             const detail = options?.title ? `${options.title}\n\n${msg}` : msg;
             return window.confirm(detail);
           },
-          onWsMessage: (fn) => ws.subscribe(fn),
+          onWsMessage: (fn) => {
+            if(cancelled)return ()=>{};
+            const unsubscribe=ws.subscribe(data=>{if(!cancelled)fn(data);});
+            const dispose=()=>{unsubscribe();subscriptions.delete(dispose);};
+            subscriptions.add(dispose);return dispose;
+          },
         };
 
-        await mod.mount(container, ctx);
+    const lifecycle=startPluginMount<PluginCtx>({
+      load:()=>import(/* @vite-ignore */ `/plugins/${id}/ui.js?v=${Date.now()}`) as Promise<PluginModule>,
+      container,context:ctx,
+      ready:()=>setLoading(false),
+      failed:(reason)=>{
+        cancelled=true;
+        abort.abort();
+        for(const unsubscribe of subscriptions)unsubscribe();
+        container.replaceChildren();
+        setError(`${t('plugins.loadError')}: ${reason instanceof Error ? reason.message : 'Unknown error'}`);
         setLoading(false);
-      } catch (e) {
-        if (cancelled) return;
-        console.error(`[plugins] failed to load "${id}"`, e);
-        setError(`${t('plugins.loadError')}: ${(e as Error).message}`);
-        setLoading(false);
-      }
-    })();
-
+      },
+    });
     return () => {
-      cancelled = true;
-      const mod = moduleRef.current;
-      moduleRef.current = null;
-      if (mod && typeof mod.unmount === 'function') {
-        try {
-          const r = mod.unmount();
-          if (r && typeof (r as Promise<unknown>).then === 'function') {
-            (r as Promise<unknown>).catch(() => { /* ignore */ });
-          }
-        } catch { /* ignore */ }
-      }
-      const container = containerRef.current;
-      if (container) container.innerHTML = '';
+      cancelled=true;
+      abort.abort();
+      for(const unsubscribe of subscriptions)unsubscribe();
+      container.remove();
+      lifecycle.dispose();
     };
-  }, [id, navigate, t, qc]);
+  }, [id, navigate, t, qc, attempt, environmentId, accessState]);
 
   return (
     <div className="space-y-6">
@@ -290,14 +295,16 @@ export function PluginHostPage() {
         }
       />
 
-      {loading && !error && (
+      {accessState!=='allowed' && <Card><CardContent className="space-y-3 p-6 text-sm"><p role="status">{accessMessages[accessState]}</p>{accessState!=='checking' && <Button variant="outline" disabled={pluginsQuery.isFetching} onClick={()=>void pluginsQuery.refetch()}>{pluginsQuery.isFetching ? 'Checking…' : 'Check plugin access again'}</Button>}</CardContent></Card>}
+      {accessState==='allowed' && loading && !error && (
         <Card><CardContent className="p-6 text-sm text-muted-foreground">{t('common.loading')}</CardContent></Card>
       )}
-      {error && (
+      {accessState==='allowed' && error && (
         <Card>
           <CardContent className="flex flex-col items-center gap-2 py-12 text-muted-foreground">
             <Puzzle className="h-8 w-8 opacity-60" />
-            <span className="text-sm">{error}</span>
+            <span role="alert" className="text-sm">{error}</span>
+            <Button variant="outline" onClick={()=>setAttempt(value=>value+1)}>Retry loading plugin</Button>
           </CardContent>
         </Card>
       )}

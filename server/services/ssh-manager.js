@@ -1,3 +1,5 @@
+const { execCommandWithTimeout } = require('../utils/ssh-command-timeout');
+const { sshKeyMetadata } = require('../utils/ssh-key-metadata');
 const { execFileSync, exec } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -13,7 +15,7 @@ const MAX_CONNECTIONS  = 20;
 const IDLE_TIMEOUT_MS  = 5 * 60 * 1000; // 5 minutes
 const CLEANUP_INTERVAL = 60 * 1000;     // check every minute
 
-const SSH_DIR = path.join(__dirname, '..', 'data', 'ssh');
+const SSH_DIR = process.env.SHIPYARD_SSH_DIR ? path.resolve(process.env.SHIPYARD_SSH_DIR) : path.join(__dirname, '..', 'data', 'ssh');
 const KNOWN_HOSTS_PATH = path.join(__dirname, '..', 'data', 'known_hosts');
 const ALGORITHM = 'aes-256-gcm';
 const KEY_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -279,6 +281,8 @@ class SSHManager {
       id: key.id,
       name: key.name,
       publicKey: key.public_key,
+      ...sshKeyMetadata(key.public_key),
+      registeredAt: key.created_at || null,
       privateKeyPath: p,
       exists: fs.existsSync(p) || fs.existsSync(p + '.enc'),
       encrypted: fs.existsSync(p + '.enc'),
@@ -371,59 +375,60 @@ class SSHManager {
   /**
    * Import an existing SSH private key
    */
-  importKey(privateKeyContent, name = 'shipyard_imported', passphrase = '') {
-    const key = resolveSshKeyPath(name);
-    const keyPath = key.keyPath;
-    const pubKeyPath = key.pubKeyPath;
-
-    // Write private key
-    fs.writeFileSync(keyPath, privateKeyContent, { mode: 0o600 });
-
-    // Generate public key (pass -P to handle passphrase-protected keys)
-    let publicKey;
+  inspectImport(privateKeyContent, passphrase = '') {
+    const directory = fs.mkdtempSync(path.join(RESOLVED_SSH_DIR, '.preview-'));
+    fs.chmodSync(directory,0o700);
     try {
-      const args = passphrase
-        ? ['-y', '-f', keyPath, '-P', passphrase]
-        : ['-y', '-f', keyPath];
-      publicKey = execFileSync('ssh-keygen', args, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
-    } catch (e) {
-      if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-      throw new Error('Invalid SSH private key or wrong passphrase.');
-    }
-    fs.writeFileSync(pubKeyPath, publicKey, { mode: 0o644 });
+      const file = path.join(directory,'key');
+      fs.writeFileSync(file,privateKeyContent,{mode:0o600,flag:'wx'});
+      let publicKey;
+      try {publicKey=execFileSync('ssh-keygen',['-y','-f',file,'-P',passphrase],{encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();}
+      catch {throw new Error('Invalid SSH private key or wrong passphrase.');}
+      return {...sshKeyMetadata(publicKey),publicKey};
+    } finally {fs.rmSync(directory,{recursive:true,force:true});}
+  }
 
-    // Strip passphrase so we can store/use the key without it (we encrypt at rest ourselves)
-    if (passphrase) {
+  importKey(privateKeyContent, name = 'shipyard_imported', passphrase = '', recordAudit = () => {}, beforeReplace = () => {}) {
+    const safeName = normalizeKeyName(name);
+    // Each candidate owns a new private directory; never overwrite active files.
+    const candidateDir = fs.mkdtempSync(path.join(RESOLVED_SSH_DIR, '.import-'));
+    fs.chmodSync(candidateDir, 0o700);
+    const keyPath = path.join(candidateDir, 'key');
+    let committed = false;
+    try {
+      fs.writeFileSync(keyPath, privateKeyContent, {mode:0o600,flag:'wx'});
+      let publicKey;
       try {
-        execFileSync('ssh-keygen', ['-p', '-P', passphrase, '-N', '', '-f', keyPath], { stdio: 'pipe' });
-      } catch (e) {
-        if (fs.existsSync(keyPath)) fs.unlinkSync(keyPath);
-        throw new Error('Failed to strip passphrase from key.');
+        publicKey = execFileSync('ssh-keygen', ['-y','-f',keyPath,'-P',passphrase], {encoding:'utf8',stdio:['pipe','pipe','pipe']}).trim();
+        if (passphrase) execFileSync('ssh-keygen', ['-p','-P',passphrase,'-N','','-f',keyPath], {stdio:'pipe'});
+      } catch { throw new Error('Invalid SSH private key or wrong passphrase.'); }
+      fs.writeFileSync(keyPath + '.pub', publicKey, {mode:0o644,flag:'wx'});
+      const encrypted = encryptKey(fs.readFileSync(keyPath,'utf8'));
+      if (encrypted) {
+        fs.writeFileSync(keyPath + '.enc',encrypted,{mode:0o600,flag:'wx'});
+        fs.unlinkSync(keyPath);
       }
-    }
-
-    // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
-    // Re-read the key from disk: if a passphrase was stripped above, the file
-    // now contains the unprotected key — not the original privateKeyContent.
-    const strippedKeyContent = fs.readFileSync(keyPath, 'utf8');
-    const encrypted = encryptKey(strippedKeyContent);
-    if (encrypted) {
-      fs.writeFileSync(keyPath + '.enc', encrypted, { mode: 0o600 });
-      fs.unlinkSync(keyPath);
-    }
-
-    // Remove old key files, then replace DB record
-    for (const old of db.sshKeys.getAll()) {
-      const p = old.private_key_path;
-      if (p && p !== keyPath) {
-        unlinkManagedSshFile(p);
-        unlinkManagedSshFile(p + '.enc');
-        unlinkManagedSshFile(p + '.pub');
+      const previous = db.sshKeys.getAll();
+      db.db.transaction(() => {
+        beforeReplace(sshKeyMetadata(publicKey));
+        const previousActive = db.sshKeys.getFirst();
+        db.sshKeys.replace(safeName,publicKey,keyPath);
+        recordAudit(previousActive,db.sshKeys.getFirst());
+      }).immediate();
+      committed = true;
+      // Only remove old material after the replacement and audit have committed.
+      for (const old of previous) {
+        const p = old.private_key_path;
+        if (p && p !== keyPath) {
+          unlinkManagedSshFile(p);
+          unlinkManagedSshFile(p + '.enc');
+          unlinkManagedSshFile(p + '.pub');
+        }
       }
+      return {publicKey,privateKeyPath:keyPath,alreadyExists:false};
+    } finally {
+      if (!committed) fs.rmSync(candidateDir,{recursive:true,force:true});
     }
-    db.sshKeys.replace(key.name, publicKey, keyPath);
-
-    return { publicKey, privateKeyPath: keyPath, alreadyExists: false };
   }
 
   /**
@@ -558,12 +563,12 @@ class SSHManager {
   /**
    * Execute a command on a remote server
    */
-  async execCommand(server, command) {
+  async execCommand(server, command, options = {}) {
     const key = this._connectionKey(server);
     const ssh = await this.getConnection(server);
     this._refInc(key);
     try {
-      const result = await ssh.execCommand(command);
+      const result = options.timeoutMs ? await execCommandWithTimeout(ssh, command, options.timeoutMs) : await ssh.execCommand(command);
       return {
         stdout: result.stdout,
         stderr: result.stderr,

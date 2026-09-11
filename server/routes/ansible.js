@@ -1,3 +1,4 @@
+const { canAccessWorkflowHistory, workflowHostIds } = require('../utils/workflow-history-scope');
 const express = require('express');
 const rateLimit = require('express-rate-limit');
 const { ipKeyGenerator } = require('express-rate-limit');
@@ -54,6 +55,32 @@ function createAnsibleRouter({ broadcast } = {}) {
     res.json({ environment_id: environmentId, count: names.length, targets: names });
   });
 
+  router.get('/runs/:id/status', (req, res) => {
+    const perms = getPermissions(req.user);
+    if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+    const row = db.scheduleHistory.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    const servers = environmentServers(req, res, row.environment_id || 'default');
+    if (!servers) return;
+    if (!canAccessWorkflowHistory(perms, row, servers)) return res.status(403).json({ error: 'Run access denied' });
+    const outputAllowed = can(perms, 'canViewSchedules');
+    res.json({ id: row.id, environment_id: row.environment_id, status: row.status,
+      started_at: row.started_at, completed_at: row.completed_at, output_available: outputAllowed,
+      ...(outputAllowed ? { output: row.output } : {}) });
+  });
+
+  router.get('/runs/:id/cancel-preview', (req, res) => {
+    const perms = getPermissions(req.user);
+    if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
+    const row = db.scheduleHistory.getById(req.params.id);
+    if (!row) return res.status(404).json({ error: 'Run not found' });
+    const servers = environmentServers(req, res, row.environment_id || 'default');
+    if (!servers) return;
+    if (!canAccessWorkflowHistory(perms, row, servers)) return res.status(403).json({ error: 'Run access denied' });
+    res.json({ id: row.id, environment_id: row.environment_id, name: row.schedule_name,
+      playbook: row.playbook, targets: row.targets, status: row.status, started_at: row.started_at });
+  });
+
   router.post('/runs/:id/cancel', (req, res) => {
     const perms = getPermissions(req.user);
     if (!can(perms, 'canRunPlaybooks')) return res.status(403).json({ error: 'Permission denied' });
@@ -62,7 +89,7 @@ function createAnsibleRouter({ broadcast } = {}) {
     if (req.environmentId && String(row.environment_id || 'default') !== req.environmentId) return res.status(404).json({ error: 'Run not found' });
     const servers = environmentServers(req, res, row.environment_id || 'default');
     if (!servers) return;
-    if (!canAccessPlaybook(perms, row.playbook) || !canAccessTargets(perms, row.targets, servers)) {
+    if (!canAccessWorkflowHistory(perms, row, servers)) {
       return res.status(403).json({ error: 'Run access denied' });
     }
     if (row.status !== 'running') return res.status(409).json({ error: 'Run is not active' });
@@ -125,6 +152,7 @@ function createAnsibleRouter({ broadcast } = {}) {
     // update rows. Use the persisted workflow ID consistently for the API and
     // live events so environment lookup never depends on a phantom FK row.
     const historyId = schedHistId;
+    const notificationServerIds = workflowHostIds(db.scheduleHistory.getById(schedHistId));
     ansibleRunner.prepareRun(schedHistId);
     const outputLines = [];
 
@@ -147,6 +175,7 @@ function createAnsibleRouter({ broadcast } = {}) {
       const status = result.cancelled ? 'cancelled' : result.success ? 'success' : 'failed';
       const output = outputLines.join('') || result.stdout + result.stderr;
       db.scheduleHistory.complete(schedHistId, status, output);
+      if (status === 'failed' && db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, `Targets: ${resolvedTargets}. Review the execution history for details.`, false, { environmentId, serverIds: notificationServerIds }).catch(() => {});
       db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} status=${status}`, req.ip, result.success, req.user?.username);
       for (const s of allServers) {
         if (resolvedTargets.split(',').includes(s.name)) db.updatesCache.delete(s.id);
@@ -157,7 +186,7 @@ function createAnsibleRouter({ broadcast } = {}) {
       db.scheduleHistory.complete(schedHistId, 'failed', outputLines.join('') + (outputLines.length ? '\n' : '') + error.message);
       db.auditLog.write('ansible.run', `playbook=${playbook} targets=${normalizedTargets} error=${error.message}`, req.ip, false, req.user?.username);
       emit({ type: 'ansible_error', historyId, runId: schedHistId, environmentId, playbook, error: error.message });
-      if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false).catch(() => {});
+      if (db.settings.get('notify_playbook_failed') !== '0') notify(`Playbook failed: ${playbook}`, error.message, false, { environmentId, serverIds: notificationServerIds }).catch(() => {});
     }
   });
 

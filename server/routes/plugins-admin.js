@@ -24,10 +24,14 @@ router.post('/:id/:action', adminOnly, (req, res) => {
   }
 
   try {
-    pluginLoader.setEnabled(id, action === 'enable');
-    db.auditLog.write(`plugin.${action}`, `Plugin ${id} ${action}d`, req.ip, true, req.user?.username);
+    db.db.transaction(()=>{
+      const review=action==='enable' ? pluginLoader.validateEnableReview(id,req.body) : null;
+      pluginLoader.setEnabled(id, action === 'enable');
+      db.auditLog.write(`plugin.${action}`, `Plugin ${id} ${action}d${review ? `; reviewed ${review.scheme} SHA-256 ${review.digest}` : ''}`,  req.ip, true, req.user?.username);
+    }).immediate();
     res.json({ success: true });
   } catch (e) {
+    if(e.status)return res.status(e.status).json({error:e.message,field:e.field});
     if (e.message?.includes('not loaded')) return res.status(404).json({ error: e.message });
     serverError(res, e, 'enable/disable plugin');
   }
@@ -37,8 +41,11 @@ router.post('/:id/:action', adminOnly, (req, res) => {
 router.post('/reload', adminOnly, (req, res) => {
   try {
     pluginLoader.reloadAll();
-    db.auditLog.write('plugin.reload', 'All plugins reloaded', req.ip, true, req.user?.username);
-    res.json({ success: true, plugins: pluginLoader.list() });
+    const plugins=pluginLoader.list();
+    const failed=plugins.filter(plugin=>!plugin.loaded).map(plugin=>({id:plugin.id,error:plugin.error || 'Plugin not loaded'}));
+    const loaded=plugins.filter(plugin=>plugin.loaded).length;
+    db.auditLog.write('plugin.reload', `Plugin reload completed: ${loaded} loaded, ${failed.length} failed`, req.ip, failed.length===0, req.user?.username);
+    res.json({ success: failed.length===0, plugins, summary:{loaded,failed,checkedAt:Date.now()} });
   } catch (e) {
     serverError(res, e, 'reload plugins');
   }

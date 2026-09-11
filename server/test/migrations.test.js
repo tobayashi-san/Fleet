@@ -95,3 +95,50 @@ test('database migrations fail loudly and roll back when required schema is corr
     db.close();
   }
 });
+
+test('custom-check metadata migration preserves historical successful results', () => {
+ const db = new Database(':memory:');
+ try {
+   applySchema(db);
+   db.prepare("INSERT INTO servers (id,name,hostname,ip_address) VALUES ('host','Host','host','192.0.2.1')").run();
+   db.prepare("INSERT INTO custom_update_tasks (id,server_id,name,current_version,last_version,has_update,last_checked_at) VALUES ('task','host','Task','1','2',1,'2026-01-01 00:00:00')").run();
+   applyMigrations(db);
+   const task=db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get('task');
+   assert.equal(task.current_version,'1');
+   assert.equal(task.last_version,'2');
+   assert.equal(task.has_update,1);
+   assert.equal(task.last_checked_at,'2026-01-01 00:00:00');
+   assert.equal(task.last_check_error,null);
+   assert.equal(task.last_attempted_at,null);
+ } finally { db.close(); }
+});
+
+test('legacy host history retains rows and names after migration and host deletion', () => {
+  const db = new Database(':memory:');
+  try {
+    db.pragma('foreign_keys = ON');
+    applySchema(db);
+    db.exec(`DROP TABLE update_history;
+      CREATE TABLE update_history (id TEXT PRIMARY KEY, server_id TEXT NOT NULL, environment_id TEXT NOT NULL DEFAULT 'default', action TEXT NOT NULL, status TEXT DEFAULT 'pending', output TEXT, started_at TEXT DEFAULT (datetime('now')), completed_at TEXT, triggered_by TEXT, FOREIGN KEY(server_id) REFERENCES servers(id) ON DELETE CASCADE);
+      INSERT INTO servers(id,name,hostname,ip_address) VALUES('old-host','Original host','old-host','192.0.2.10');
+      INSERT INTO update_history(id,server_id,action,output) VALUES('old-run','old-host','system_update','Original output');`);
+    applyMigrations(db);applyMigrations(db);
+    db.prepare('DELETE FROM servers WHERE id=?').run('old-host');
+    const row=db.prepare('SELECT * FROM update_history WHERE id=?').get('old-run');
+    assert.equal(row.server_name_snapshot,'Original host');assert.equal(row.output,'Original output');
+    assert.equal(row.environment_id,'default');
+    assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
+    assert.ok(db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name='idx_update_history_server_id'").get());
+  } finally {db.close();}
+});
+
+test('legacy workflow migration does not infer historical identities from reused names',()=>{
+ const db=new Database(':memory:');
+ try {
+  applySchema(db);db.exec('ALTER TABLE schedule_history DROP COLUMN target_server_ids');
+  db.exec("INSERT INTO servers(id,name,hostname,ip_address) VALUES('replacement','database','database','192.0.2.1'); INSERT INTO schedule_history(id,schedule_name,playbook,targets,output) VALUES('legacy','Old run','update.yml','database','Old output')");
+  applyMigrations(db);applyMigrations(db);
+  const row=db.prepare("SELECT * FROM schedule_history WHERE id='legacy'").get();
+  assert.equal(row.target_server_ids,null);assert.equal(row.output,'Old output');assert.equal(row.targets,'database');
+ } finally {db.close();}
+});

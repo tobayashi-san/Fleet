@@ -1,3 +1,5 @@
+import { InfrastructureFavorites, type FavoriteResource } from './InfrastructureFavorites';
+import { platformHostIds } from '@/lib/resource-model';
 import {
   type DragEvent,
   type ReactNode,
@@ -93,7 +95,7 @@ function StatusDot({ status }: { status?: string }) {
   return (
     <span
       aria-label={
-        online ? "Online" : normalized === "offline" ? "Offline" : "Unknown"
+        online ? "Online" : normalized === "stopped" ? "Stopped" : normalized === "paused" ? "Paused" : normalized === "offline" ? "Offline" : "Status unavailable"
       }
       className={cn(
         "h-1.5 w-1.5 shrink-0 rounded-full",
@@ -125,6 +127,7 @@ interface ProxmoxInventoryVm {
   fleet_server_id?: string | null;
 }
 interface ProxmoxCluster {
+  stale?: boolean;
   id?: string;
   endpoint?: string;
   status?: string;
@@ -133,6 +136,7 @@ interface ProxmoxCluster {
   vms?: ProxmoxInventoryVm[];
 }
 interface InfrastructureResponse {
+  warnings?: string[];
   clusters?: ProxmoxCluster[];
   cached?: boolean;
   refreshing?: boolean;
@@ -147,6 +151,23 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
   const canViewInfrastructure = canAccessInfrastructure(profile);
   const [collapsed, setCollapsed] = useState<Set<string>>(initialCollapsed);
   const [treeFilter, setTreeFilter] = useState("");
+  const searching = Boolean(treeFilter.trim());
+  const [filterName, setFilterName] = useState('');
+  const [savedFilters, setSavedFilters] = useState<Array<{name:string;query:string}>>([]);
+  const filterStorageKey = profile?.username ? `shipyard.infrastructure.filters:${encodeURIComponent(profile.username)}:${encodeURIComponent(environmentId)}` : null;
+  useEffect(() => {
+    setTreeFilter(''); setFilterName('');
+    try {
+      const stored = filterStorageKey ? JSON.parse(localStorage.getItem(filterStorageKey) || '[]') : [];
+      setSavedFilters(Array.isArray(stored) ? stored.filter(item => typeof item?.name === 'string' && typeof item?.query === 'string').slice(0,20) : []);
+    } catch { setSavedFilters([]); }
+  }, [filterStorageKey]);
+  const persistFilters = (next: Array<{name:string;query:string}>) => {
+    if (!filterStorageKey) return;
+    try { localStorage.setItem(filterStorageKey, JSON.stringify(next)); setSavedFilters(next); }
+    catch { showToast('Filters could not be saved in this browser.', 'error'); }
+  };
+
   const [folderOpen, setFolderOpen] = useState(false);
   const [folderName, setFolderName] = useState("");
   const [folderParentId, setFolderParentId] = useState("");
@@ -180,7 +201,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     staleTime: 30_000,
   });
   const rawGroups = groupsQuery.data;
-  const { data: inventory, isPending: inventoryPending, isError: inventoryError } = useQuery({
+  const { data: inventory, isPending: inventoryPending, isError: inventoryError, isFetching: inventoryFetching } = useQuery({
     // Nest the summary below the established infrastructure key so existing
     // connection, import and power-action invalidations refresh the tree too.
     queryKey: ["opentofu", "infrastructure", environmentId, "summary"],
@@ -201,6 +222,9 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     () => (Array.isArray(inventory?.clusters) ? inventory.clusters : []),
     [inventory],
   );
+  const hostNames = useMemo(() => new Map(asArray<Record<string, unknown>>(rawServers).map(normalizeServer)
+    .filter(server => String(server.environment_id || "default") === environmentId)
+    .map(server => [server.id, server.name])), [rawServers, environmentId]);
   const visibleClusters = useMemo(() => {
     const needle = treeFilter.trim().toLowerCase();
     if (!needle) return clusters;
@@ -208,34 +232,22 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       const clusterName = cluster.connections?.find((connection) => connection.name)?.name || cluster.endpoint || "";
       if (`${clusterName} ${cluster.endpoint || ""}`.toLowerCase().includes(needle)) return [cluster];
       const matchingVms = (cluster.vms || []).filter((vm) =>
-        `${vm.vm_id || ""} ${vm.name || ""} ${vm.node_name || ""}`.toLowerCase().includes(needle),
+        `${vm.vm_id || ""} ${vm.name || ""} ${vm.node_name || ""} ${hostNames.get(vm.fleet_server_id || "") || ""}`.toLowerCase().includes(needle),
       );
       const matchingNodeNames = new Set(
-        (cluster.nodes || []).filter((node) => String(node.name || "").toLowerCase().includes(needle)).map((node) => node.name),
+        (cluster.nodes || []).filter((node) => `${node.name || ""} ${hostNames.get(node.fleet_server_id || "") || ""}`.toLowerCase().includes(needle)).map((node) => node.name),
       );
+      const directlyMatchingNodes = new Set(matchingNodeNames);
       matchingVms.forEach((vm) => matchingNodeNames.add(vm.node_name));
       if (matchingNodeNames.size === 0) return [];
       return [{
         ...cluster,
         nodes: (cluster.nodes || []).filter((node) => matchingNodeNames.has(node.name)),
-        vms: matchingVms.length > 0
-          ? matchingVms
-          : (cluster.vms || []).filter((vm) => matchingNodeNames.has(vm.node_name)),
+        vms: (cluster.vms || []).filter(vm => matchingVms.includes(vm) || directlyMatchingNodes.has(vm.node_name)),
       }];
     });
-  }, [clusters, treeFilter]);
-  const platformServerIds = useMemo(
-    () =>
-      new Set(
-        clusters
-          .flatMap((cluster) => [
-            ...(cluster.nodes || []).map((node) => node.fleet_server_id),
-            ...(cluster.vms || []).map((vm) => vm.fleet_server_id),
-          ])
-          .filter((id): id is string => Boolean(id)),
-      ),
-    [clusters],
-  );
+  }, [clusters, treeFilter, hostNames]);
+  const platformServerIds = useMemo(() => platformHostIds(clusters), [clusters]);
   const servers = useMemo(
     () =>
       asArray<Record<string, unknown>>(rawServers)
@@ -247,6 +259,16 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         ),
     [rawServers, environmentId, platformServerIds],
   );
+  const favoriteResources: FavoriteResource[] = [
+    ...asArray<Record<string, unknown>>(rawServers).map(normalizeServer).filter(server=>String(server.environment_id || 'default')===environmentId).map(server=>({path:`/servers/${encodeURIComponent(server.id)}`,label:server.name,context:`Host · ${server.ip_address || server.id}`})),
+    ...(canViewInfrastructure ? clusters.flatMap(cluster=>{
+      const base=`/infrastructure/${encodeURIComponent(cluster.id || '')}`;
+      const platformName=cluster.connections?.[0]?.name || cluster.endpoint || 'Platform';
+      return [{path:base,label:platformName,context:'Platform'},
+        ...(cluster.nodes||[]).map(node=>({path:`${base}/nodes/${encodeURIComponent(node.name || '')}`,label:node.name || 'Node',context:`Node · ${platformName}`})),
+        ...(cluster.vms||[]).map(vm=>({path:`${base}/nodes/${encodeURIComponent(vm.node_name || '')}/vms/${vm.vm_id}`,label:vm.name || `VM ${vm.vm_id}`,context:`${vm.guest_type === 'lxc' ? 'Container' : 'VM'} ${vm.vm_id} · ${vm.node_name} · ${platformName}`}))];
+    }) : []),
+  ];
   const groups = useMemo(
     () =>
       asArray<Record<string, unknown>>(rawGroups).map(
@@ -525,9 +547,12 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       return next;
     });
   const selectedServerCount = selectedServerIds.size;
+  const hostFilterNeedle = treeFilter.trim().toLowerCase();
+  const matchesHostFilter = (server: ServerRow) =>
+    !hostFilterNeedle || `${server.name} ${server.ip_address || ""} ${(server.tags || []).join(" ")}`.toLowerCase().includes(hostFilterNeedle);
+  const hasMatchingHosts = servers.some(matchesHostFilter);
   const serverRow = (server: ServerRow, depth = 0) => {
-    const filterNeedle = treeFilter.trim().toLowerCase();
-    if (filterNeedle && !`${server.name} ${server.ip_address || ""} ${(server.tags || []).join(" ")}`.toLowerCase().includes(filterNeedle)) return null;
+    if (!matchesHostFilter(server)) return null;
     const active =
       path === `/servers/${server.id}` ||
       decodePath(path) === `/servers/${server.id}`;
@@ -606,7 +631,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     );
   };
   const groupNode = (node: GroupNode, depth = 0): ReactNode => {
-    const open = !collapsed.has(node.id);
+    const open = searching || !collapsed.has(node.id);
     const containsActiveServer = activeGroupIds.has(node.id);
     const members = byGroup[node.id] || [];
     const hasChildren = members.length > 0 || node.children.length > 0;
@@ -668,6 +693,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         >
           <button
             type="button"
+            disabled={searching}
             onClick={() => hasChildren && toggle(node.id)}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-1.5 rounded-sm py-1.5 text-left text-xs text-foreground transition-colors hover:bg-accent/60",
@@ -732,13 +758,14 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
     );
     const active =
       current || decodedPath.startsWith(`${clusterPath}/`) || linkedHostActive;
-    const open = !collapsed.has(`platform:${clusterId}`);
+    const open = searching || !collapsed.has(`platform:${clusterId}`);
     return (
       <div key={clusterId}>
         <div className={cn("flex min-w-0 items-center gap-1 rounded-sm pr-1", active && !current && "bg-muted/35")}>
           {nodes.length > 0 ? (
             <button
               type="button"
+              disabled={searching}
               onClick={() => toggle(`platform:${clusterId}`)}
               className="flex h-7 w-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent"
               aria-label={`${open ? "Collapse" : "Expand"} ${clusterName}`}
@@ -752,7 +779,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             params={{ clusterId }}
             onClick={onNavigate}
             aria-current={current ? "page" : undefined}
-            title={`${clusterName} · ${nodes.length} PVE host${nodes.length === 1 ? "" : "s"} · ${vms.length} virtual machines`}
+            title={`${clusterName} · ${nodes.length} PVE host${nodes.length === 1 ? "" : "s"} · ${vms.length} VM/CT guests${searching ? " shown by the current filter" : " in inventory"}`}
             className={cn(
               "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1 py-1.5 text-xs transition-colors",
               current
@@ -765,7 +792,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <StatusDot status={cluster.status} />
             <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
             <span className="min-w-0 flex-1 truncate">{clusterName}</span>
-            {!compact && <span className="shrink-0 text-[10px] text-muted-foreground">{vms.length} VM</span>}
+            {!compact && <span className="shrink-0 text-[10px] text-muted-foreground">{vms.length} VM/CT</span>}
           </Link>
         </div>
         {nodes.length > 0 && open && (
@@ -789,7 +816,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     decodedPath === `/servers/${vm.fleet_server_id}`,
                 );
               const nodeKey = `node:${clusterId}:${nodeName}`;
-              const nodeOpen = !collapsed.has(nodeKey);
+              const nodeOpen = searching || !collapsed.has(nodeKey);
               return (
                 <div key={nodeName}>
                   <div className={cn("flex min-w-0 items-center gap-0.5 rounded-sm", nodeActive && !nodeCurrent && "bg-muted/30")}>
@@ -799,7 +826,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                       className="flex h-7 w-5 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-accent"
                       aria-label={`${nodeOpen ? "Collapse" : "Expand"} ${nodeName}`}
                       aria-expanded={nodeOpen}
-                      disabled={nodeVms.length === 0}
+                      disabled={searching || nodeVms.length === 0}
                     >
                       {nodeVms.length > 0 ? (nodeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />) : null}
                     </button>
@@ -815,16 +842,16 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     >
                       <StatusDot status={node.status} />
                       <Server className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate font-mono">{nodeName}</span>
-                      {!compact && <span className="text-[10px]">{nodeVms.length}</span>}
+                      <span className="min-w-0 flex-1 truncate font-mono">{nodeName}{hostNames.get(node.fleet_server_id || "") && hostNames.get(node.fleet_server_id || "") !== nodeName && <span className="block truncate font-sans text-[10px] font-normal text-muted-foreground">Host: {hostNames.get(node.fleet_server_id || "")}</span>}</span>
+                      {!compact && <span className="shrink-0 text-[10px]" title={`${nodeVms.length} VM/CT guests${searching ? " shown by the current filter" : " on this node"}`}>{nodeVms.length} VM/CT</span>}
                     </Link>
                     {node.fleet_server_id && (
                       <Link
                         to="/servers/$id"
                         params={{ id: node.fleet_server_id }}
                         onClick={onNavigate}
-                        aria-label={`Open managed host ${nodeName}`}
-                        title="Open managed host"
+                        aria-label={`Open host ${hostNames.get(node.fleet_server_id) || node.fleet_server_id} linked to node ${nodeName}`}
+                        title={`Open host operations: ${hostNames.get(node.fleet_server_id) || node.fleet_server_id}`}
                         className="mr-0.5 rounded-sm p-1 text-primary/80 hover:bg-accent hover:text-primary"
                       >
                         <Server className="h-3 w-3" />
@@ -835,6 +862,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     <div className="ml-5 border-l border-border/60 pl-1">
                       {nodeVms.map((vm) => {
                         const vmId = String(vm.vm_id || "");
+                        const linkedHostName = hostNames.get(vm.fleet_server_id || "");
                         const vmPath = `${nodePath}/vms/${vmId}`;
                         const vmCurrent = decodedPath === vmPath;
                         const vmHostCurrent = Boolean(
@@ -851,21 +879,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                                 : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                             )}
                           >
-                            {vm.fleet_server_id ? (
-                              <Link
-                                to="/servers/$id"
-                                params={{ id: vm.fleet_server_id }}
-                                onClick={onNavigate}
-                                aria-current={vmHostCurrent ? "page" : undefined}
-                                title={`Open managed host ${vm.name || vmId}`}
-                                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
-                              >
-                                <StatusDot status={vm.status} />
-                                <Server className="h-3 w-3 shrink-0" />
-                                {showVmIds && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{vmId}</span>}
-                                <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
-                              </Link>
-                            ) : (
+
                               <Link
                                 to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
                                 params={{ clusterId, nodeName, vmId }}
@@ -876,20 +890,19 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                                 <StatusDot status={vm.status} />
                                 <Box className="h-3 w-3 shrink-0" />
                                 {showVmIds && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{vmId}</span>}
-                                <span className="min-w-0 flex-1 truncate">{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                                <span className="min-w-0 flex-1 truncate" title={`${vm.name || vmId}${linkedHostName ? ` · Host: ${linkedHostName}` : ""}`}>{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}{linkedHostName && linkedHostName !== vm.name && <span className="block truncate text-[10px] font-normal text-muted-foreground">Host: {linkedHostName}</span>}</span>
                               </Link>
-                            )}
                             {vm.fleet_server_id && (
                               <Link
-                                to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
-                                params={{ clusterId, nodeName, vmId }}
+                                to="/servers/$id"
+                                params={{ id: vm.fleet_server_id }}
                                 onClick={onNavigate}
-                                aria-current={vmCurrent ? "page" : undefined}
-                                aria-label={`Open Proxmox virtual machine ${vm.name || vmId}`}
-                                title="Open Proxmox virtual machine details"
+                                aria-current={vmHostCurrent ? "page" : undefined}
+                                aria-label={`Open host ${linkedHostName || vm.fleet_server_id} linked to ${vm.name || vmId}`}
+                                title={`Open host operations: ${linkedHostName || vm.fleet_server_id}`}
                                 className="mr-0.5 shrink-0 rounded-sm border border-transparent p-1 text-muted-foreground hover:border-border hover:bg-background hover:text-foreground"
                               >
-                                <Box className="h-3 w-3" />
+                                <Server className="h-3 w-3" />
                               </Link>
                             )}
                           </div>
@@ -919,13 +932,25 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           {treeFilter && <button type="button" onClick={() => setTreeFilter("")} aria-label="Clear infrastructure filter" title="Clear infrastructure filter" className="absolute inset-y-0 right-1 inline-flex min-w-9 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>}
         </div>
       )}
+      {!compact && searching && <p className="px-2 pb-2 text-xs text-muted-foreground">Infrastructure counts refer to the branches and guests shown by the filter. Branches stay expanded while filtering. Clear the filter to restore your layout.</p>}
+      {!compact && <InfrastructureFavorites onNavigate={onNavigate} scope={filterStorageKey} currentPath={path} resources={favoriteResources} inventoryComplete={serversQuery.isSuccess && !serversQuery.isFetching && (!canViewInfrastructure || (!inventoryPending && !inventoryError && !inventoryFetching && !inventory?.refreshing && !inventory?.warnings?.length && !clusters.some(cluster=>cluster.stale)))} />}
+      {!compact && <details className="px-1 pb-2 text-xs">
+        <summary className="cursor-pointer text-muted-foreground">Saved filters ({savedFilters.length})</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-muted-foreground">Stored in this browser for your account and current environment.</p>
+          <Input aria-label="Saved infrastructure filter name" placeholder="Filter name" maxLength={80} value={filterName} onChange={event=>setFilterName(event.target.value)} className="h-7 text-xs" />
+          <button type="button" className="rounded border px-2 py-1 disabled:opacity-50" disabled={!filterStorageKey || !treeFilter.trim() || !filterName.trim() || (savedFilters.length >= 20 && !savedFilters.some(item=>item.name===filterName.trim()))} onClick={()=>persistFilters([...savedFilters.filter(item=>item.name!==filterName.trim()),{name:filterName.trim(),query:treeFilter.trim()}])}>{savedFilters.some(item=>item.name===filterName.trim()) ? 'Replace saved filter' : 'Save current filter'}</button>
+          {savedFilters.map(item=><div key={item.name} className="flex items-center gap-1"><button type="button" className="min-w-0 flex-1 break-words text-left hover:text-primary" title={item.query} onClick={()=>{setTreeFilter(item.query);setFilterName(item.name);}}>{item.name}</button><button type="button" aria-label={`Delete saved filter ${item.name}`} className="p-2" onClick={()=>persistFilters(savedFilters.filter(filter=>filter.name!==item.name))}><Trash2 className="h-3 w-3" /></button></div>)}
+          {savedFilters.length >= 20 && <p className="text-muted-foreground">20 filters saved. Delete one or use an existing name to replace it.</p>}
+        </div>
+      </details>}
       <div>
         {canViewInfrastructure && (
           <div className="mb-2 border-b pb-2">
             <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               <Database className="h-3.5 w-3.5 shrink-0" />
               <span className="min-w-0 flex-1 truncate">Proxmox</span>
-              {inventoryPending ? (
+            {inventoryPending ? (
                 <span aria-hidden="true" className="h-4 w-5 animate-pulse rounded bg-muted" />
               ) : (
                 <span className="rounded bg-muted px-1.5 py-0.5 normal-case tracking-normal">
@@ -933,6 +958,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 </span>
               )}
             </div>
+              {!inventoryPending && !inventoryError && Boolean(inventory?.warnings?.length || clusters.some(cluster=>cluster.stale)) && <Link to="/infrastructure" onClick={onNavigate} className="mx-1 block rounded-sm px-2 py-1.5 text-xs text-warning hover:underline">Some platform data could not be refreshed. View details.</Link>}
             {inventoryPending ? (
               <div
                 role="status"
@@ -948,6 +974,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               </div>
             ) : visibleClusters.length > 0 ? (
               visibleClusters.map(platformNode)
+            ) : treeFilter.trim() && clusters.length > 0 ? (
+              <p role="status" className="mx-1 px-2 py-1.5 text-xs text-muted-foreground">No infrastructure matches this filter.</p>
             ) : (
               <Link
                 to="/deployments"
@@ -1076,6 +1104,11 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             {ungrouped.map((server) => serverRow(server))}
             {groupTree.map((group) => groupNode(group))}
           </>
+        )}
+        {!managedHostsPending && !managedHostsError && servers.length > 0 && !hasMatchingHosts && (
+          <p className="px-2 py-2 text-xs text-muted-foreground" role="status">
+            No standalone hosts match this filter.
+          </p>
         )}
         {!managedHostsPending && !managedHostsError && !servers.length && (
           <p className="px-2 py-2 text-xs text-muted-foreground">

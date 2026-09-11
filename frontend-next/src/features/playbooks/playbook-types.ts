@@ -12,6 +12,9 @@ export interface AnsibleVar {
   description?: string;
   is_secret?: boolean;
   value_set?: boolean;
+  value_type?: 'string' | 'number' | 'boolean' | 'json';
+  rotation_due?: string | null;
+  value_updated_at?: string | null;
   environment_id?: string;
 }
 
@@ -28,6 +31,7 @@ export interface Schedule {
   extra_vars?: Record<string, string | number | boolean>;
   check_mode?: boolean | number;
   forks?: number;
+  registration_status?: 'paused' | 'registered' | 'unregistered';
   next_run?: string | null;
   timezone?: string;
 }
@@ -39,6 +43,7 @@ export interface HistoryEntry {
   playbook: string;
   targets?: string;
   started_at: string;
+  completed_at?: string | null;
   status: string;
   output?: string;
   check_mode?: boolean | number;

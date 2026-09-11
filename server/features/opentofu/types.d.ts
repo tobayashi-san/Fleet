@@ -15,6 +15,7 @@ export interface ProxmoxConnection {
   base: URL;
   apiToken: string;
   insecure: boolean;
+  caCertificate: string;
 }
 
 export interface PlanSummary {

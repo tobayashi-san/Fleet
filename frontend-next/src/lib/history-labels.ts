@@ -2,7 +2,7 @@ import type { TFunction } from 'i18next';
 
 /**
  * Translate a backend `update_history.action` string into a human-readable label.
- * Unknown actions are returned verbatim so the UI never silently drops information.
+ * Resource names and playbook filenames remain intact; unknown codes become readable labels.
  */
 export function actionLabel(t: TFunction, action: string | null | undefined): string {
   if (!action) return '—';
@@ -24,6 +24,9 @@ export function actionLabel(t: TFunction, action: string | null | undefined): st
   if (action.startsWith('restart_docker_')) {
     return t('hist.actDockerRestart', { name: action.slice('restart_docker_'.length) });
   }
+  if (action.startsWith('compose_pull_')) {
+    return `Pull container images · ${action.slice('compose_pull_'.length)}`;
+  }
   if (action.startsWith('compose_up_')) {
     return t('hist.actComposeUp', { name: action.slice('compose_up_'.length) });
   }
@@ -34,8 +37,8 @@ export function actionLabel(t: TFunction, action: string | null | undefined): st
     return t('hist.actComposeRestart', { name: action.slice('compose_restart_'.length) });
   }
 
-  // Fallback: raw action string
-  return action;
+  if (/\.ya?ml$/i.test(action)) return t('hist.actAnsible', { name: action });
+  return action.replace(/([a-z0-9])([A-Z])/g, '$1 $2').replace(/[._:-]+/g, ' ').trim().replace(/^./, letter => letter.toUpperCase());
 }
 
 /**
@@ -47,6 +50,12 @@ export function statusLabel(t: TFunction, status: string | null | undefined): st
     case 'success': return t('hist.success');
     case 'failed':  return t('hist.failed');
     case 'running': return t('hist.running');
+    case 'queued': return 'Queued';
+    case 'cancelling': return 'Cancelling';
+    case 'skipped': return 'Skipped';
+    case 'cancelled':
+    case 'canceled': return 'Cancelled';
+    case 'unknown': return 'Unknown';
     case 'pending': return t('hist.pending');
     default:        return status;
   }

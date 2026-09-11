@@ -114,14 +114,24 @@ test('POST /api/servers creates server with defaults', async () => {
   serverId = res.body.id;
 });
 
-test('POST /api/servers respects custom ssh_port and ssh_user', async () => {
+test('POST /api/servers respects custom SSH settings and owner', async () => {
   const res = await request(app)
     .post('/api/servers')
     .set('Authorization', `Bearer ${token}`)
-    .send({ name: 'custom-server', ip_address: '10.0.0.5', ssh_port: 2222, ssh_user: 'admin' });
+    .send({ name: 'custom-server', ip_address: '10.0.0.5', ssh_port: 2222, ssh_user: 'admin', owner: 'Platform Operations' });
   assert.equal(res.status, 201);
   assert.equal(res.body.ssh_port, 2222);
   assert.equal(res.body.ssh_user, 'admin');
+  assert.equal(res.body.owner, 'Platform Operations');
+});
+
+test('POST /api/servers rejects an oversized owner', async () => {
+  const res = await request(app)
+    .post('/api/servers')
+    .set('Authorization', `Bearer ${token}`)
+    .send({ name: 'owner-too-long', ip_address: '10.0.0.6', owner: 'x'.repeat(101) });
+  assert.equal(res.status, 400);
+  assert.match(res.body.error, /Owner too long/);
 });
 
 test('POST /api/servers/groups creates a folder for tag auto-grouping', async () => {
@@ -250,18 +260,24 @@ test('PUT /api/servers/:id returns 404 for unknown id', async () => {
 
 // ── Notes ─────────────────────────────────────────────────────────────────────
 
-test('PUT /api/servers/:id/notes saves and GET reads notes', async () => {
-  const putRes = await request(app)
-    .put(`/api/servers/${serverId}/notes`)
-    .set('Authorization', `Bearer ${token}`)
-    .send({ notes: 'This is a test note.' });
+test('notes require a current revision and preserve saved text on a stale write', async () => {
+  const path = `/api/servers/${serverId}/notes`;
+  const auth = { Authorization: `Bearer ${token}` };
+  const initial = await request(app).get(path).set(auth);
+  assert.equal(initial.status, 200);
+  const missing = await request(app).put(path).set(auth).send({ notes: 'Missing revision' });
+  assert.equal(missing.status, 428);
+  const putRes = await request(app).put(path).set(auth)
+    .send({ notes: 'This is a test note.', revision: initial.body.revision });
   assert.equal(putRes.status, 200);
-
-  const getRes = await request(app)
-    .get(`/api/servers/${serverId}/notes`)
-    .set('Authorization', `Bearer ${token}`);
+  assert.equal(putRes.body.revision, initial.body.revision + 1);
+  const stale = await request(app).put(path).set(auth)
+    .send({ notes: 'Stale overwrite', revision: initial.body.revision });
+  assert.equal(stale.status, 409);
+  const getRes = await request(app).get(path).set(auth);
   assert.equal(getRes.status, 200);
   assert.equal(getRes.body.notes, 'This is a test note.');
+  assert.equal(getRes.body.revision, putRes.body.revision);
 });
 
 test('GET /api/servers/:id/info returns configured storage mount metrics', async () => {
@@ -309,9 +325,37 @@ test('GET /api/servers/:id/info returns configured storage mount metrics', async
         mounted: true,
       },
     ]);
+    assert.equal(res.body._source, 'ssh');
+    assert.match(res.body.updated_at, /^\d{4}-\d{2}-\d{2}/);
+
+    const history = await request(app)
+      .get(`/api/servers/${serverId}/info/history?limit=1`)
+      .set('Authorization', `Bearer ${token}`);
+    assert.equal(history.status, 200);
+    assert.equal(history.body.length, 1);
+    assert.equal(history.body[0].source, 'ssh');
+    assert.equal(history.body[0].cpu_usage_pct, 12);
+    assert.equal(history.body[0].ram_used_mb, 1024);
+    assert.equal(history.body[0].disk_used_gb, 48);
   } finally {
     systemInfo.getSystemInfo = original;
   }
+});
+
+test('server info history is capped and keeps measurement source', async () => {
+  for (let index = 0; index < 55; index++) {
+    db.serverInfo.upsert(serverId, {
+      cpu_usage_pct: index,
+      ram_used_mb: 1000 + index,
+      ram_total_mb: 4096,
+      disk_used_gb: 40 + index,
+      disk_total_gb: 200,
+    }, index % 2 ? 'agent' : 'ssh');
+  }
+  const history = db.serverInfo.getHistory(serverId, 100);
+  assert.equal(history.length, 48);
+  assert.equal(history.at(-1).cpu_usage_pct, 54);
+  assert.equal(history.at(-1).source, 'ssh');
 });
 
 test('POST /api/servers/:id/reset-host-key removes stale known_hosts entries', async () => {

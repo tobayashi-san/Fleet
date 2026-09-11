@@ -54,10 +54,15 @@ router.get('/', (req, res) => {
     : '';
   const rows = db.db.prepare(`SELECT e.id, e.name, COUNT(DISTINCT s.id) AS server_count, ${deploymentCount} FROM environments e LEFT JOIN servers s ON s.environment_id = e.id ${workspaceJoin} GROUP BY e.id ORDER BY e.name`).all();
   const permissions = getPermissions(req.user);
+  const canSeeDefinitions = can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments');
+  const definitionCounts = new Map(hasTable('tofu_proxmox_vms') && hasTable('tofu_workspaces')
+    ? db.db.prepare(`SELECT w.environment_id, COUNT(*) AS count FROM tofu_proxmox_vms vm JOIN tofu_workspaces w ON w.id = vm.workspace_id WHERE vm.is_isolated = 1 GROUP BY w.environment_id`).all().map(row => [row.environment_id, row.count])
+    : []);
   res.json(rows
     .filter(row => canAccessEnvironment(permissions, row.id))
     .map(row => ({
       ...row,
+      vm_definition_count: canSeeDefinitions ? (definitionCounts.get(row.id) || 0) : undefined,
       server_count: filterServers(db.servers.getAll(row.id), permissions).length,
       deployment_count: can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments')
         ? row.deployment_count
@@ -67,20 +72,28 @@ router.get('/', (req, res) => {
 
 router.post('/', (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Permission denied' });
-  const name = String(req.body?.name || '').trim().slice(0, 80);
-  if (!name) return res.status(400).json({ error: 'Name required' });
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!name || name.length > 80) return res.status(400).json({ error: 'Name must contain 1 to 80 characters.', field: 'name' });
   const id = db.uuidv4();
   try { db.db.prepare('INSERT INTO environments (id, name) VALUES (?, ?)').run(id, name); res.status(201).json({ id, name, server_count: 0 }); }
-  catch { res.status(409).json({ error: 'Environment already exists' }); }
+  catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'An environment with this name already exists.', field: 'name' });
+    serverError(res, error, 'create environment');
+  }
 });
 
 router.put('/:id', (req, res) => {
   if (!isAdmin(req)) return res.status(403).json({ error: 'Permission denied' });
-  const name = String(req.body?.name || '').trim().slice(0, 80);
-  if (!name) return res.status(400).json({ error: 'Name required' });
-  const result = db.db.prepare('UPDATE environments SET name = ? WHERE id = ?').run(name, req.params.id);
-  if (!result.changes) return res.status(404).json({ error: 'Environment not found' });
-  res.json({ success: true });
+  const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+  if (!name || name.length > 80) return res.status(400).json({ error: 'Name must contain 1 to 80 characters.', field: 'name' });
+  try {
+    const result = db.db.prepare('UPDATE environments SET name = ? WHERE id = ?').run(name, req.params.id);
+    if (!result.changes) return res.status(404).json({ error: 'Environment not found' });
+    res.json({ success: true });
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT_UNIQUE') return res.status(409).json({ error: 'An environment with this name already exists.', field: 'name' });
+    serverError(res, error, 'rename environment');
+  }
 });
 
 router.delete('/:id', (req, res) => {
@@ -107,8 +120,19 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('schedule_history', id);
       moveEnvironmentRows('update_history', id);
       moveEnvironmentRows('audit_log', id);
+      moveEnvironmentRows('proxmox_guest_audit', id);
+      moveEnvironmentRows('proxmox_object_audit', id);
+      moveEnvironmentRows('proxmox_guest_tasks', id);
+      if (hasTable('proxmox_storage_history')) {
+        db.db.prepare(`INSERT INTO proxmox_storage_history SELECT 'default',endpoint,node_name,storage_id,bucket,sampled_at,used,total FROM proxmox_storage_history WHERE environment_id=?
+          ON CONFLICT(environment_id,endpoint,node_name,storage_id,bucket) DO UPDATE SET sampled_at=excluded.sampled_at,used=excluded.used,total=excluded.total
+          WHERE excluded.sampled_at > proxmox_storage_history.sampled_at`).run(id);
+        db.db.prepare('DELETE FROM proxmox_storage_history WHERE environment_id=?').run(id);
+      }
       moveEnvironmentRows('operation_acknowledgements', id);
       moveEnvironmentRows('ansible_vars', id);
+      moveEnvironmentRows('variable_change_events', id);
+      if (hasTable('variable_change_events')) db.db.prepare("DELETE FROM variable_change_events WHERE environment_id = 'default' AND id NOT IN (SELECT id FROM variable_change_events WHERE environment_id = 'default' ORDER BY id DESC LIMIT 1000)").run();
       moveEnvironmentRows('ipam_subnets', id);
       moveEnvironmentRows('ipam_source_observations', id);
       moveEnvironmentRows('ipam_sync_sources', id, ", updated_at = datetime('now')");
@@ -117,14 +141,15 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('maintenance_windows', id);
       moveEnvironmentRows('tofu_workspaces', id);
       moveEnvironmentRows('tofu_proxmox_connections', id);
-      return db.db.prepare('DELETE FROM environments WHERE id = ?').run(id);
+      const result = db.db.prepare('DELETE FROM environments WHERE id = ?').run(id);
+      db.auditLog.write('environment.delete', `environment=${id} consolidated_into=default`, req.ip, true, req.user?.username, 'default');
+      return result;
     });
     const result = remove(req.params.id);
     if (!result.changes) return res.status(404).json({ error: 'Environment not found' });
     for (const scheduleId of scheduleIds) {
       try { scheduler.reload(scheduleId); } catch { /* the persisted schedule remains available for the next scheduler reload */ }
     }
-    db.auditLog.write('environment.delete', `environment=${req.params.id} consolidated_into=default`, req.ip, true, req.user?.username);
     res.json({ success: true, consolidated_into: 'default' });
   } catch (error) {
     serverError(res, error, 'delete environment');

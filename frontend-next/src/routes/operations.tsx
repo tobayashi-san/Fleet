@@ -1,5 +1,9 @@
+import { Timestamp } from '@/components/ui/timestamp';
+import {upcomingSeriesIds} from '@/lib/maintenance-series';
+import {DeleteMaintenanceDialog} from '@/features/operations/DeleteMaintenanceDialog';
+import { overlappingWindows } from '@/lib/maintenance-overlap';
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch, useBlocker } from "@tanstack/react-router";
 import {
   useMutation,
   useQuery,
@@ -20,7 +24,7 @@ import {
   TriangleAlert,
   Workflow,
 } from "lucide-react";
-import { api, apiFetch } from "@/lib/api";
+import { ApiError, api, apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -38,7 +42,7 @@ import {
 import { Input } from "@/components/ui/input";
 import {
   DateTextInput,
-  ZonedDateTimeTextInput,
+  ZonedDateTimePicker,
 } from "@/components/ui/date-input";
 import { Label } from "@/components/ui/label";
 import { TablePagination } from "@/components/ui/table-pagination";
@@ -59,12 +63,20 @@ interface Workspace {
   id: string;
   name: string;
 }
-interface OperationRow {
+export interface OperationRow {
+  executions?: Array<{ id: string; time?: string }>;
   id: string;
   source: "Host" | "Deployment" | "Workflow";
   name: string;
   target: string;
   target_detail?: string;
+  target_deleted?: boolean;
+  playbook?: string;
+  check_mode?: boolean;
+  schedule_deleted?: boolean;
+  started_at?: string;
+  completed_at?: string;
+  action?: string;
   initiator: string;
   status: string;
   statusTone: StatusTone;
@@ -94,9 +106,20 @@ interface MaintenanceWindow {
   ends_at: string;
   description?: string;
   affected_resources?: string;
+  resource_ids?: string[];
+  revision?: string;
+  can_edit?: boolean;
+  series_id?: string|null;
+  series_index?: number|null;
+  series_count?: number|null;
+  recurrence_frequency?: string|null;
+  change_reference?: string;
   timezone?: string;
   owner?: string;
-  state?: "scheduled" | "active" | "completed";
+  cancelled_at?: string|null;
+  cancelled_by?: string|null;
+  cancellation_reason?: string|null;
+  state?: "scheduled" | "active" | "completed" | "cancelled";
 }
 
 function readableTime(value?: string) {
@@ -110,6 +133,7 @@ function maintenanceTone(state?: string): StatusTone {
       : "muted";
 }
 function maintenanceLabel(state?: string) {
+  if(state==='cancelled')return 'Cancelled';
   return state === "active"
     ? "Active"
     : state === "scheduled"
@@ -139,6 +163,10 @@ function operationStatusLabel(status: string) {
     return "Failed";
   if (normalized === "running") return "Running";
   if (normalized === "queued") return "Queued";
+  if (normalized === "pending") return "Pending";
+  if (normalized === "cancelling") return "Cancelling";
+  if (["cancelled", "canceled"].includes(normalized)) return "Cancelled";
+  if (normalized === "skipped") return "Skipped";
   return status || "Unknown";
 }
 
@@ -348,6 +376,7 @@ export function OperationsPage() {
         }
       />
       {activeSection === "tasks" && operationsQuery.isSuccess && (!canViewMaintenance || maintenanceQuery.isSuccess) && <OperationsContext
+        canViewMaintenance={canViewMaintenance}
         active={activeMaintenance}
         next={nextMaintenance}
         activeOperations={activeOperationCount}
@@ -403,11 +432,14 @@ export function OperationsPage() {
                 Loading activity…
               </div>
             ) : operationsQuery.isError ? (
-              <QueryErrorState
-                error={operationsQuery.error}
-                title="Activity could not be loaded"
-                onRetry={() => void operationsQuery.refetch()}
-              />
+              <div>
+                <QueryErrorState
+                  error={operationsQuery.error}
+                  title="Activity could not be loaded"
+                  onRetry={() => void operationsQuery.refetch()}
+                />
+                <Button className="m-3" variant="outline" size="sm" onClick={() => { setTaskScope("all"); setSourceFilter("all"); setTargetFilter(""); setFromDate(""); setToDate(""); setOperationsPage(1); }}>Reset filters and show newest tasks</Button>
+              </div>
             ) : (
               <>
                 <div className="flex items-center gap-1 border-b bg-muted/10 px-3 py-2">
@@ -474,8 +506,8 @@ export function OperationsPage() {
                     <span>Target, task, or initiator</span>
                     <span className="relative block"><Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4" /><Input value={targetFilter} onChange={(event) => setTargetFilter(event.target.value)} className="pl-8" placeholder="Filter operations…" /></span>
                   </label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>From</span><DateTextInput value={fromDate} onChange={setFromDate} ariaLabel="Activity from date" /></label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>To</span><DateTextInput value={toDate} onChange={setToDate} ariaLabel="Activity to date" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>From · Europe/Zurich</span><DateTextInput value={fromDate} onChange={setFromDate} ariaLabel="Activity from date" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>Through · Europe/Zurich</span><DateTextInput value={toDate} onChange={setToDate} ariaLabel="Activity to date" /></label>
                   <div className="flex items-end"><Button type="button" size="sm" variant="ghost" disabled={sourceFilter === "all" && !targetFilter && !fromDate && !toDate} onClick={() => { setSourceFilter("all"); setTargetFilter(""); setFromDate(""); setToDate(""); }}>Reset</Button></div>
                 </div>
                 {operationRows.length ? (
@@ -554,41 +586,20 @@ export function OperationsPage() {
         environmentId={environmentId}
         onClose={() => setMaintenanceDialog(null)}
       />
-      <ConfirmDialog
-        open={Boolean(windowToDelete)}
-        onOpenChange={(open) => !open && setWindowToDelete(null)}
-        title="Delete maintenance window?"
-        description={
-          windowToDelete
-            ? `The maintenance window “${windowToDelete.name}” will be permanently removed.`
-            : ""
-        }
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        variant="destructive"
-        onConfirm={async () => {
-          if (!windowToDelete) return;
-          await apiFetch(
-            `/maintenance-windows/${encodeURIComponent(windowToDelete.id)}`,
-            { method: "DELETE" },
-          );
-          await queryClient.invalidateQueries({
-            queryKey: ["maintenance-windows", environmentId],
-          });
-          setWindowToDelete(null);
-        }}
-      />
+      <DeleteMaintenanceDialog windows={windowToDelete?[windowToDelete]:[]} environmentId={environmentId} onClose={()=>setWindowToDelete(null)} />
     </div>
   );
 }
 
 function OperationsContext({
+  canViewMaintenance,
   active,
   next,
   activeOperations,
   failedOperations,
   onShowFailures,
 }: {
+  canViewMaintenance: boolean;
   active?: MaintenanceWindow;
   next?: MaintenanceWindow;
   activeOperations: number;
@@ -596,86 +607,49 @@ function OperationsContext({
   onShowFailures: () => void;
 }) {
   const maintenance = active || next;
-  const maintenanceState = active
+  const maintenanceState = !canViewMaintenance ? "Not available" : active
     ? "Active"
     : next
       ? "Scheduled"
       : "None scheduled";
   return (
     <section
-      className={`console-object-summary overflow-hidden ${active ? "border-amber-500/35" : ""}`}
+      className={`overflow-hidden rounded-[3px] border bg-card ${active ? "border-amber-500/35" : ""}`}
+      aria-label="Operating status"
     >
-      <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(22rem,.75fr)]">
-        <div className="console-object-summary-main">
-          <div className="flex items-center gap-2 border-b pb-3 text-sm font-semibold">
+      <div className="flex flex-wrap items-stretch">
+        <div className="flex min-w-[12rem] items-center gap-2 border-b px-3 py-2 text-sm font-semibold sm:border-b-0 sm:border-r">
             <ClipboardList className="h-4 w-4 text-brand" />
             Operating status
-          </div>
-          <div className="console-object-info-grid grid-cols-3">
-            <OperationFact
-              icon={CircleDashed}
-              label="Active tasks"
-              value={activeOperations}
-              detail={activeOperations ? "Running or waiting" : "No open tasks"}
-              tone={activeOperations ? "info" : undefined}
-            />
-            <OperationFact
-              icon={failedOperations ? TriangleAlert : CheckCircle2}
-              label="Open failures"
-              value={failedOperations}
-              detail={failedOperations ? "Review and acknowledge" : "No unacknowledged failures"}
-              tone={failedOperations ? "danger" : "success"}
-              onClick={failedOperations ? onShowFailures : undefined}
-            />
-            <OperationFact
-              icon={CalendarClock}
-              label="Maintenance window"
-              value={maintenanceState}
-              detail={
-                active
-                  ? "Review planned changes"
-                  : next
-                    ? "Next scheduled work"
-                    : "No maintenance scheduled"
-              }
-              tone={active ? "warning" : next ? "info" : undefined}
-            />
-          </div>
         </div>
-        <div className="console-object-capacity border-t xl:border-l xl:border-t-0">
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-3">
-            <span className="text-sm font-semibold">
-              {active
-                ? "Active maintenance window"
-                : next
-                  ? "Next maintenance window"
-                  : "Maintenance planning"}
-            </span>
-            {active && (
-              <StatusBadge tone="warning" dot>
-                Active
-              </StatusBadge>
-            )}
-          </div>
-          {maintenance ? (
-            <>
-              <div className="mt-3 truncate text-sm font-semibold">
-                {maintenance.name}
-              </div>
-              <div className="mt-1 text-xs leading-relaxed text-muted-foreground">
-                {readableTime(maintenance.starts_at)} –{" "}
-                {readableTime(maintenance.ends_at)}
-                {maintenance.description ? ` · ${maintenance.description}` : ""}
-              </div>
-            </>
-          ) : (
-            <div className="mt-3 text-sm leading-relaxed text-muted-foreground">
-              Schedule maintenance before platform changes, restarts, or planned
-              deployments.
-            </div>
-          )}
-        </div>
+        <OperationFact
+          icon={CircleDashed}
+          label="Active tasks"
+          value={activeOperations}
+          detail={activeOperations ? "Running or waiting" : "No open tasks"}
+          tone={activeOperations ? "info" : undefined}
+        />
+        <OperationFact
+          icon={failedOperations ? TriangleAlert : CheckCircle2}
+          label="Open failures"
+          value={failedOperations}
+          detail={failedOperations ? "Review and acknowledge" : "No unacknowledged failures"}
+          tone={failedOperations ? "danger" : "success"}
+          onClick={failedOperations ? onShowFailures : undefined}
+        />
+        <OperationFact
+          icon={CalendarClock}
+          label="Maintenance"
+          value={maintenanceState}
+          detail={!canViewMaintenance ? "Visibility restricted" : maintenance ? maintenance.name : "No window scheduled"}
+          tone={active ? "warning" : next ? "info" : undefined}
+        />
       </div>
+      {canViewMaintenance && maintenance && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
+        <span className="font-medium text-foreground">{active ? "Active window" : "Next window"}</span>
+        <span>{readableTime(maintenance.starts_at)} – {readableTime(maintenance.ends_at)}</span>
+        {maintenance.description && <span className="min-w-0 truncate">{maintenance.description}</span>}
+      </div>}
     </section>
   );
 }
@@ -707,29 +681,29 @@ function OperationFact({
             : "text-muted-foreground";
   const content = (
     <>
-      <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <Icon className={`h-3.5 w-3.5 ${toneClass}`} />
         {label}
       </div>
-      <div className={toneClass}>{value}</div>
-      <p>{detail}</p>
+      <div className={`font-mono text-base font-semibold tabular-nums ${toneClass}`}>{value}</div>
+      <p className="truncate text-xs text-muted-foreground">{detail}</p>
     </>
   );
   return onClick ? (
     <button
       type="button"
       onClick={onClick}
-      className="console-object-info text-left transition-colors hover:bg-accent/60 focus-visible:bg-accent/60"
+      className="min-w-[12rem] flex-1 border-b px-3 py-2 text-left transition-colors hover:bg-accent/60 focus-visible:bg-accent/60 sm:border-b-0 sm:border-r last:border-r-0"
       aria-label={`${label}: ${detail}`}
     >
       {content}
     </button>
   ) : (
-    <div className="console-object-info">{content}</div>
+    <div className="min-w-[12rem] flex-1 border-b px-3 py-2 sm:border-b-0 sm:border-r last:border-r-0">{content}</div>
   );
 }
 
-function MaintenanceWindowsCard({
+export function MaintenanceWindowsCard({
   windows,
   loading,
   error,
@@ -748,13 +722,15 @@ function MaintenanceWindowsCard({
   onEdit: (window: MaintenanceWindow) => void;
   onDelete: (window: MaintenanceWindow) => void;
 }) {
-  const queryClient = useQueryClient();
+  const environmentId = useUi(state=>state.environmentId);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [confirmBulkDelete, setConfirmBulkDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-  const selectedWindows = windows.filter((window) => selected.has(window.id));
+  const [deleteTargets, setDeleteTargets] = useState<MaintenanceWindow[]>([]);
+  const [cancelTargets,setCancelTargets]=useState<MaintenanceWindow[]>([]);
+  const editableWindows = windows.filter(window=>window.can_edit !== false && !window.cancelled_at);
+  const selectedWindows = editableWindows.filter((window) => selected.has(window.id));
+  const seriesInfo = (item:MaintenanceWindow) => item.series_id ? <div className="mt-1 text-xs text-muted-foreground">{item.recurrence_frequency === 'weekly' ? 'Weekly' : 'Daily'} series · Occurrence {item.series_index} of {item.series_count} originally scheduled{canManage&&<Button className="ml-2 h-auto px-1 py-0 text-xs" variant="link" disabled={!upcomingSeriesIds(editableWindows,item).length} onClick={()=>setSelected(new Set(upcomingSeriesIds(editableWindows,item)))}>Select upcoming in this series</Button>}</div> : null;
   const allSelected =
-    windows.length > 0 && selectedWindows.length === windows.length;
+    editableWindows.length > 0 && selectedWindows.length === editableWindows.length;
   const someSelected = selectedWindows.length > 0 && !allSelected;
   const toggle = (id: string) =>
     setSelected((current) => {
@@ -763,25 +739,6 @@ function MaintenanceWindowsCard({
       else next.add(id);
       return next;
     });
-  const deleteSelected = async () => {
-    setDeleting(true);
-    try {
-      await Promise.all(
-        selectedWindows.map((window) =>
-          apiFetch(`/maintenance-windows/${encodeURIComponent(window.id)}`, {
-            method: "DELETE",
-          }),
-        ),
-      );
-      await queryClient.invalidateQueries({
-        queryKey: ["maintenance-windows"],
-      });
-      setSelected(new Set());
-      setConfirmBulkDelete(false);
-    } finally {
-      setDeleting(false);
-    }
-  };
   return (
     <Card>
       <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
@@ -811,11 +768,12 @@ function MaintenanceWindowsCard({
             size="sm"
             variant="destructive"
             className="ml-auto"
-            onClick={() => setConfirmBulkDelete(true)}
+            onClick={() => setDeleteTargets(selectedWindows.map(row=>({...row})))}
           >
             <Trash2 />
             Delete
           </Button>
+          <Button size="sm" variant="outline" disabled={!selectedWindows.some(item=>item.state==='scheduled'||item.state==='active')} onClick={()=>setCancelTargets(selectedWindows.filter(item=>item.state==='scheduled'||item.state==='active'))}>Cancel scheduled work</Button>
           <Button
             size="sm"
             variant="ghost"
@@ -858,7 +816,8 @@ function MaintenanceWindowsCard({
                       className="mt-1"
                       type="checkbox"
                       aria-label={`Select ${window.name}`}
-                      checked={selected.has(window.id)}
+                      disabled={window.can_edit === false}
+                            checked={selected.has(window.id)}
                       onChange={() => toggle(window.id)}
                     />
                   )}
@@ -868,12 +827,14 @@ function MaintenanceWindowsCard({
                         <div className="truncate font-medium">
                           {window.name}
                         </div>
+                        {seriesInfo(window)}
+                        {window.cancelled_at&&<p className="text-xs text-muted-foreground">Cancelled {formatDateTime(window.cancelled_at)} by {window.cancelled_by||'System'} · {window.cancellation_reason}</p>}
                         {window.description && (
                           <div className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                             {window.description}
                           </div>
                         )}
-                        {(window.affected_resources || window.owner) && <div className="mt-1 text-xs text-muted-foreground">{window.affected_resources || "All resources"}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
+                        {(window.affected_resources || window.owner || window.resource_ids?.length || window.change_reference) && <div className="mt-1 text-xs text-muted-foreground">{window.resource_ids?.length ? `${window.resource_ids.length} selected hosts` : window.affected_resources || "Entire environment"}{window.change_reference ? ` · ${window.change_reference}` : ""}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
                       </div>
                       <StatusBadge tone={maintenanceTone(window.state)} dot>
                         {maintenanceLabel(window.state)}
@@ -883,7 +844,7 @@ function MaintenanceWindowsCard({
                       {readableTime(window.starts_at)} –{" "}
                       {readableTime(window.ends_at)}
                     </div>
-                    {canManage && (
+                    {canManage && window.can_edit !== false && (
                       <div className="flex justify-end gap-1">
                         <Button
                           type="button"
@@ -894,6 +855,7 @@ function MaintenanceWindowsCard({
                           <Pencil />
                           Edit
                         </Button>
+                        {(window.state==='scheduled'||window.state==='active')&&<Button size="sm" variant="outline" onClick={()=>setCancelTargets([window])}>Cancel window</Button>}
                         <Button
                           type="button"
                           size="sm"
@@ -929,7 +891,7 @@ function MaintenanceWindowsCard({
                             setSelected(
                               allSelected
                                 ? new Set()
-                                : new Set(windows.map((window) => window.id)),
+                                : new Set(editableWindows.map((window) => window.id)),
                             )
                           }
                         />
@@ -952,6 +914,7 @@ function MaintenanceWindowsCard({
                           <input
                             type="checkbox"
                             aria-label={`Select ${window.name}`}
+                            disabled={window.can_edit === false}
                             checked={selected.has(window.id)}
                             onChange={() => toggle(window.id)}
                           />
@@ -959,12 +922,14 @@ function MaintenanceWindowsCard({
                       )}
                       <td className="px-3">
                         <div className="font-medium">{window.name}</div>
+                        {seriesInfo(window)}
+                        {window.cancelled_at&&<p className="text-xs text-muted-foreground">Cancelled {formatDateTime(window.cancelled_at)} by {window.cancelled_by||'System'} · {window.cancellation_reason}</p>}
                         {window.description && (
                           <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">
                             {window.description}
                           </div>
                         )}
-                        {(window.affected_resources || window.owner) && <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">{window.affected_resources || "All resources"}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
+                        {(window.affected_resources || window.owner || window.resource_ids?.length || window.change_reference) && <div className="mt-0.5 max-w-xl truncate text-xs text-muted-foreground">{window.resource_ids?.length ? `${window.resource_ids.length} selected hosts` : window.affected_resources || "Entire environment"}{window.change_reference ? ` · ${window.change_reference}` : ""}{window.owner ? ` · Owner: ${window.owner}` : ""}</div>}
                       </td>
                       <td className="px-3 whitespace-nowrap text-xs text-muted-foreground">
                         {readableTime(window.starts_at)} –{" "}
@@ -977,12 +942,13 @@ function MaintenanceWindowsCard({
                         </StatusBadge>
                       </td>
                       <td className="px-3 text-right">
-                        {canManage ? (
+                        {canManage && window.can_edit !== false ? (
                           <div className="flex justify-end">
                             <OverflowMenu title={`Actions for ${window.name}`}>
                               <OverflowItem icon={Pencil} onClick={() => onEdit(window)}>
                                 Edit window
                               </OverflowItem>
+                              {(window.state==='scheduled'||window.state==='active')&&<OverflowItem onClick={()=>setCancelTargets([window])}>Cancel window</OverflowItem>}
                               <OverflowItem icon={Trash2} danger onClick={() => onDelete(window)}>
                                 Delete window
                               </OverflowItem>
@@ -1000,22 +966,8 @@ function MaintenanceWindowsCard({
           </>
         )}
       </CardContent>
-      <ConfirmDialog
-        open={confirmBulkDelete}
-        onOpenChange={setConfirmBulkDelete}
-        title="Delete selected maintenance windows?"
-        description={
-          <>
-            You are removing <strong>{selectedWindows.length}</strong>{" "}
-            maintenance windows. This action cannot be undone.
-          </>
-        }
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        variant="destructive"
-        onConfirm={deleteSelected}
-        isPending={deleting}
-      />
+      <DeleteMaintenanceDialog mode="cancel" windows={cancelTargets} environmentId={environmentId} onClose={()=>setCancelTargets([])} onDeleted={id=>setSelected(previous=>{const next=new Set(previous);next.delete(id);return next;})} />
+      <DeleteMaintenanceDialog windows={deleteTargets} environmentId={environmentId} onClose={()=>setDeleteTargets([])} onDeleted={id=>setSelected(previous=>{const next=new Set(previous);next.delete(id);return next;})} />
     </Card>
   );
 }
@@ -1040,7 +992,7 @@ function TaskScopeButton({
   );
 }
 
-function MaintenanceWindowDialog({
+export function MaintenanceWindowDialog({
   window,
   environmentId,
   onClose,
@@ -1050,8 +1002,19 @@ function MaintenanceWindowDialog({
   onClose: () => void;
 }) {
   const queryClient = useQueryClient();
-  const initial = window && window !== "new" ? window : null;
+  const {data:maintenanceProfile}=useProfile();
+  const canUseEntireEnvironment=maintenanceProfile?.role==='admin'||maintenanceProfile?.permissions?.full===true||maintenanceProfile?.permissions?.servers==='all';
+  const [initial] = useState(window && window !== "new" ? window : null);
+  const [openedEnvironment] = useState(environmentId);
+  const [reviewedRevision,setReviewedRevision]=useState(initial?.revision);
+  const [latestWindow,setLatestWindow]=useState<MaintenanceWindow|null>(null);
+  const [reviewError,setReviewError]=useState('');
+  const contextChanged = environmentId !== openedEnvironment;
+  const [dirty, setDirty] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const submitting = useRef(false);
   const [name, setName] = useState(initial?.name || "");
+  const [timezoneSearch, setTimezoneSearch] = useState("");
   const [timezone, setTimezone] = useState(initial?.timezone || "Europe/Zurich");
   const [startsAt, setStartsAt] = useState(
     initial?.starts_at || new Date().toISOString(),
@@ -1060,6 +1023,20 @@ function MaintenanceWindowDialog({
     initial?.ends_at || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   );
   const [description, setDescription] = useState(initial?.description || "");
+  const [resourceScope, setResourceScope] = useState<'selected' | 'environment'>(initial && !initial.resource_ids?.length ? 'environment' : 'selected');
+  const [resourceIds, setResourceIds] = useState<string[]>(initial?.resource_ids || []);
+  const [changeReference, setChangeReference] = useState(initial?.change_reference || "");
+  const [repeat, setRepeat] = useState('none');
+  const [repeatCount, setRepeatCount] = useState(4);
+  const [hostSearch, setHostSearch] = useState("");
+  const hostsQuery = useQuery({ queryKey: ["maintenance-host-options", openedEnvironment], queryFn: () => apiFetch<Array<{ id: string; name: string; ip_address?: string }>>(`/servers?environment_id=${encodeURIComponent(openedEnvironment)}`, {environmentId: openedEnvironment}), enabled: Boolean(window) });
+  const teamsQuery = useQuery({ queryKey: ["server-groups", openedEnvironment], queryFn: () => apiFetch<Array<{ id: string; name: string }>>(`/servers/groups?environment_id=${encodeURIComponent(openedEnvironment)}`, {environmentId: openedEnvironment}), enabled: Boolean(window) });
+  const windowsQuery = useQuery({ queryKey: ["maintenance-windows", openedEnvironment], queryFn: () => apiFetch<MaintenanceWindow[]>(`/maintenance-windows?environment_id=${encodeURIComponent(openedEnvironment)}`, {environmentId: openedEnvironment}), enabled: Boolean(window) });
+  const scopedResourceIds = resourceScope === 'environment' ? [] : resourceIds;
+  const hasValidScope = resourceScope === 'environment' ? canUseEntireEnvironment : resourceIds.length > 0;
+  const availableHostIds = new Set((Array.isArray(hostsQuery.data) ? hostsQuery.data : []).map(host => host.id));
+  const unavailableHostIds = hostsQuery.isSuccess ? scopedResourceIds.filter(id => !availableHostIds.has(id)) : [];
+  const overlaps = hasValidScope ? overlappingWindows({ id: initial?.id, starts_at: startsAt, ends_at: endsAt, resource_ids: scopedResourceIds }, Array.isArray(windowsQuery.data) ? windowsQuery.data : []) : [];
   const [affectedResources, setAffectedResources] = useState(initial?.affected_resources || "");
   const [owner, setOwner] = useState(initial?.owner || "");
   const hasValidRange = Boolean(
@@ -1067,65 +1044,143 @@ function MaintenanceWindowDialog({
       endsAt &&
       new Date(endsAt).getTime() > new Date(startsAt).getTime(),
   );
+  const recurrence = !initial && repeat !== 'none' ? {frequency: repeat, count: repeatCount} : undefined;
+  const previewBody = {environment_id: openedEnvironment, name, starts_at: startsAt, ends_at: endsAt, timezone, resource_ids: scopedResourceIds, resource_scope: resourceScope, recurrence};
+  const repeatPreview = useQuery({
+    queryKey: ['maintenance-repeat-preview', previewBody],
+    queryFn: () => apiFetch<{occurrences: Array<{starts_at:string;ends_at:string;planned_conflicts?:number[];conflicts:Array<{id:string;name:string}>}>;conflicts_checked:boolean}>('/maintenance-windows/preview', {method:'POST',environmentId:openedEnvironment,body:previewBody}),
+    enabled: Boolean(window && recurrence && name.trim() && hasValidRange && hasValidScope && !contextChanged),
+    retry: false,
+  });
+  const repeatReady = !recurrence || (repeatPreview.isSuccess && !repeatPreview.isFetching);
   const saveMutation = useMutation({
-    mutationFn: () =>
-      apiFetch(
+    mutationFn: () => {
+      if (contextChanged) throw new Error('Return to the original environment before saving this draft.');
+      return apiFetch(
         `/maintenance-windows${initial ? `/${encodeURIComponent(initial.id)}` : ""}`,
         {
           method: initial ? "PUT" : "POST",
+          environmentId: openedEnvironment,
           body: {
-            environment_id: environmentId,
+            environment_id: openedEnvironment,
             name,
             starts_at: startsAt,
             ends_at: endsAt,
             description,
+            revision: reviewedRevision,
             affected_resources: affectedResources,
+            resource_ids: scopedResourceIds,
+            resource_scope: resourceScope,
+            change_reference: changeReference,
             timezone,
             owner,
+            ...(recurrence ? {recurrence} : {}),
           },
         },
-      ),
+      );
+    },
+    onSettled: () => { submitting.current = false; },
     onSuccess: () => {
       void queryClient.invalidateQueries({
-        queryKey: ["maintenance-windows", environmentId],
+        queryKey: ["maintenance-windows", openedEnvironment],
       });
       onClose();
     },
   });
+  const versionConflict=saveMutation.error instanceof ApiError && saveMutation.error.status===409;
+  const reviewLatest=async()=>{
+    setLatestWindow(null);setReviewError('');
+    const response=await windowsQuery.refetch();
+    if(response.error){setReviewError('The current version could not be loaded. Your draft is unchanged.');return;}
+    const current=response.data?.find(row=>row.id===initial?.id);
+    if(!current?.revision){setReviewError('This window is no longer available or has no version. Your draft is unchanged.');return;}
+    setLatestWindow(current);
+  };
+  const scopeLabel=(ids:string[]|undefined)=>ids?.length ? ids.map(id=>hostsQuery.data?.find(host=>host.id===id)?.name || id).join(', ') : 'Entire environment';
+  const comparison=latestWindow ? [
+    ['Name',latestWindow.name,name],['Owner',latestWindow.owner,owner],['Change reference',latestWindow.change_reference,changeReference],
+    ['Start',formatDateTime(latestWindow.starts_at),formatDateTime(startsAt)],['End',formatDateTime(latestWindow.ends_at),formatDateTime(endsAt)],
+    ['Timezone',latestWindow.timezone,timezone],['Scope',scopeLabel(latestWindow.resource_ids),scopeLabel(scopedResourceIds)],
+    ['Impact notes',latestWindow.affected_resources,affectedResources],['Description',latestWindow.description,description],
+  ] : [];
+  useBlocker({
+    disabled: !window || (!dirty && !saveMutation.isPending),
+    enableBeforeUnload: Boolean(window && (dirty || saveMutation.isPending)),
+    shouldBlockFn: () => submitting.current || (dirty && !globalThis.confirm('Discard unsaved maintenance changes and leave this page?')),
+  });
+  const markEdited = (event: React.FormEvent<HTMLFormElement>) => {
+    const target = event.target as HTMLInputElement;
+    // Search filters are presentation state, not an unsaved maintenance edit.
+    if (target.id?.startsWith('maintenance-') || target.type === 'checkbox') setDirty(true);
+  };
+  const requestClose = () => {
+    if (submitting.current) return;
+    if (dirty) setDiscardOpen(true);
+    else onClose();
+  };
   if (!window) return null;
-  return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-lg">
+  return (<>
+    <Dialog open onOpenChange={(open) => !open && requestClose()}>
+      <DialogContent className="max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             {initial ? "Edit maintenance window" : "Schedule maintenance window"}
           </DialogTitle>
           <DialogDescription>
-            During this period, teams can clearly identify scheduled work and
-            its impact.
+            During this period, teams can clearly identify scheduled work and its impact.
+            {initial?.series_id && " You are editing this occurrence only; other dates in the series stay unchanged."}
           </DialogDescription>
         </DialogHeader>
         <form
           className="min-w-0 space-y-4"
+          onInput={markEdited}
+          onChange={markEdited}
           onSubmit={(event) => {
             event.preventDefault();
-            if (hasValidRange) saveMutation.mutate();
+            if (versionConflict || !hasValidRange || !hasValidScope || !repeatReady || unavailableHostIds.length > 0 || contextChanged || submitting.current) return;
+            submitting.current = true;
+            saveMutation.mutate();
           }}
         >
+          {contextChanged && <p role="alert" className="text-sm text-destructive">This draft belongs to {openedEnvironment}. Return to that environment to save, or discard the draft.</p>}
+          <fieldset disabled={saveMutation.isPending || contextChanged} className="min-w-0 space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="maintenance-name">Name</Label>
             <Input
               id="maintenance-name"
+              maxLength={120}
               required
               value={name}
               onChange={(event) => setName(event.target.value)}
               placeholder="e.g. Proxmox maintenance"
             />
           </div>
+          {!initial && <div className="space-y-3 rounded-md border p-3">
+            <Label htmlFor="maintenance-repeat">Repeat</Label>
+            <select id="maintenance-repeat" value={repeat} onChange={event => setRepeat(event.target.value)} className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm">
+              <option value="none">Does not repeat</option><option value="daily">Daily</option><option value="weekly">Weekly</option>
+            </select>
+            {recurrence && <>
+              <Label htmlFor="maintenance-repeat-count">Number of occurrences, including the first</Label>
+              <Input id="maintenance-repeat-count" type="number" min={2} max={52} required value={repeatCount} onChange={event => setRepeatCount(Number(event.target.value))} />
+              <p className="text-xs text-muted-foreground">Creates a finite set of individual windows. Start time stays fixed in {timezone}; duration stays fixed. Each window can be edited or deleted separately.</p>
+              {repeatPreview.isFetching && <p role="status" className="text-sm">Calculating occurrences…</p>}
+              {repeatPreview.isError && <QueryErrorState compact title="Recurrence preview unavailable" error={repeatPreview.error} onRetry={() => void repeatPreview.refetch()} />}
+              {repeatPreview.data && <div className="max-h-48 space-y-2 overflow-y-auto text-sm" aria-label="Planned occurrences">
+                {!repeatPreview.data.conflicts_checked && <p>Existing-window conflicts could not be checked with your permissions.</p>}
+                {repeatPreview.data.occurrences.map((item,index) => <div key={item.starts_at} className="rounded border p-2">
+                  <p>{index+1}. {formatDateTime(item.starts_at,{timeZone:timezone})} – {formatDateTime(item.ends_at,{timeZone:timezone})}</p>
+                  {Boolean(item.planned_conflicts?.length) && <p className="text-amber-500">Overlaps planned occurrence: {item.planned_conflicts?.join(', ')}</p>}
+                  {item.conflicts.length>0 && <p className="text-amber-500">Overlaps: {item.conflicts.map(conflict=>conflict.name).join(', ')}</p>}
+                </div>)}
+                <p className="text-xs text-muted-foreground">Overlaps are allowed when intentional. Coordinate the affected work before saving.</p>
+              </div>}
+            </>}
+          </div>}
           <div className="grid min-w-0 gap-4 sm:grid-cols-2">
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor="maintenance-start">Start</Label>
-              <ZonedDateTimeTextInput
+              <ZonedDateTimePicker
                 id="maintenance-start"
                 required
                 value={startsAt}
@@ -1135,7 +1190,7 @@ function MaintenanceWindowDialog({
             </div>
             <div className="min-w-0 space-y-1.5">
               <Label htmlFor="maintenance-end">End</Label>
-              <ZonedDateTimeTextInput
+              <ZonedDateTimePicker
                 id="maintenance-end"
                 required
                 value={endsAt}
@@ -1145,26 +1200,58 @@ function MaintenanceWindowDialog({
             </div>
           </div>
           <p className="text-xs tabular-nums text-muted-foreground" aria-live="polite">
-            Enter DD/MM/YYYY, HH:mm · 24-hour time · {timezone}
+            Choose a date and time or enter it with the keyboard · {timezone}
           </p>
           <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="maintenance-resources">Affected resources</Label>
-              <Input id="maintenance-resources" value={affectedResources} onChange={(event) => setAffectedResources(event.target.value)} placeholder="e.g. Cluster A, hosts tagged production" />
+              <Label htmlFor="maintenance-resources">Scope / impact notes</Label>
+              <Input id="maintenance-resources" maxLength={1000} value={affectedResources} onChange={(event) => setAffectedResources(event.target.value)} placeholder="e.g. Cluster A, hosts tagged production" />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="maintenance-owner">Owner</Label>
-              <Input id="maintenance-owner" value={owner} onChange={(event) => setOwner(event.target.value)} placeholder="Team or responsible person" />
+              <Label htmlFor="maintenance-owner">Owner / team</Label>
+              <Input id="maintenance-owner" maxLength={120} value={owner} onChange={(event) => setOwner(event.target.value)} list="maintenance-owners" placeholder="Choose a team or enter a person" />
+              <p className="text-xs text-muted-foreground">Suggestions include teams from this environment and owners used on other windows.</p>
+              {teamsQuery.isError && <p role="status" className="text-xs text-amber-600">Team suggestions could not be loaded. You can still enter an owner.</p>}
             </div>
           </div>
+          <fieldset className="space-y-2 rounded-md border p-3">
+            <legend className="px-1 text-sm font-medium">Affected hosts</legend>
+            <div className="space-y-2">
+              <label className="flex items-center gap-2 text-sm"><input id="maintenance-scope-selected" type="radio" name="maintenance-scope" checked={resourceScope === 'selected'} onChange={() => setResourceScope('selected')} />Selected hosts</label>
+              <label className="flex items-center gap-2 text-sm"><input id="maintenance-scope-environment" disabled={!canUseEntireEnvironment} type="radio" name="maintenance-scope" checked={resourceScope === 'environment'} onChange={() => setResourceScope('environment')} />Entire environment</label>
+            </div>
+            {!canUseEntireEnvironment && <p className="text-xs text-muted-foreground">Entire-environment maintenance requires verified access to all hosts. Select hosts within your access scope.</p>}
+            {resourceScope === 'environment' && <p className="text-xs text-muted-foreground">This window covers the entire environment, including hosts added later.</p>}
+            <fieldset disabled={resourceScope === 'environment'} className="space-y-2">
+            <Input aria-label="Find affected hosts" value={hostSearch} onChange={event => setHostSearch(event.target.value)} placeholder="Find host by name or IP…" />
+            {hostsQuery.isError && <QueryErrorState compact error={hostsQuery.error} title="Host selection unavailable" onRetry={() => void hostsQuery.refetch()} />}
+            <div className="max-h-36 overflow-y-auto">{(Array.isArray(hostsQuery.data) ? hostsQuery.data : []).filter(host => `${host.name} ${host.ip_address || ''}`.toLowerCase().includes(hostSearch.toLowerCase())).map(host => <label key={host.id} className="flex items-center gap-2 py-1 text-sm"><input type="checkbox" checked={resourceIds.includes(host.id)} onChange={event => setResourceIds(current => event.target.checked ? [...current, host.id] : current.filter(id => id !== host.id))} />{host.name}<span className="text-xs text-muted-foreground">{host.ip_address}</span></label>)}</div>
+            {unavailableHostIds.length > 0 && <div role="alert" className="space-y-2 rounded-md border border-amber-500 p-2 text-sm">
+              <p>Some selected hosts are no longer available in this environment or your access scope. Remove them or restore access before saving.</p>
+              {unavailableHostIds.map(id => <div key={id} className="flex items-center justify-between gap-2">
+                <span className="min-w-0 break-all">Unavailable host · {id}</span>
+                <Button type="button" size="sm" variant="outline" aria-label={`Remove unavailable host ${id}`} onClick={() => {setResourceIds(current => current.filter(value => value !== id)); setDirty(true);}}>Remove</Button>
+              </div>)}
+              <p className="text-xs">Removing the last selected host leaves an empty selection. Choose a host or explicitly select the entire environment.</p>
+            </div>}
+            </fieldset>
+            {!hasValidScope && <p role="alert" className="text-sm text-destructive">Select at least one host or choose Entire environment.</p>}
+            <p className="text-xs text-muted-foreground">{resourceScope === 'environment' ? 'Entire environment' : `${resourceIds.length} selected ${resourceIds.length === 1 ? 'host' : 'hosts'}`}</p>
+          </fieldset>
+          <div className="space-y-1.5"><Label htmlFor="maintenance-change">Change reference</Label><Input id="maintenance-change" value={changeReference} onChange={event => setChangeReference(event.target.value)} maxLength={200} placeholder="e.g. CHG-2026-104" /></div>
+          {windowsQuery.isError && <QueryErrorState compact error={windowsQuery.error} title="Overlap check unavailable" onRetry={() => void windowsQuery.refetch()} />}
+          {overlaps.length > 0 && <div role="status" className="rounded-md border border-amber-500 p-3 text-sm"><p className="font-medium">Overlapping maintenance on the same scope</p><ul>{overlaps.map(item => <li key={item.id}>{item.name} · {formatDateTime(item.starts_at)}{item.owner ? ` · ${item.owner}` : ''}</li>)}</ul><p className="mt-1 text-xs">Coordinate owners before saving. Overlaps are allowed when intentional.</p></div>}
           <div className="space-y-1.5">
+            <datalist id="maintenance-owners">{[...new Set([
+              ...(Array.isArray(teamsQuery.data) ? teamsQuery.data.map(team => team.name) : []),
+              ...(windowsQuery.data || []).map(item => item.owner).filter((value): value is string => Boolean(value)),
+            ])].map(value => <option key={value} value={value} />)}</datalist>
             <Label htmlFor="maintenance-timezone">Timezone</Label>
+            <Input aria-label="Search timezones" placeholder="Search city or timezone…" value={timezoneSearch} onChange={event => setTimezoneSearch(event.target.value)} />
             <select id="maintenance-timezone" value={timezone} onChange={(event) => setTimezone(event.target.value)} className="h-9 w-full rounded-sm border border-input bg-background px-3 text-sm">
-              <option value="Europe/Zurich">Europe/Zurich</option>
-              <option value="UTC">UTC</option>
-              <option value="Europe/London">Europe/London</option>
-              <option value="America/New_York">America/New_York</option>
+              {[...new Set(['UTC', timezone, ...Intl.supportedValuesOf('timeZone')])].sort().filter(zone => zone === timezone || zone.toLowerCase().replaceAll('_', ' ').includes(timezoneSearch.toLowerCase().replaceAll('_', ' '))).map(zone => <option key={zone} value={zone}>{zone}</option>)}
             </select>
+            <p className="text-xs text-muted-foreground">Changing the timezone keeps the same instant and updates the displayed local time.</p>
           </div>
           {!hasValidRange && (
             <p className="text-sm text-destructive">
@@ -1180,6 +1267,7 @@ function MaintenanceWindowDialog({
             </Label>
             <textarea
               id="maintenance-description"
+              maxLength={1000}
               value={description}
               onChange={(event) => setDescription(event.target.value)}
               rows={3}
@@ -1187,31 +1275,43 @@ function MaintenanceWindowDialog({
               placeholder="Affected platforms, reason, and expected impact"
             />
           </div>
+          </fieldset>
           {saveMutation.error && (
-            <p className="text-sm text-destructive">
+            <p role="alert" className="text-sm text-destructive">
               {(saveMutation.error as Error).message}
             </p>
           )}
+          {versionConflict && <div className="space-y-3 rounded border border-amber-500 p-3">
+            <Button type="button" variant="outline" disabled={windowsQuery.isFetching||contextChanged} onClick={()=>void reviewLatest()}>{windowsQuery.isFetching?'Loading current version…':'Review current version'}</Button>
+            {reviewError&&<p role="alert" className="text-sm text-destructive">{reviewError}</p>}
+            {latestWindow&&<><p className="text-sm">Compare the saved version with your draft. Accepting keeps your draft as a complete replacement; it does not save yet.</p>
+              <div className="max-h-72 overflow-auto"><table className="w-full table-fixed text-xs"><thead><tr><th>Field</th><th>Current saved value</th><th>Your draft</th></tr></thead><tbody>{comparison.map(([label,current,draft])=><tr key={label} className={current!==draft?'bg-amber-500/10':''}><th className="align-top text-left">{label}</th><td className="break-words p-2 align-top">{current||'—'}</td><td className="break-words p-2 align-top">{draft||'—'}</td></tr>)}</tbody></table></div>
+              {latestWindow.can_edit===false?<p role="alert" className="text-sm text-destructive">You can no longer edit this window's scope.</p>:<Button type="button" variant="outline" disabled={contextChanged} onClick={()=>{setReviewedRevision(latestWindow.revision);setLatestWindow(null);saveMutation.reset();}}>Use my draft against this version</Button>}</>}
+          </div>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={onClose}>
+            <Button type="button" variant="outline" onClick={requestClose} disabled={saveMutation.isPending}>
               Cancel
             </Button>
             <Button
               type="submit"
-              disabled={saveMutation.isPending || !hasValidRange}
+              disabled={versionConflict || saveMutation.isPending || !hasValidRange || !hasValidScope || !repeatReady || unavailableHostIds.length > 0 || contextChanged}
             >
               {saveMutation.isPending ? (
                 <RefreshCw className="animate-spin" />
               ) : (
                 <CalendarClock />
               )}
-              {initial ? "Save" : "Schedule maintenance window"}
+              {initial ? "Save" : recurrence ? `Schedule ${repeatCount} windows` : "Schedule maintenance window"}
             </Button>
           </DialogFooter>
         </form>
       </DialogContent>
     </Dialog>
-  );
+    <ConfirmDialog open={discardOpen} onOpenChange={setDiscardOpen}
+      title="Discard maintenance changes?" description="Your unsaved maintenance draft will be lost."
+      confirmLabel="Discard changes" cancelLabel="Keep editing"
+      onConfirm={() => { setDiscardOpen(false); onClose(); }} />
+  </>);
 }
 
 function OperationLink({
@@ -1252,6 +1352,13 @@ function OperationDetail({
   className?: string;
   showHeading?: boolean;
 }) {
+  const environmentId = useUi(state => state.environmentId);
+  const details = useQuery({
+    queryKey: ['operation-details', environmentId, row?.id],
+    queryFn: () => apiFetch<{ execution_id: string; duration_seconds: number | null; summary: string; output: string; output_truncated: boolean }>(`/operations/${encodeURIComponent(row!.id)}/details`),
+    enabled: Boolean(row),
+    refetchInterval: row && ['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 3000 : false,
+  });
   if (!row) return null;
   return (
     <aside className={cn("border-t bg-muted/[0.12] p-4 xl:border-l xl:border-t-0", className)}>
@@ -1259,11 +1366,8 @@ function OperationDetail({
         <Info className="h-4 w-4 text-brand" />
         Task details
       </div>}
-      <div className={cn("rounded-md border bg-card p-4", showHeading && "mt-3")}>
-        <p className="text-xs font-medium uppercase tracking-[0.12em] text-muted-foreground">
-          Selected task
-        </p>
-        <h3 className="mt-1 break-words text-lg font-semibold leading-snug">
+      <div className={cn(showHeading && "mt-3")}>
+        <h3 className="break-words text-base font-semibold leading-snug">
           {row.name}
         </h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -1296,9 +1400,9 @@ function OperationDetail({
           </b>
         </div>
         <div className="console-property">
-          <span>Time</span>
+          <span>{row.completed_at ? "Completed" : "Started"}</span>
           <b className="whitespace-normal text-right">
-            {readableTime(row.time)}
+            <Timestamp value={row.time} />
           </b>
         </div>
         {row.acknowledged && (
@@ -1316,6 +1420,22 @@ function OperationDetail({
           </>
         )}
       </div>
+      <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} className="mt-3 inline-block text-sm text-primary hover:underline">Open execution page</Link>
+      <section className="mt-3 space-y-3 rounded-md border bg-card p-3" aria-label="Execution result">
+        {row.source === "Workflow" && <p className="text-sm">{row.check_mode ? "Dry run" : "Execution"} · {row.playbook}{row.schedule_deleted ? " · Schedule deleted" : ""}</p>}
+        {row.started_at && <p className="text-xs text-muted-foreground">Started: {readableTime(row.started_at)}</p>}
+        {details.isPending && <p role="status" className="text-sm">Loading execution details…</p>}
+        {details.isError && <QueryErrorState compact error={details.error} title="Execution details unavailable" onRetry={() => void details.refetch()} />}
+        {details.data && !details.isError && <>
+          <p className="text-xs text-muted-foreground">Execution {details.data.execution_id}{details.data.duration_seconds !== null ? ` · ${details.data.duration_seconds}s` : (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? ' · duration pending completion' : ' · duration not recorded')}</p>
+          <p className="break-words text-sm">{details.data.summary}</p>
+          <details><summary className="cursor-pointer text-sm font-medium">Execution log</summary>
+            {details.data.output_truncated && <p className="text-xs text-muted-foreground">Showing the last 200,000 characters.</p>}
+            <pre className="mt-2 max-h-80 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-3 text-xs">{details.data.output || 'No output recorded.'}</pre>
+          </details>
+          {row.action && <p className="text-xs text-muted-foreground">Action identifier: {row.action}</p>}
+        </>}
+      </section>
       {row.statusTone === "danger" && !row.acknowledged && (
         <Button
           type="button"
@@ -1332,13 +1452,26 @@ function OperationDetail({
       {row.href && (
         <Button asChild className="mt-3 w-full" size="sm" variant="outline">
           <OperationLink row={row}>
-            Open details
+            Open resource
             <ExternalLink />
           </OperationLink>
         </Button>
       )}
     </aside>
   );
+}
+
+function GroupedExecutionLinks({ row }: { row: OperationRow }) {
+  const environmentId = useUi(state => state.environmentId);
+  if (!row.executions?.length) return null;
+  return <details className="mt-2 text-xs" onClick={event => event.stopPropagation()}>
+    <summary className="cursor-pointer font-medium">View all {row.executions.length} executions</summary>
+    <ul className="mt-2 max-h-60 space-y-2 overflow-auto">{row.executions.map(execution => <li key={execution.id}>
+      <Link to="/operations/executions/$id" params={{ id: execution.id }} search={{ environment: environmentId }} className="text-primary hover:underline">
+        {execution.time ? <Timestamp value={execution.time} /> : execution.id}
+      </Link>
+    </li>)}</ul>
+  </details>;
 }
 
 function OperationList({
@@ -1350,6 +1483,7 @@ function OperationList({
   selectedId?: string;
   onSelect: (id: string) => void;
 }) {
+  const environmentId = useUi(state => state.environmentId);
   return (
     <>
       <div className="divide-y md:hidden">
@@ -1371,11 +1505,13 @@ function OperationList({
                   {operationDisplayLabel(row)}
                 </StatusBadge>
               </div>
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+              <div className="flex min-w-0 flex-col gap-1 text-xs text-muted-foreground">
                 <span className="truncate">{row.target}</span>
-                <span className="shrink-0">{readableTime(row.time)}</span>
+                <span className="whitespace-normal break-words">{row.completed_at ? "Completed" : "Started"}: <Timestamp value={row.time} /></span>
               </div>
             </button>
+            <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} className="mx-4 mb-3 inline-block text-xs text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
+            <div className="px-4 pb-2"><GroupedExecutionLinks row={row} /></div>
             {row.target_detail && (
               <div className="px-4 pb-3 text-xs">
                 <OperationTarget row={row} detailsOnly />
@@ -1403,13 +1539,16 @@ function OperationList({
                 aria-selected={selectedId === row.id}
               >
                 <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                  {readableTime(row.time)}
+                  <span className="block font-sans">{row.completed_at ? "Completed" : "Started"}</span>
+                  <Timestamp value={row.time} />
                 </td>
                 <td>
-                  <div className="font-medium">{row.name}</div>
+                  <button type="button" className="text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}>{row.name}</button>
+                  <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="ml-2 text-xs text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
                   <div className="mt-0.5 text-xs text-muted-foreground">
                     {operationSourceLabel(row.source)} · {row.initiator}
                   </div>
+                  <GroupedExecutionLinks row={row} />
                 </td>
                 <td className="max-w-[18rem]">
                   <OperationTarget row={row} />
@@ -1437,7 +1576,7 @@ function OperationTarget({
   align?: "left" | "right";
   detailsOnly?: boolean;
 }) {
-  if (!row.target_detail) return detailsOnly ? null : <span>{row.target}</span>;
+  if (!row.target_detail) return detailsOnly ? null : <span>{row.target}{row.target_deleted && <span className="ml-1 text-xs text-muted-foreground">(deleted host)</span>}</span>;
   return (
     <details
       className={cn("group min-w-0 font-normal", align === "right" && "text-right")}

@@ -91,7 +91,7 @@ async function _fetchGitHubReleases() {
 }
 
 /** @returns {ProxmoxConnection} */
-function createProxmoxConnection(endpointInput, apiTokenInput, insecureInput = false) {
+function createProxmoxConnection(endpointInput, apiTokenInput, insecureInput = false, caCertificateInput = '') {
   const endpoint = String(endpointInput || '').trim();
   const apiToken = String(apiTokenInput || '').trim();
   const insecureRaw = String(insecureInput || '').trim().toLowerCase();
@@ -108,6 +108,7 @@ function createProxmoxConnection(endpointInput, apiTokenInput, insecureInput = f
     base,
     apiToken,
     insecure: insecureInput === true || ['1', 'true', 'yes', 'on'].includes(insecureRaw),
+    caCertificate: String(caCertificateInput || '').trim(),
   };
 }
 
@@ -150,6 +151,7 @@ function requestProxmoxApi(connection, apiPath, { method = 'GET', payload = null
         ...(body ? { 'Content-Type': 'application/x-www-form-urlencoded', 'Content-Length': Buffer.byteLength(body) } : {}),
       },
       rejectUnauthorized: !connection.insecure,
+      ...(connection.caCertificate ? { ca: connection.caCertificate } : {}),
     }, response => {
       let body = '';
       response.setEncoding('utf8');
@@ -170,7 +172,7 @@ function requestProxmoxApi(connection, apiPath, { method = 'GET', payload = null
     });
     request.setTimeout(8000, () => request.destroy(new Error('The Proxmox API request timed out.')));
     request.on('error', error => reject(new Error(/** @type {NodeJS.ErrnoException} */ (error).code === 'DEPTH_ZERO_SELF_SIGNED_CERT'
-      ? 'The Proxmox certificate is not trusted. Set TF_VAR_proxmox_insecure=true or use a valid certificate.'
+      ? 'The Proxmox certificate is not trusted. Add its CA certificate or, only for a temporary lab, disable TLS verification.'
       : 'The Proxmox API is unreachable.')));
     if (body) request.write(body);
     request.end();

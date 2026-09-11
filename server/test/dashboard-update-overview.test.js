@@ -54,6 +54,7 @@ test('dashboard exposes custom desired-state deviations without exposing executa
   assert.deepEqual(host.custom_update_tasks, [{
     id: task.id, name: 'My App', type: 'script', current_version: '1.0.0', last_version: '1.1.0',
     trigger_output: null, has_update: true, last_checked_at: host.custom_update_tasks[0].last_checked_at,
+    last_attempted_at: host.custom_update_tasks[0].last_checked_at, last_check_error: null,
   }]);
   assert.equal('check_command' in host.custom_update_tasks[0], false);
   assert.equal('update_command' in host.custom_update_tasks[0], false);

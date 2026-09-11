@@ -121,10 +121,20 @@ test('deleting an environment consolidates every scoped resource without breakin
     .run(db.uuidv4(), environmentId, 'Preserved history', 'update.yml');
   db.db.prepare('INSERT INTO ansible_vars (id, environment_id, key, value) VALUES (?, ?, ?, ?)')
     .run(db.uuidv4(), environmentId, 'PRESERVED_VAR', 'value');
+  db.db.prepare("INSERT INTO variable_change_events (environment_id,variable_id,variable_key,action,fields) VALUES (?, 'historical-variable', 'PRESERVED_VAR', 'Updated', '[]')").run(environmentId);
   db.db.prepare('INSERT INTO ssh_key_assignments (id, environment_id, target_type, target_id) VALUES (?, ?, ?, ?)')
     .run(db.uuidv4(), environmentId, 'server', host.id);
   db.db.prepare('INSERT INTO maintenance_windows (id, environment_id, name, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')
     .run(db.uuidv4(), environmentId, 'Preserved window', '2030-01-01T00:00:00.000Z', '2030-01-01T01:00:00.000Z');
+
+  const history = db.db.prepare('INSERT INTO proxmox_storage_history VALUES (?,?,?,?,?,?,?,?)');
+  history.run(environmentId,'https://proxmox.invalid','pve001','local',1,100,10,100);
+  history.run('default','https://proxmox.invalid','pve001','local',1,200,20,100);
+  const auditId = db.auditLog.write('infrastructure.vm_power', 'action=start', null, true, 'fixture', environmentId);
+  db.db.prepare('INSERT INTO proxmox_guest_audit VALUES (?, ?, ?, ?, ?)').run(auditId, connectionId, environmentId, 'pve001', 101);
+  db.db.prepare('INSERT INTO proxmox_object_audit VALUES (?, ?, ?, ?)').run(auditId, connectionId, environmentId, 'pve001');
+  db.db.prepare('INSERT INTO proxmox_guest_tasks (connection_id,environment_id,endpoint,node_name,vm_id,task_id,action,resource_name,status) VALUES (?,?,?,?,?,?,?,?,?)')
+    .run(connectionId, environmentId, 'https://proxmox.invalid', 'pve001', 101, 'UPID:preserved', 'start', 'Preserved VM', 'running');
 
   const response = await request(app)
     .delete(`/api/environments/${environmentId}`)
@@ -132,13 +142,25 @@ test('deleting an environment consolidates every scoped resource without breakin
   assert.equal(response.status, 200);
   assert.equal(db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId), undefined);
   assert.equal(db.servers.getById(host.id).environment_id, 'default');
+  assert.equal(db.db.prepare("SELECT environment_id FROM variable_change_events WHERE variable_id = 'historical-variable'").get().environment_id, 'default');
   assert.equal(db.servers.getById(host.id).group_id, group.id);
+  for (const table of ['audit_log', 'proxmox_guest_audit', 'proxmox_object_audit']) {
+    const column = table === 'audit_log' ? 'id' : 'audit_id';
+    assert.equal(db.db.prepare(`SELECT environment_id FROM ${table} WHERE ${column}=?`).get(auditId).environment_id, 'default');
+  }
+  const task = db.db.prepare('SELECT * FROM proxmox_guest_tasks WHERE task_id=?').get('UPID:preserved');
+  assert.equal(task.environment_id, 'default');
+  assert.equal(task.status, 'running');
+  assert.equal(task.connection_id, connectionId);
+  assert.equal(db.db.prepare("SELECT used FROM proxmox_storage_history WHERE environment_id='default' AND storage_id='local'").get().used,20);
+
   assert.equal(db.db.prepare('SELECT environment_id FROM server_groups WHERE id = ?').get(group.id).environment_id, 'default');
 
   for (const table of [
-    'ssh_key_assignments', 'schedules', 'schedule_history', 'ansible_vars', 'ipam_subnets',
+    'ssh_key_assignments', 'schedules', 'schedule_history', 'ansible_vars', 'variable_change_events', 'ipam_subnets',
     'ipam_sync_sources', 'ipam_sync_conflicts', 'ipam_proxmox_sync_conflicts',
     'maintenance_windows', 'tofu_workspaces', 'tofu_proxmox_connections',
+    'proxmox_guest_audit', 'proxmox_object_audit', 'proxmox_guest_tasks', 'proxmox_storage_history',
   ]) {
     assert.equal(db.db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE environment_id = ?`).get(environmentId).count, 0, table);
   }
@@ -158,4 +180,57 @@ test('environment consolidation is blocked instead of overwriting unique resourc
   assert.equal(response.status, 409);
   assert.ok(db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId));
   assert.equal(db.db.prepare('SELECT environment_id FROM ansible_vars WHERE key = ? AND value = ?').get('DUPLICATE_KEY', 'source value').environment_id, environmentId);
+});
+
+test('environment VM definition count excludes empty and legacy workspaces', async () => {
+  const environmentId = db.uuidv4();
+  db.db.prepare('INSERT INTO environments (id, name) VALUES (?, ?)').run(environmentId, 'Definition counts');
+  for (const type of ['empty', 'legacy', 'isolated']) {
+    const workspaceId = db.uuidv4();
+    db.db.prepare('INSERT INTO tofu_workspaces (id, name, path, environment_id) VALUES (?, ?, ?, ?)')
+      .run(workspaceId, type, `/workspaces/${type}`, environmentId);
+    if (type !== 'empty') db.db.prepare('INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated) VALUES (?, ?, ?, ?, ?)')
+      .run(db.uuidv4(), workspaceId, `${type}-vm`, '{}', type === 'isolated' ? 1 : 0);
+  }
+  const response = await request(app).get('/api/environments').set('Authorization', `Bearer ${adminToken}`);
+  assert.equal(response.status, 200);
+  const environment = response.body.find(row => row.id === environmentId);
+  assert.equal(environment.deployment_count, 3);
+  assert.equal(environment.vm_definition_count, 1);
+});
+
+test('failed consolidation audit rolls back the environment and its moved resources', async () => {
+ const environmentId=db.uuidv4();
+ db.db.prepare('INSERT INTO environments (id,name) VALUES (?,?)').run(environmentId,'Atomic consolidation');
+ const host=db.servers.create({name:'atomic-host',hostname:'atomic-host',ip_address:'10.83.0.99',environment_id:environmentId});
+ const original=db.auditLog.write;
+ const before=db.db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='environment.delete'").get().n;
+ db.auditLog.write=(...args)=>{const id=original(...args);if(args[0]==='environment.delete')throw new Error('Simulated audit storage failure');return id;};
+ try {
+  const response=await request(app).delete(`/api/environments/${environmentId}`).set('Authorization',`Bearer ${adminToken}`);
+  assert.equal(response.status,500);
+  assert.ok(db.db.prepare('SELECT 1 FROM environments WHERE id=?').get(environmentId));
+  assert.equal(db.servers.getById(host.id).environment_id,environmentId);
+  assert.equal(db.db.prepare("SELECT COUNT(*) AS n FROM audit_log WHERE action='environment.delete'").get().n,before);
+ } finally {db.auditLog.write=original;}
+});
+
+test('environment names reject coercion and truncation and duplicate renames remain unchanged', async()=>{
+ const auth={Authorization:`Bearer ${adminToken}`};
+ const created=await request(app).post('/api/environments').set(auth).send({name:'Input validation source'});
+ assert.equal(created.status,201);
+ for(const name of [123,{},[],null,'   ','x'.repeat(81)]){
+  assert.equal((await request(app).post('/api/environments').set(auth).send({name})).status,400);
+  assert.equal((await request(app).put(`/api/environments/${created.body.id}`).set(auth).send({name})).status,400);
+ }
+ assert.equal(db.db.prepare('SELECT name FROM environments WHERE id=?').get(created.body.id).name,'Input validation source');
+ const other=await request(app).post('/api/environments').set(auth).send({name:'Input validation target'});
+ assert.equal(other.status,201);
+ const duplicate=await request(app).put(`/api/environments/${created.body.id}`).set(auth).send({name:other.body.name});
+ assert.equal(duplicate.status,409);assert.equal(duplicate.body.field,'name');
+ assert.equal(db.db.prepare('SELECT name FROM environments WHERE id=?').get(created.body.id).name,'Input validation source');
+ assert.equal((await request(app).post('/api/environments').set(auth).send({name:other.body.name})).status,409);
+ const boundary='n'.repeat(80);
+ assert.equal((await request(app).put(`/api/environments/${created.body.id}`).set(auth).send({name:boundary})).status,200);
+ assert.equal(db.db.prepare('SELECT name FROM environments WHERE id=?').get(created.body.id).name,boundary);
 });

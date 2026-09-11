@@ -1,0 +1,5 @@
+<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
+import React from 'react';import{createRoot}from'react-dom/client';import{QueryClient,QueryClientProvider}from'@tanstack/react-query';import{createRootRoute,createRouter,RouterProvider}from'@tanstack/react-router';import{InvitationPage}from'/src/routes/invitation.tsx';import'/src/index.css';
+window.fetch=async(url,options={})=>{const p=new URL(url,location.href).pathname;if(p.endsWith('/invitations/preview'))return Response.json({username:'alex.viewer',displayName:'Alex Example',roleName:'Infrastructure viewer',expiresAt:Date.now()+86400000});if(p.endsWith('/invitations/accept'))return Response.json({username:'alex.viewer'});return Response.json({error:'Unexpected request'},{status:400});};
+const client=new QueryClient({defaultOptions:{queries:{retry:false}}});const router=createRouter({routeTree:createRootRoute({component:InvitationPage})});createRoot(document.getElementById('root')).render(React.createElement(QueryClientProvider,{client},React.createElement(RouterProvider,{router})));
+</script></html>

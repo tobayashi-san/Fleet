@@ -1,4 +1,6 @@
 const sshManager = require('./ssh-manager');
+const { PACKAGE_SERVICE_QUERY, parsePackageServiceOwnership } = require('../utils/package-service-impact');
+const { parseAptUpgradePlan } = require('../utils/package-upgrade-plan');
 const { collectStorageMountMetrics, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 const { parseZfsData } = require('../utils/zfs');
 
@@ -116,9 +118,10 @@ class SystemInfoService {
   /**
    * Get available package updates
    */
-  async getAvailableUpdates(server) {
+  async getAvailableUpdates(server, { includePlan = false } = {}) {
     try {
-      const cmd = `run_privileged() {
+      const cmd = `export LC_ALL=C
+run_privileged() {
   if [ "$(id -u)" -eq 0 ]; then "$@"; else sudo -n "$@"; fi
 }
 if [ "$(id -u)" -ne 0 ] && (! command -v sudo >/dev/null 2>&1 || ! sudo -n true 2>/dev/null); then
@@ -132,10 +135,20 @@ if command -v apt-get >/dev/null 2>&1; then
   # via non-interactive sudo for normal SSH users (for example Ubuntu's
   # default ubuntu account), while root continues without sudo.
   run_privileged apt-get update -qq 2>/dev/null || exit 1
-  run_privileged apt list --upgradable 2>/dev/null | grep "/"
+  package_list=$(run_privileged apt list --upgradable 2>/dev/null) || {
+    echo "Failed to read the available package list." >&2
+    exit 1
+  }
+  upgrade_plan=$(run_privileged apt-get -s -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold dist-upgrade --auto-remove 2>/dev/null) || {
+    echo "Failed to simulate the package upgrade." >&2
+    exit 1
+  }
+  printf '%s\\n' "$package_list"
   echo "---PHASED---"
-  run_privileged apt-get -s upgrade 2>/dev/null | awk '/^Inst /{print $2}'
+  printf '%s\\n' "$upgrade_plan" | awk '/^Inst /{print $2}'
   echo "---WOULDUPGRADE---"
+  printf '%s\\n' "$upgrade_plan"
+${includePlan ? PACKAGE_SERVICE_QUERY : ''}
 elif command -v dnf >/dev/null 2>&1; then
   dnf check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
   echo "---PHASED---"
@@ -143,19 +156,20 @@ elif command -v yum >/dev/null 2>&1; then
   yum check-update -q 2>/dev/null | awk 'NF>=3 && /^[a-zA-Z0-9]/{n=$1; sub(/\\.[^.]+$/,"",n); print n"/updates "$2}'
   echo "---PHASED---"
 elif command -v pacman >/dev/null 2>&1; then
-  checkupdates 2>/dev/null | awk '{print $1"/arch "$4}'
+  checkupdates 2>/dev/null | awk '{print $1"/arch "$4" [upgradable from: "$2"]"}'
   echo "---PHASED---"
 elif command -v zypper >/dev/null 2>&1; then
   zypper -q list-updates 2>/dev/null | awk -F"|" 'NR>3 && NF>=5{gsub(/ /,"",$3); gsub(/ /,"",$5); if($3 && $3!="Name") print $3"/oss "$5}'
   echo "---PHASED---"
 fi`;
-      const result = await sshManager.execCommand(server, cmd);
+      const result = await sshManager.execCommand(server, cmd, includePlan ? { timeoutMs: 90_000 } : {});
       if (result.code !== 0) {
         throw new Error(result.stderr?.trim() || `Package update check exited with code ${result.code}`);
       }
 
       const [upgradableRaw = '', rest = ''] = result.stdout.split('---PHASED---');
       const [wouldUpgradeRaw = ''] = rest.split('---WOULDUPGRADE---');
+      const hasUpgradePlan = rest.includes('---WOULDUPGRADE---');
 
       // Packages that apt would actually install (not blocked by phasing/deps)
       const wouldUpgradeSet = new Set(
@@ -170,13 +184,27 @@ fi`;
           return {
             package: pkg,
             version: parts[1] || 'unknown',
+            current_version: line.match(/\[upgradable from:\s*([^\]]+)\]/)?.[1]?.trim() || null,
             source: parts[2] || '',
             // Mark as phased if apt wouldn't actually upgrade it
-            phased: wouldUpgradeSet.size > 0 ? !wouldUpgradeSet.has(pkg) : false,
+            phased: hasUpgradePlan ? !wouldUpgradeSet.has(pkg) : false,
           };
         })
         .filter(u => u.package);
 
+      if (includePlan) {
+        const [planOutput = '', serviceOutput = ''] = (rest.split('---WOULDUPGRADE---')[1] || '').split('---SERVICEOWNERSHIP---');
+        const changes = hasUpgradePlan ? parseAptUpgradePlan(planOutput) : [];
+        return {
+          updates,
+          plan: hasUpgradePlan ? {
+            strategy: 'apt-get dist-upgrade --auto-remove',
+            changes,
+            service_ownership: parsePackageServiceOwnership(serviceOutput, changes),
+          } : null,
+          checked_at: new Date().toISOString(),
+        };
+      }
       return updates;
     } catch (error) {
       throw new Error(`Failed to check available updates: ${error.message}`);

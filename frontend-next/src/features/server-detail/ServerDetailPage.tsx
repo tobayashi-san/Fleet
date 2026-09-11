@@ -1,3 +1,7 @@
+import { ComposeTemplateButton } from './components/ComposeTemplateButton';
+import { OsUpdateImpact } from './components/OsUpdateImpact';
+import { CustomUpdateDialog } from './components/CustomUpdateDialog';
+import { ComposeValidation } from "./components/ComposeValidation";
 import {
   lazy,
   Suspense,
@@ -158,7 +162,7 @@ export function ServerDetailPage() {
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
     managedProxmoxDeployment,
@@ -189,9 +193,7 @@ export function ServerDetailPage() {
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -376,7 +378,7 @@ export function ServerDetailPage() {
             <StatusBadge tone="muted">{t("common.unknown")}</StatusBadge>
           )
         }
-        description={`${server.ip_address}${server.hostname && server.hostname !== server.ip_address ? ` · ${server.hostname}` : ""}`}
+        description={[server.ip_address, server.hostname !== server.ip_address ? server.hostname : null].filter(Boolean).join(" · ") || "Host address not reported"}
         actions={
           <>
             {server.status !== "online" &&
@@ -457,7 +459,7 @@ export function ServerDetailPage() {
               open={confirmRunUpdate}
               onOpenChange={setConfirmRunUpdate}
               title={t("det.updates")}
-              description={t("det.confirmUpdate", { name: server.name })}
+              description={<div className="space-y-3"><p>{t("det.confirmUpdate", { name: server.name })}</p><OsUpdateImpact available={updatesList.length} deferred={phasedList.length} rebootRequired={info?.reboot_required} /><p className="text-xs">Counts reflect the last check. The package manager resolves the actual changes when the update runs.</p></div>}
               confirmLabel={t("det.updates")}
               onConfirm={() => runUpdateMut.mutate()}
               isPending={runUpdateMut.isPending}
@@ -622,140 +624,7 @@ export function ServerDetailPage() {
         <ServerOperationsTabs controller={controller} />
       </Tabs>
 
-      {/* Custom task dialog */}
-      <Dialog
-        open={taskDialog.open}
-        onOpenChange={(v) => {
-          if (!v) setTaskDialog({ open: false, task: null });
-        }}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>
-              {taskDialog.task ? t("det.editTask") : t("det.addTask")}
-            </DialogTitle>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1">
-              <Label>{t("det.taskName")}</Label>
-              <Input
-                value={taskForm.name}
-                onChange={(e) =>
-                  setTaskForm((f) => ({ ...f, name: e.target.value }))
-                }
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{t("det.taskType")}</Label>
-              <select
-                value={taskForm.type}
-                onChange={(e) =>
-                  setTaskForm((f) => ({ ...f, type: e.target.value }))
-                }
-                className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-              >
-                <option value="script">{t("det.taskTypeScript")}</option>
-                <option value="github">{t("det.taskTypeGithub")}</option>
-                <option value="trigger">{t("det.taskTypeTrigger")}</option>
-              </select>
-              <p className="text-xs text-muted-foreground">
-                {taskForm.type === "github"
-                  ? t("det.taskTypeGithubDesc")
-                  : taskForm.type === "trigger"
-                    ? t("det.taskTypeTriggerDesc")
-                    : t("det.taskTypeScriptDesc")}
-              </p>
-            </div>
-            {taskForm.type === "github" && (
-              <div className="space-y-1">
-                <Label>{t("det.taskGithubRepo")}</Label>
-                <Input
-                  value={taskForm.github_repo}
-                  onChange={(e) =>
-                    setTaskForm((f) => ({ ...f, github_repo: e.target.value }))
-                  }
-                  placeholder="owner/repo"
-                  className="font-mono"
-                />
-              </div>
-            )}
-            {taskForm.type === "trigger" && (
-              <div className="space-y-1">
-                <Label>{t("det.taskTriggerOutput")}</Label>
-                <Input
-                  value={taskForm.trigger_output}
-                  onChange={(e) =>
-                    setTaskForm((f) => ({
-                      ...f,
-                      trigger_output: e.target.value,
-                    }))
-                  }
-                  placeholder="AVAILABLE"
-                  className="font-mono"
-                />
-              </div>
-            )}
-            {taskForm.type === "script" && (
-              <div className="space-y-1">
-                <Label>{t("det.taskLatestCommand")}</Label>
-                <Input
-                  value={taskForm.latest_command}
-                  onChange={(e) =>
-                    setTaskForm((f) => ({
-                      ...f,
-                      latest_command: e.target.value,
-                    }))
-                  }
-                  className="font-mono"
-                />
-                <p className="text-xs text-muted-foreground">
-                  {t("det.taskLatestCommandHint")}
-                </p>
-              </div>
-            )}
-            <div className="space-y-1">
-              <Label>{t("det.taskCheckCommand")}</Label>
-              <Input
-                value={taskForm.check_command}
-                onChange={(e) =>
-                  setTaskForm((f) => ({ ...f, check_command: e.target.value }))
-                }
-                className="font-mono"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label>{t("det.taskUpdateCommand")}</Label>
-              <Input
-                value={taskForm.update_command}
-                onChange={(e) =>
-                  setTaskForm((f) => ({ ...f, update_command: e.target.value }))
-                }
-                className="font-mono"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="ghost"
-              onClick={() => setTaskDialog({ open: false, task: null })}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button
-              onClick={() => {
-                if (!taskForm.name.trim()) {
-                  showToast(t("det.taskNameRequired"), "error");
-                  return;
-                }
-                saveTaskMut.mutate();
-              }}
-              disabled={saveTaskMut.isPending}
-            >
-              {t("common.save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <CustomUpdateDialog controller={controller} />
 
       {/* Compose editor dialog */}
       <Dialog
@@ -773,10 +642,16 @@ export function ServerDetailPage() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
+            <p className="break-words text-sm">Target host: <strong>{server.name}</strong>{composeDialog.mode === "edit" && <><br /><span className="font-mono text-xs">{composeDialog.dir.replace(/\/$/, "")}/docker-compose.yml</span></>}</p>
+            <p className="text-sm text-muted-foreground">Save writes docker-compose.yml to this host after local YAML and basic structure validation. It does not start, restart or recreate containers. Use the stack's Start / apply changes action separately; this may recreate containers. Runtime checks cover environment variables, referenced files and Compose compatibility.</p>
+            {composeDialog.mode === "add" && <ComposeTemplateButton content={composeDialog.content} disabled={composeDialog.loading || saveComposeMut.isPending} onInsert={content => setComposeDialog(previous => previous.content.trim() ? previous : {...previous, content})} />}
+            <ComposeValidation hostId={id} content={composeDialog.content} disabled={composeDialog.loading || saveComposeMut.isPending} />
+            {saveComposeMut.isError && <p role="alert" className="text-sm text-destructive">{saveComposeMut.error.message}</p>}
             {composeDialog.mode === "add" && (
               <div className="space-y-1">
-                <Label>{t("det.composePath")}</Label>
+                <Label htmlFor="compose-directory">{t("det.composePath")}</Label>
                 <Input
+                  id="compose-directory"
                   value={composeDialog.dir}
                   onChange={(e) =>
                     setComposeDialog((prev) => ({
@@ -790,15 +665,22 @@ export function ServerDetailPage() {
               </div>
             )}
             <div className="space-y-1">
-              <Label>docker-compose.yml</Label>
+              <Label htmlFor="compose-content">docker-compose.yml</Label>
               {composeDialog.loading ? (
                 <div className="space-y-1 py-2">
                   <SkeletonRow cols={3} />
                   <SkeletonRow cols={3} />
                   <SkeletonRow cols={3} />
                 </div>
+              ) : composeDialog.loadError ? (
+                <div role="alert" className="space-y-2 rounded-md border p-3 text-sm">
+                  <p className="text-destructive">{composeDialog.loadError}</p>
+                  <p className="text-muted-foreground">The file was not loaded. Retry before editing or saving.</p>
+                  <Button type="button" variant="outline" size="sm" onClick={() => void openEditCompose(composeDialog.dir)}>Retry loading</Button>
+                </div>
               ) : (
                 <Textarea
+                  id="compose-content"
                   value={composeDialog.content}
                   onChange={(e) =>
                     setComposeDialog((prev) => ({
@@ -829,7 +711,7 @@ export function ServerDetailPage() {
                 }
                 saveComposeMut.mutate();
               }}
-              disabled={saveComposeMut.isPending || composeDialog.loading}
+              disabled={saveComposeMut.isPending || composeDialog.loading || Boolean(composeDialog.loadError)}
             >
               {t("common.save")}
             </Button>

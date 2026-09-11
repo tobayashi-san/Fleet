@@ -1,3 +1,5 @@
+const { updateCatalogAge } = require('../utils/update-catalog-age');
+const {agentReportStatus}=require('../utils/agent-report-status');
 const express = require('express');
 const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
@@ -28,7 +30,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
     const canViewDocker = can(perms, 'canViewDocker');
     const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
     const agentEnabled = db.settings.get('agent_enabled') === '1';
-    const canViewHistory = canViewUpdates || can(perms, 'canViewSchedules') || can(perms, 'canViewAudit');
+    const canViewHistory = canViewUpdates || can(perms, 'canViewServerHistory');
     const visibleServerIds = servers.map(server => server.id);
     const visibleAlerts = db.resourceAlerts.list({
       statuses: ['active'],
@@ -43,7 +45,8 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
 
     const serverStats = servers.map(s => {
       const info = db.serverInfo.get(s.id);
-      const updates = canViewUpdates ? (db.updatesCache.get(s.id) || []) : [];
+      const updatesMeta = canViewUpdates ? db.updatesCache.getWithMeta(s.id) : null;
+      const updates = updatesMeta?.updates || [];
       const containers = canViewDocker ? db.dockerContainers.getByServer(s.id) : [];
       const imageUpdatesMeta = canViewDocker && canViewUpdates ? db.dockerImageUpdatesCache.getWithMeta(s.id) : null;
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
@@ -63,17 +66,9 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       let agentLastSeen = null;
       if (agentCfg && agentCfg.mode && agentCfg.mode !== 'legacy') {
         agentMode = agentCfg.mode;
-        agentLastSeen = agentCfg.last_seen || null;
-        const intervalSec = Math.max(5, parseInt(agentCfg.interval, 10) || 30);
-        const seenMs = agentCfg.last_seen ? new Date(agentCfg.last_seen).getTime() : 0;
-        if (!seenMs) {
-          agentState = 'failed';
-        } else {
-          const ageMs = Date.now() - seenMs;
-          if (ageMs <= intervalSec * 3 * 1000) agentState = 'ok';
-          else if (ageMs <= intervalSec * 10 * 1000) agentState = 'warning';
-          else agentState = 'failed';
-        }
+        const report = agentReportStatus(agentCfg);
+        agentLastSeen = report.lastSeen;
+        agentState = report.health;
       }
 
       // A dashboard must be able to show why a custom desired state differs,
@@ -89,6 +84,8 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
           trigger_output: task.trigger_output,
           has_update: !!task.has_update,
           last_checked_at: task.last_checked_at,
+          last_attempted_at: task.last_attempted_at,
+          last_check_error: task.last_check_error,
         }))
         : undefined;
 
@@ -99,6 +96,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         updates,
         imageUpdates,
         customUpdatesCount,
+        customCheckFailures: canViewCustomUpdates ? db.customUpdateTasks.countCheckFailures(s.id) : 0,
         history,
         alerts,
         includeUpdates: canViewUpdates,
@@ -123,7 +121,9 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         load_avg: isOnline ? (info?.load_avg || null) : null,
         ...(canViewUpdates ? {
           reboot_required: !!info?.reboot_required,
-          updates_count: updates.filter(u => !u.phased).length,
+          updates_count: updatesMeta ? updates.filter(u => !u.phased).length : null,
+          updates_checked_at: updatesMeta?.updated_at || null,
+        updates_stale: updateCatalogAge(updatesMeta?.updated_at, db.settings.get('poll_updates_interval_min')).stale,
         } : {}),
         ...(canViewDocker ? {
           containers_running: containers.filter(c => c.state === 'running').length,
@@ -132,8 +132,9 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
         ...(canViewDocker && canViewUpdates ? {
           image_updates_count: imageUpdates === null ? null : imageUpdates.filter(r => r.status === 'update_available').length,
           image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
+        image_updates_stale: updateCatalogAge(imageUpdatesMeta?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360).stale,
         } : {}),
-        ...(canViewCustomUpdates ? { custom_updates_count: customUpdatesCount } : {}),
+        ...(canViewCustomUpdates ? { custom_updates_count: customUpdatesCount, custom_updates_stale: db.customUpdateTasks.getByServer(s.id).some(task => updateCatalogAge(task.last_checked_at, db.settings.get('poll_custom_updates_interval_min') || 360).stale) } : {}),
         ...(customUpdateTasks ? { custom_update_tasks: customUpdateTasks } : {}),
         info_cached_at: info?.updated_at || null,
         agent_mode: agentMode,
@@ -143,32 +144,24 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       };
     });
 
+    // A resource name is presentation, never an access-control identifier.
+    // Apply host scope before LIMIT so other hosts cannot displace the user's
+    // visible history. Dashboard summaries intentionally exclude log output.
+    const completeHostScope = Boolean(perms?.full || perms?.servers === 'all');
     const allRecentHistory = canViewHistory ? db.db.prepare(`
-      SELECT h.*, s.name as server_name
+      SELECT h.id, h.server_id, h.environment_id, h.action, h.status,
+             h.started_at, h.completed_at, h.triggered_by,
+             COALESCE(h.server_name_snapshot, s.name, h.server_id) as server_name,
+             CASE WHEN s.id IS NULL THEN 1 ELSE 0 END as target_deleted
       FROM update_history h
       LEFT JOIN servers s ON h.server_id = s.id
       WHERE h.environment_id = ?
+        AND (? = 1 OR h.server_id IN (SELECT value FROM json_each(?)))
       ORDER BY h.started_at DESC LIMIT 500
-    `).all(environmentId) : [];
+    `).all(environmentId, completeHostScope ? 1 : 0, JSON.stringify(servers.map(server => server.id))) : [];
 
-    const isServerRestricted = perms && !perms.full && perms.servers !== 'all' && perms.servers != null;
-    const allowedServerIds = new Set(servers.map(s => s.id));
-    const allowedServerNames = new Set(servers.map(s => s.name));
-
-    const recentHistory = allRecentHistory.filter(h => {
-      if (allowedServerIds.has(h.server_id)) return true;
-      if (allowedServerNames.has(h.server_id)) return true;
-      if (!isServerRestricted) return true;
-      return false;
-    }).map(h => ({
-      ...h,
-      server_name: h.server_name || (h.server_id === 'bulk_update' ? 'Bulk Update' : h.server_id),
-    })).slice(0, 8);
-    const failedOperations = allRecentHistory.filter(h => {
-      if (h.status !== 'failed') return false;
-      if (allowedServerIds.has(h.server_id) || allowedServerNames.has(h.server_id)) return true;
-      return !isServerRestricted;
-    }).length;
+    const recentHistory = allRecentHistory.slice(0, 8);
+    const failedOperations = allRecentHistory.filter(history => history.status === 'failed').length;
 
     res.json({
       summary: { total: servers.length, online, offline, unknown: servers.length - online - offline, rebootRequired, totalUpdates, failedOperations },

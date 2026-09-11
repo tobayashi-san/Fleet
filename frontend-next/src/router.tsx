@@ -1,6 +1,8 @@
+import { MfaEnrollmentPage } from '@/routes/mfa-enrollment';
 import { createRootRoute, createRoute, createRouter, Navigate, Outlet, redirect } from '@tanstack/react-router';
 import { lazy, Suspense, type ReactNode } from 'react';
 import { AppShell } from '@/components/layout/AppShell';
+import { InvitationPage } from '@/routes/invitation';
 import { LoginPage } from '@/routes/login';
 import { OnboardingPage } from '@/routes/onboarding';
 import { DashboardPage } from '@/routes/dashboard';
@@ -18,6 +20,7 @@ const DeploymentDetailPage = lazy(() => import('@/routes/deployment-detail').the
 const InfrastructureDetailPage = lazy(() => import('@/routes/infrastructure-detail').then(module => ({ default: module.InfrastructureDetailPage })));
 const InfrastructurePage = lazy(() => import('@/routes/infrastructure').then(module => ({ default: module.InfrastructurePage })));
 const ProxmoxVmDetailPage = lazy(() => import('@/routes/proxmox-vm-detail').then(module => ({ default: module.ProxmoxVmDetailPage })));
+const OperationExecutionPage = lazy(() => import('@/routes/operation-execution').then(module => ({ default: module.OperationExecutionPage })));
 const OperationsPage = lazy(() => import('@/routes/operations').then(module => ({ default: module.OperationsPage })));
 const NetworksPage = lazy(() => import('@/routes/networks').then(module => ({ default: module.NetworksPage })));
 const IpamSourcesPage = lazy(() => import('@/routes/ipam-sources').then(module => ({ default: module.IpamSourcesPage })));
@@ -32,6 +35,7 @@ const PermissionGate = ({ allow, children }: { allow: (profile: Profile) => bool
 };
 
 interface ServersSearch {
+  severity?: 'critical' | 'warning';
   status?: 'online' | 'offline' | 'unknown';
   attention?: boolean;
   updates?: boolean;
@@ -58,6 +62,10 @@ const loginRoute = createRoute({
   path: '/login',
   component: LoginPage,
 });
+
+const mfaEnrollmentRoute = createRoute({getParentRoute: () => rootRoute, path: '/mfa-enrollment', component: MfaEnrollmentPage});
+
+const invitationRoute = createRoute({ getParentRoute: () => rootRoute, path: '/invite', component: InvitationPage });
 
 const onboardingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -100,6 +108,7 @@ const serversRoute    = createRoute({
   path: '/servers',
   validateSearch: (search: Record<string, unknown>): ServersSearch => {
     const result: ServersSearch = {};
+    if (search.severity === 'critical' || search.severity === 'warning') result.severity = search.severity;
     if (search.status === 'online' || search.status === 'offline' || search.status === 'unknown') result.status = search.status;
     if (search.attention === true || search.attention === 'true') result.attention = true;
     if (search.updates === true || search.updates === 'true') result.updates = true;
@@ -142,6 +151,7 @@ const operationsRoute = createRoute({
   },
   component: () => <PermissionGate allow={canAccessOperations}><LazyPage><OperationsPage /></LazyPage></PermissionGate>,
 });
+const operationExecutionRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/operations/executions/$id', validateSearch: (search: Record<string, unknown>): { environment?: string } => typeof search.environment === 'string' && search.environment.trim() && search.environment.length <= 200 ? { environment: search.environment.trim() } : {}, component: () => <PermissionGate allow={canAccessOperations}><LazyPage><OperationExecutionPage /></LazyPage></PermissionGate> });
 const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworksPage /></LazyPage></PermissionGate> });
 const ipamSourcesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/sources', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><IpamSourcesPage /></LazyPage></PermissionGate> });
 const networkDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/$id', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworkDetailPage /></LazyPage></PermissionGate> });
@@ -155,6 +165,8 @@ const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, pat
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
+  invitationRoute,
+  mfaEnrollmentRoute,
   onboardingRoute,
   protectedLayout.addChildren([
     dashboardRoute,
@@ -169,6 +181,7 @@ const routeTree = rootRoute.addChildren([
     infrastructureNodeRoute,
     infrastructureVmRoute,
     operationsRoute,
+    operationExecutionRoute,
     networksRoute,
     ipamSourcesRoute,
     networkDetailRoute,

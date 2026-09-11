@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import CodeMirror from '@uiw/react-codemirror';
+import { EditorView } from '@codemirror/view';
 import { yaml, yamlLanguage } from '@codemirror/lang-yaml';
 import { autocompletion, type CompletionContext } from '@codemirror/autocomplete';
 
@@ -32,11 +33,13 @@ export function PlaybookEditor({
   onChange,
   onValidityChange,
   dark,
+  readOnly = false,
 }: {
   value: string;
   onChange: (value: string) => void;
   onValidityChange: (error: string | null) => void;
   dark: boolean;
+  readOnly?: boolean;
 }) {
   const { t } = useTranslation();
   const error = useMemo(() => {
@@ -53,8 +56,11 @@ export function PlaybookEditor({
       <div className="overflow-hidden rounded-md border">
         <CodeMirror
           value={value}
+          readOnly={readOnly}
+          editable={!readOnly}
+          aria-label={readOnly ? "Playbook YAML, read-only" : "Playbook YAML editor"}
           onChange={onChange}
-          extensions={[yaml(), autocompletion({ override: [ansibleModuleCompletion] })]}
+          extensions={[EditorView.contentAttributes.of({ "aria-label": readOnly ? "Playbook YAML, read-only" : "Playbook YAML editor", "aria-readonly": String(readOnly) }), yaml(), autocompletion({ override: [ansibleModuleCompletion] })]}
           theme={dark ? 'dark' : 'light'}
           height="clamp(320px, calc(100vh - 28rem), 520px)"
           basicSetup={{ lineNumbers: true, foldGutter: true, highlightActiveLine: true, autocompletion: false }}

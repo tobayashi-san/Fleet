@@ -1,0 +1,185 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - button "Back":
+  - navigation "Object path":
+    - link "Managed Hosts":
+      - /url: /servers
+    - generic: /
+    - generic: hr01-media-hms
+  - heading "hr01-media-hms" [level=1]
+  - generic: Online
+  - paragraph: 10.77.40.20 · hr01-media-hms
+  - button "Actions":
+  - tablist "Host sections":
+    - tab "Overview"
+    - tab "System"
+    - tab "Workloads" [active] [selected]
+    - tab "Updates"
+    - tab "Activity"
+    - tab "Notes"
+    - tab "Access"
+  - tabpanel "Workloads":
+    - heading "Containers" [level=3]:
+      - text: Containers
+    - button "Refresh":
+    - button "Add Stack":
+      - text: Add Stack
+    - button "Check for Updates":
+      - text: Check for Updates
+    - table:
+      - rowgroup:
+        - row "Name Image Status CPU Memory Check for Updates Actions":
+          - columnheader
+          - columnheader "Name"
+          - columnheader "Image"
+          - columnheader "Status"
+          - columnheader "CPU"
+          - columnheader "Memory"
+          - columnheader "Check for Updates"
+          - columnheader "Actions"
+      - rowgroup:
+        - row "media_manager /opt/media_manager Actions for media_manager":
+          - cell "media_manager /opt/media_manager":
+            - strong: media_manager
+            - generic: /opt/media_manager
+          - cell "Actions for media_manager":
+            - button "Actions for media_manager":
+        - row "media-manager media_manager-media-manager Up 47 hours (healthy) — — Cannot check Show logs Restart":
+          - cell
+          - cell "media-manager"
+          - cell "media_manager-media-manager"
+          - cell "Up 47 hours (healthy)"
+          - cell "—"
+          - cell "—"
+          - cell "Cannot check"
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "media-manager-updater media_manager-media-manager-updater Up 47 hours — — Cannot check Show logs Restart":
+          - cell
+          - cell "media-manager-updater"
+          - cell "media_manager-media-manager-updater"
+          - cell "Up 47 hours"
+          - cell "—"
+          - cell "—"
+          - cell "Cannot check"
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "hms /root/hms Actions for hms":
+          - cell "hms /root/hms":
+            - strong: hms
+            - generic: /root/hms
+          - cell "Actions for hms":
+            - button "Actions for hms":
+        - row "prowlarr lscr.io/linuxserver/prowlarr:latest Up 4 seconds — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "prowlarr"
+          - cell "lscr.io/linuxserver/prowlarr:latest"
+          - cell "Up 4 seconds"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "radarr lscr.io/linuxserver/radarr:latest Up 47 hours — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "radarr"
+          - cell "lscr.io/linuxserver/radarr:latest"
+          - cell "Up 47 hours"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "sabnzbd lscr.io/linuxserver/sabnzbd:latest Up 4 seconds — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "sabnzbd"
+          - cell "lscr.io/linuxserver/sabnzbd:latest"
+          - cell "Up 4 seconds"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "seerr ghcr.io/seerr-team/seerr:latest Up 47 hours — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "seerr"
+          - cell "ghcr.io/seerr-team/seerr:latest"
+          - cell "Up 47 hours"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "sonarr lscr.io/linuxserver/sonarr:latest Up 47 hours — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "sonarr"
+          - cell "lscr.io/linuxserver/sonarr:latest"
+          - cell "Up 47 hours"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":
+        - row "tautulli ghcr.io/tautulli/tautulli:latest Up 47 hours (healthy) — — ✓ Up to date Show logs Restart":
+          - cell
+          - cell "tautulli"
+          - cell "ghcr.io/tautulli/tautulli:latest"
+          - cell "Up 47 hours (healthy)"
+          - cell "—"
+          - cell "—"
+          - cell "✓ Up to date":
+            - generic: ✓ Up to date
+          - cell "Show logs Restart":
+            - button "Show logs":
+            - button "Restart":

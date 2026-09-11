@@ -1,0 +1,96 @@
+- banner:
+  - generic: SHIPYARD
+  - button:
+  - button:
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button:
+    - text: Default environment
+  - button:
+  - button:
+  - button:
+- complementary:
+  - button [pressed]:
+    - text: Operations
+  - button:
+    - text: Infrastructure
+  - navigation:
+    - link:
+      - /url: /
+      - generic: Dashboard
+    - link:
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link:
+      - /url: /servers
+      - generic: Managed Hosts
+    - link:
+      - /url: /deployments
+      - generic: Managed VMs
+    - link:
+      - /url: /playbooks
+      - generic: Playbooks
+  - link:
+    - /url: /settings
+    - generic: Administration
+  - link:
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button:
+- main:
+  - heading [level=1]: Operations
+  - paragraph: Activity, maintenance planning, and security-relevant changes for the selected environment.
+  - button:
+    - text: Refresh
+  - navigation:
+    - link:
+      - /url: /operations?section=tasks
+      - text: Activity
+    - link:
+      - /url: /operations?section=maintenance
+      - text: Maintenance
+    - link:
+      - /url: /operations?section=audit
+      - text: Audit
+  - heading [level=3]:
+    - text: Maintenance windows
+  - paragraph: Scheduled work is documented per environment and remains traceable in the audit log.
+  - button:
+    - text: Add maintenance window
+  - heading [level=3]: No maintenance windows scheduled
+  - paragraph: Create a time window before performing scheduled changes or restarts.
+- dialog "Schedule maintenance window":
+  - heading "Schedule maintenance window" [level=2]
+  - paragraph: During this period, teams can clearly identify scheduled work and its impact.
+  - text: Name
+  - textbox "Name" [active]:
+    - /placeholder: e.g. Proxmox maintenance
+  - text: Start
+  - textbox "Start":
+    - /placeholder: DD/MM/YYYY, HH:mm
+    - text: 10/09/2026, 01:20
+  - text: End
+  - textbox "End":
+    - /placeholder: DD/MM/YYYY, HH:mm
+    - text: 10/09/2026, 02:20
+  - paragraph: Enter DD/MM/YYYY, HH:mm · 24-hour time · Europe/Zurich
+  - text: Affected resources
+  - textbox "Affected resources":
+    - /placeholder: e.g. Cluster A, hosts tagged production
+  - text: Owner
+  - textbox "Owner":
+    - /placeholder: Team or responsible person
+  - text: Timezone
+  - combobox "Timezone":
+    - option "Europe/Zurich" [selected]
+    - option "UTC"
+    - option "Europe/London"
+    - option "America/New_York"
+  - generic: Description (optional)
+  - textbox "Description (optional)":
+    - /placeholder: Affected platforms, reason, and expected impact
+  - button "Cancel"
+  - button "Schedule maintenance window":
+    - text: Schedule maintenance window
+  - button "Close dialog":
+    - generic: Close

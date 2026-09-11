@@ -59,7 +59,11 @@ function hslToRgb(value: string): [number, number, number] {
 }
 
 function luminance(value: string): number {
-  return hslToRgb(value)
+  return rgbLuminance(hslToRgb(value));
+}
+
+function rgbLuminance(rgb: number[]): number {
+  return rgb
     .map((channel) =>
       channel <= 0.04045
         ? channel / 12.92
@@ -92,6 +96,10 @@ describe("console theme contrast", () => {
         ["primary-foreground", "primary"],
         ["secondary-foreground", "secondary"],
         ["muted-foreground", "background"],
+        ["muted-foreground", "muted"],
+        ["muted-foreground", "card"],
+        ["primary", "background"],
+        ["primary", "card"],
         ["accent-foreground", "accent"],
         ["destructive-foreground", "destructive"],
         ["success", "background"],
@@ -105,6 +113,16 @@ describe("console theme contrast", () => {
           contrast(tokens[foreground], tokens[background]),
           `${foreground} on ${background}`,
         ).toBeGreaterThanOrEqual(4.5);
+      }
+
+      for (const [tone, opacity] of [['warning',0.13],['destructive',0.12],['info',0.12]] as const) {
+        for (const surface of ['background','card']) {
+          const foreground = hslToRgb(tokens[tone]);
+          const base = hslToRgb(tokens[surface]);
+          const blended = foreground.map((channel,index)=>channel*opacity+base[index]*(1-opacity));
+          const light = luminance(tokens[tone]); const background = rgbLuminance(blended);
+          expect((Math.max(light,background)+0.05)/(Math.min(light,background)+0.05), `${tone} badge on ${surface}`).toBeGreaterThanOrEqual(4.5);
+        }
       }
 
       expect(contrast(tokens.ring, tokens.background), "focus ring").toBeGreaterThanOrEqual(3);

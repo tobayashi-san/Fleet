@@ -1,3 +1,6 @@
+import {StorageUsageHistory} from './StorageUsageHistory';
+import {datastoreCapacityState, datastoreStatus, datastoreContent, filterDatastores, interfaceAddress} from './detail-model';
+import {guestAuditPresentation} from '@/lib/audit-display';
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -31,7 +34,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useUi } from "@/lib/store";
-import { asArray } from "@/lib/utils";
+import { asArray, formatDateTime } from "@/lib/utils";
 import { showToast } from "@/lib/toast";
 import {
   type AuditTask,
@@ -78,12 +81,12 @@ export function ObjectInventoryPreview({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            {isNode ? "Virtual machines" : "Inventory"}
+            {isNode ? "VMs and containers" : "Inventory"}
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {isNode
-              ? `${running} running · ${stopped} stopped · ${managed} managed in Shipyard`
-              : `${cluster.nodes.length} nodes · ${cluster.vms.length} virtual machines · ${managed} managed in Shipyard`}
+              ? `${running} running · ${stopped} stopped · ${managed} with host operations`
+              : `${cluster.nodes.length} nodes · ${cluster.vms.length} VMs and containers · ${managed} with host operations`}
           </p>
         </div>
         <Button
@@ -92,14 +95,14 @@ export function ObjectInventoryPreview({
           variant="outline"
           onClick={onOpenInventory}
         >
-          {isNode ? "Show all virtual machines" : "Show all nodes"}
+          {isNode ? "Show all VMs and containers" : "Show all nodes"}
         </Button>
       </CardHeader>
       <CardContent className="p-0">
         {preview.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
             {isNode
-              ? "No virtual machines on this node."
+              ? "No VMs and containers on this node."
               : "No nodes in platform inventory."}
           </div>
         ) : isNode ? (
@@ -138,8 +141,8 @@ export function ObjectInventoryPreview({
                     </span>
                     <span>
                       {vm.fleet_server_id
-                        ? "Managed in Shipyard"
-                        : "Inventory only"}
+                        ? "Host operations enabled"
+                        : "Host operations not enabled"}
                     </span>
                   </div>
                 </Link>
@@ -195,13 +198,14 @@ export function ObjectInventoryPreview({
                           <Link
                             to="/servers/$id"
                             params={{ id: vm.fleet_server_id }}
+                            aria-label={`Open host operations for ${vm.name} (${guestKind(vm)} ${vm.vm_id})`}
                             className="text-xs font-medium text-primary hover:underline"
                           >
-                            Host
+                            Open host
                           </Link>
                         ) : (
                           <span className="text-xs text-muted-foreground">
-                            Not adopted
+                            Host operations not enabled
                           </span>
                         )}
                       </td>
@@ -245,7 +249,7 @@ export function ObjectInventoryPreview({
                         </b>
                       </span>
                       <span>
-                        Virtual machines{" "}
+                        VMs and containers{" "}
                         <b className="font-mono text-foreground">{vmCount}</b>
                       </span>
                       <span>
@@ -270,7 +274,7 @@ export function ObjectInventoryPreview({
                     <th>Status</th>
                     <th>CPU</th>
                     <th>Memory</th>
-                    <th>Virtual machines</th>
+                    <th>VMs and containers</th>
                     <th>Uptime</th>
                   </tr>
                 </thead>
@@ -318,7 +322,7 @@ export function ObjectInventoryPreview({
         )}
         {isNode && vms.length > preview.length && (
           <div className="border-t px-4 py-2 text-xs text-muted-foreground">
-            {vms.length - preview.length} more virtual machines in the complete inventory.
+            {vms.length - preview.length} more VMs and containers in the complete inventory.
           </div>
         )}
         {!isNode && cluster.nodes.length > preview.length && (
@@ -334,7 +338,8 @@ export function ObjectInventoryPreview({
 
 export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
   const stores = node.datastores ?? [];
-  const bridges = node.bridges ?? [];
+  const [includeInterfaces, setIncludeInterfaces] = useState(false);
+  const bridges = includeInterfaces ? node.network_interfaces ?? node.bridges ?? [] : node.bridges ?? [];
   const running = vms.filter((vm) => vm.status === "running").length;
   const stopped = vms.filter((vm) => vm.status === "stopped").length;
   // Proxmox returns directory, ISO and ZFS storage in no useful presentation
@@ -357,7 +362,7 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
         <CardContent className="p-0">
           <dl className="console-properties">
             <Property
-              label="CPU-Modell"
+              label="CPU model"
               value={node.cpu_model || "Not reported"}
             />
             <Property
@@ -377,8 +382,8 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
               mono
             />
             <Property
-              label="ZFS-Datastores"
-              value={`${stores.length} available`}
+              label="Datastores"
+              value={node.datastores_status === "available" ? `${stores.length} reported` : "Not reported"}
             />
             <Property
               label="Primary datastore"
@@ -416,10 +421,10 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
             <Property label="Node" value={statusLabel(node.status)} />
             <Property label="Uptime" value={uptime(node.uptime)} mono />
             <Property
-              label="Virtual machines running"
+              label="VMs and containers running"
               value={`${running} / ${vms.length}`}
             />
-            <Property label="Virtual machines stopped" value={String(stopped)} />
+            <Property label="VMs and containers stopped" value={String(stopped)} />
             <Property
               label="Snapshots"
               value="Manage on the individual VM"
@@ -431,17 +436,25 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
         <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Server className="h-4 w-4" />
-            Network & bridges
+            Network interfaces
           </CardTitle>
           <p className="mt-1 text-xs text-muted-foreground">
-            Proxmox bridges relevant to VM networks. Physical NICs are
-            intentionally hidden.
+            Bridges are shown by default. Include other interfaces to inspect physical NICs, bonds and VLAN interfaces reported by Proxmox.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            {node.network_status === 'available' ? 'Network inventory loaded' : node.network_status === 'unavailable' ? 'Network inventory unavailable — refresh and check Proxmox connectivity and API network permissions.' : 'Network collection status not recorded — refresh inventory.'}
+            {node.network_checked_at && <> · Last attempt {formatDateTime(node.network_checked_at)}</>}
           </p>
         </CardHeader>
         <CardContent className="p-0">
+          <label className="flex items-center gap-2 border-b p-3 text-sm">
+            <input type="checkbox" aria-label="Include other interfaces" checked={includeInterfaces} onChange={event => setIncludeInterfaces(event.target.checked)} disabled={!node.network_interfaces}/>
+            Include other interfaces
+            <span className="ml-auto text-xs text-muted-foreground">{bridges.length} shown</span>
+          </label>
           {bridges.length === 0 ? (
             <div className="px-4 py-5 text-sm text-muted-foreground">
-              No active or configured Proxmox bridges reported.
+              {node.network_status === 'available' ? includeInterfaces ? 'No network interfaces reported.' : 'No configured Proxmox bridges reported.' : 'Bridge inventory could not be verified.'}
             </div>
           ) : (
             <>
@@ -456,24 +469,24 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
                         tone={bridge.active ? "success" : "muted"}
                         dot
                       >
-                        {bridge.active ? "Active" : "Inactive"}
+                        {bridge.active === true ? "Active" : bridge.active === false ? "Inactive" : "Not reported"}
                       </StatusBadge>
                     </div>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <span className="text-muted-foreground">
                         IPv4{" "}
                         <b className="ml-1 font-mono text-foreground">
-                          {bridge.address
-                            ? `${bridge.address}${bridge.cidr !== null ? `/${bridge.cidr}` : ""}`
-                            : "—"}
+                          {interfaceAddress(bridge.address,bridge.cidr)}
                         </b>
                       </span>
                       <span className="text-muted-foreground">
-                        Gateway{" "}
+                        IPv4 gateway{" "}
                         <b className="ml-1 font-mono text-foreground">
                           {bridge.gateway || "—"}
                         </b>
                       </span>
+                      <span className="text-muted-foreground">IPv6 <b className="ml-1 break-all font-mono text-foreground">{interfaceAddress(bridge.address6,bridge.cidr6,6)}</b></span>
+                      <span className="text-muted-foreground">IPv6 gateway <b className="ml-1 break-all font-mono text-foreground">{bridge.gateway6 || 'Not reported'}</b></span>
                     </div>
                   </div>
                 ))}
@@ -485,10 +498,10 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
                 >
                   <thead>
                     <tr>
-                      <th>Bridge</th>
+                      <th>Interface</th>
                       <th>Status</th>
                       <th>Type</th>
-                      <th>IPv4 / CIDR</th>
+                      <th>IP addresses / CIDR</th>
                       <th>Gateway</th>
                     </tr>
                   </thead>
@@ -501,19 +514,19 @@ export function NodeConfiguration({ node, vms }: { node: Node; vms: Vm[] }) {
                             tone={bridge.active ? "success" : "muted"}
                             dot
                           >
-                            {bridge.active ? "Active" : "Inactive"}
+                            {bridge.active === true ? "Active" : bridge.active === false ? "Inactive" : "Not reported"}
                           </StatusBadge>
                         </td>
                         <td className="font-mono text-xs">
-                          {bridge.type || "bridge"}
+                          {bridge.type || "Not reported"}
                         </td>
-                        <td className="font-mono text-xs">
-                          {bridge.address
-                            ? `${bridge.address}${bridge.cidr !== null ? `/${bridge.cidr}` : ""}`
-                            : "—"}
+                        <td className="break-all font-mono text-xs">
+                          IPv4: {interfaceAddress(bridge.address,bridge.cidr)}
+                          <div className="mt-1 text-muted-foreground">IPv6: {interfaceAddress(bridge.address6,bridge.cidr6,6)}</div>
                         </td>
-                        <td className="font-mono text-xs">
-                          {bridge.gateway || "—"}
+                        <td className="break-all font-mono text-xs">
+                          IPv4: {bridge.gateway || "Not reported"}
+                          <div className="mt-1 text-muted-foreground">IPv6: {bridge.gateway6 || 'Not reported'}</div>
                         </td>
                       </tr>
                     ))}
@@ -549,10 +562,10 @@ export function RecentObjectTasks({ tasks = [], loading = false, error, onRetry 
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <ClipboardList className="h-4 w-4" />
-            Recent tasks
+            Audit events
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            The most recent recorded changes to this object.
+            Preview of this audit page. Open Tasks for every entry on the page; use the controls below for older events. Legacy entries remain in Operations → Audit Log.
           </p>
         </div>
         <span className="font-mono text-xs text-muted-foreground">
@@ -566,7 +579,7 @@ export function RecentObjectTasks({ tasks = [], loading = false, error, onRetry 
           <QueryErrorState compact error={error} title="Object tasks could not be loaded" onRetry={onRetry} />
         ) : recent.length === 0 ? (
           <div className="px-4 py-5 text-sm text-muted-foreground">
-            No tasks have been recorded for this object yet.
+            No linked events on this page. Legacy entries without a verified identity remain in Operations → Audit Log.
           </div>
         ) : (
           <div className="divide-y">
@@ -590,16 +603,10 @@ export function RecentObjectTasks({ tasks = [], loading = false, error, onRetry 
                   {task.detail || "No further details"}
                 </p>
                 <StatusBadge
-                  tone={
-                    task.success === false || task.success === 0
-                      ? "danger"
-                      : "success"
-                  }
+                  tone={guestAuditPresentation(task).tone}
                   dot
                 >
-                  {task.success === false || task.success === 0
-                    ? "Failed"
-                    : "Successful"}
+                  {guestAuditPresentation(task).outcome}
                 </StatusBadge>
               </div>
             ))}
@@ -633,8 +640,11 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
       <CardHeader className="border-b py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <ClipboardList className="h-4 w-4" />
-          Recent tasks
+          Audit events
         </CardTitle>
+        <p className="text-xs text-muted-foreground">
+          Recorded events for this object. Use the audit page controls below for older entries. Legacy entries without a verified identity remain in Operations → Audit Log.
+        </p>
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
@@ -643,7 +653,7 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
           <QueryErrorState compact error={error} title="Object tasks could not be loaded" onRetry={onRetry} />
         ) : tasks.length === 0 ? (
           <div className="p-7 text-center text-sm text-muted-foreground">
-            No tasks have been recorded for this object yet.
+            No linked events on this page. Legacy entries without a verified identity remain in Operations → Audit Log.
           </div>
         ) : (
           <>
@@ -658,15 +668,9 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
                       {taskLabel(task)}
                     </span>
                     <StatusBadge
-                      tone={
-                        task.success === false || task.success === 0
-                          ? "danger"
-                          : "success"
-                      }
+                      tone={guestAuditPresentation(task).tone}
                     >
-                      {task.success === false || task.success === 0
-                        ? "Failed"
-                        : "Successful"}
+                      {guestAuditPresentation(task).outcome}
                     </StatusBadge>
                   </div>
                   <p className="line-clamp-2 text-xs text-muted-foreground">
@@ -710,15 +714,9 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
                       <td>{task.user || "System"}</td>
                       <td>
                         <StatusBadge
-                          tone={
-                            task.success === false || task.success === 0
-                              ? "danger"
-                              : "success"
-                          }
+                          tone={guestAuditPresentation(task).tone}
                         >
-                          {task.success === false || task.success === 0
-                            ? "Failed"
-                            : "Successful"}
+                          {guestAuditPresentation(task).outcome}
                         </StatusBadge>
                       </td>
                     </tr>
@@ -736,95 +734,129 @@ export function ObjectTasksCard({ tasks = [], loading = false, error, onRetry }:
 export function DatastoresCard({
   stores,
   emptyText,
+  sources = [],
 }: {
   stores: Datastore[];
   emptyText: string;
+  sources?: Array<{name: string; datastores_status?: "available" | "unavailable"; datastores_checked_at?: string}>;
 }) {
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  const [historyRange, setHistoryRange] = useState<'recent' | 'week'>('recent');
+  const visibleStores = filterDatastores(stores, search, status);
+  const emptyMessage = stores.length && !visibleStores.length ? "No datastores match these filters." : sources.some(source => source.datastores_status !== "available") ? "Storage inventory is incomplete. Check the collection status above." : emptyText;
   return (
     <Card>
       <CardHeader className="border-b py-3">
         <CardTitle className="flex items-center gap-2 text-base">
           <HardDrive className="h-4 w-4" />
-          ZFS-Datastores
+          Datastores
         </CardTitle>
         <p className="mt-0.5 text-xs text-muted-foreground">
-          Active ZFS pools available to virtual machines.
+          Datastores reported by Proxmox, including inactive stores and directory, LVM and ZFS backends. Stores may share underlying capacity. History records successful inventory refreshes in five-minute buckets, removes observations older than seven days on refresh and offers recent observations or seven-day hourly means; gaps have no samples.
         </p>
+        {sources.map(source => <p key={source.name} className="text-xs text-muted-foreground">
+          <span className="font-medium">{source.name}</span>{' · '}
+          {source.datastores_status === 'available' ? 'Storage inventory loaded' : source.datastores_status === 'unavailable' ? 'Storage inventory unavailable — refresh and check Proxmox connectivity and API storage permissions.' : 'Storage collection status not recorded — refresh inventory.'}
+          {source.datastores_checked_at && <> · Last attempt {formatDateTime(source.datastores_checked_at)}</>}
+        </p>)}
       </CardHeader>
       <CardContent className="p-0">
+        <div className="flex flex-wrap items-center gap-2 border-b p-3">
+          <Input aria-label="Search datastores" placeholder="Search name, node, backend or content…" value={search} onChange={event => setSearch(event.target.value)} className="min-w-0 flex-1 sm:min-w-64" />
+          <select aria-label="Datastore status" value={status} onChange={event => setStatus(event.target.value)} className="h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="all">All statuses</option>
+            {['Active', 'Inactive', 'Disabled', 'Status not reported'].map(value => <option key={value} value={value}>{value}</option>)}
+          </select>
+          <select aria-label="Storage history range" value={historyRange} onChange={event => setHistoryRange(event.target.value === 'week' ? 'week' : 'recent')} className="h-9 rounded-md border bg-background px-2 text-sm">
+            <option value="recent">Last 48 observations</option>
+            <option value="week">7 days · hourly means</option>
+          </select>
+          {(search || status !== 'all') && <Button variant="ghost" size="sm" onClick={() => {setSearch('');setStatus('all');}}>Clear filters</Button>}
+          <span className="text-xs text-muted-foreground" aria-live="polite">{visibleStores.length} of {stores.length} datastores</span>
+        </div>
         <div className="divide-y md:hidden">
-          {stores.length ? (
-            stores.map((store) => (
+          {visibleStores.length ? (
+            visibleStores.map((store) => (
               <div
                 key={`${store.node_name}-${store.id}`}
                 className="space-y-3 p-4"
               >
                 <div className="flex items-center justify-between gap-3">
                   <div>
-                    <div className="font-mono font-medium">{store.id}</div>
+                    <div className="whitespace-nowrap font-mono font-medium">{store.id}</div>
                     <div className="mt-0.5 font-mono text-xs text-muted-foreground">
                       {store.node_name || "—"}
                       {store.type ? ` · ${store.type}` : ""}
                     </div>
                   </div>
                 </div>
-                <CapacityCell used={store.used} total={store.total} />
+                <p className="text-xs text-muted-foreground">{datastoreStatus(store)} · {store.shared === true ? "Shared across nodes" : store.shared === false ? "Node-local" : "Sharing not reported"}</p>
+                <p className="text-xs text-muted-foreground">{datastoreContent(store)}</p>
+                <StorageUsageHistory store={store} range={historyRange}/>
+                <CapacityCell used={datastoreCapacityState(store) === "unknown" ? null : store.used} total={store.total} />
               </div>
             ))
           ) : (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              {emptyText}
+              {emptyMessage}
             </div>
           )}
         </div>
         <div className="table-scroll hidden md:block">
           <table
             data-density="compact"
-            className="w-full min-w-[740px] text-sm"
+            className="w-full min-w-[1180px] text-sm"
           >
             <thead>
               <tr>
                 <th>Name</th>
                 <th>Node</th>
                 <th>Type</th>
+                <th>Status / sharing</th>
+                <th>Content</th>
                 <th>Used</th>
                 <th>Free</th>
                 <th>Capacity</th>
                 <th>Usage</th>
+                <th>Observed history</th>
               </tr>
             </thead>
             <tbody>
-              {stores.length ? (
-                stores.map((store) => (
+              {visibleStores.length ? (
+                visibleStores.map((store) => (
                   <tr key={`${store.node_name}-${store.id}`}>
-                    <td className="font-mono font-medium">{store.id}</td>
-                    <td className="font-mono text-xs">
+                    <td className="whitespace-nowrap font-mono font-medium">{store.id}</td>
+                    <td className="whitespace-nowrap font-mono text-xs">
                       {store.node_name || "—"}
                     </td>
-                    <td className="font-mono text-xs">
-                      {store.type || "zfspool"}
+                    <td className="whitespace-nowrap font-mono text-xs">
+                      {store.type || "Not reported"}
                     </td>
-                    <td className="font-mono text-xs">{bytes(store.used)}</td>
-                    <td className="font-mono text-xs">
-                      {Number.isFinite(store.available)
+                    <td className="text-xs">{datastoreStatus(store)}<div className="mt-1 text-muted-foreground">{store.shared === true ? "Shared across nodes" : store.shared === false ? "Node-local" : "Sharing not reported"}</div></td>
+                    <td className="max-w-48 text-xs text-muted-foreground">{datastoreContent(store)}</td>
+                    <td className="whitespace-nowrap font-mono text-xs">{datastoreCapacityState(store) === "unknown" ? "Not reported" : bytes(store.used)}</td>
+                    <td className="whitespace-nowrap font-mono text-xs">
+                      {datastoreCapacityState(store) !== "unknown" && Number.isFinite(store.available)
                         ? bytes(store.available || 0)
                         : "—"}
                     </td>
-                    <td className="font-mono text-xs">{bytes(store.total)}</td>
-                    <td className="font-mono text-xs tabular-nums">
-                      {store.total > 0
+                    <td className="whitespace-nowrap font-mono text-xs">{bytes(store.total)}</td>
+                    <td className="whitespace-nowrap font-mono text-xs tabular-nums">
+                      {datastoreCapacityState(store) !== "unknown"
                         ? `${Math.round((store.used / store.total) * 100)} %`
                         : "—"}
                     </td>
+                    <td><StorageUsageHistory store={store} range={historyRange}/></td>
                   </tr>
                 ))
               ) : (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={10}
                     className="py-7 text-center text-muted-foreground"
                   >
-                    {emptyText}
+                    {emptyMessage}
                   </td>
                 </tr>
               )}
@@ -906,10 +938,10 @@ export function VmTable({
         </OverflowItem>
       </OverflowMenu>
     ) : (
-      <span className="text-xs text-muted-foreground">Not adopted</span>
+      <span className="text-xs text-muted-foreground">Host operations not enabled</span>
     );
-  const name = (vm: Vm) =>
-    cluster.connections?.[0]?.id ? (
+  const name = (vm: Vm) => (
+    <div className="min-w-0 space-y-1">
       <Link
         className="min-w-0 truncate font-medium hover:text-primary hover:underline"
         to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
@@ -921,8 +953,12 @@ export function VmTable({
       >
         {vm.name}
       </Link>
-    ) : (
-      <span className="min-w-0 truncate font-medium">{vm.name}</span>
+      {vm.fleet_server_id ? (
+        <Link to="/servers/$id" params={{ id: vm.fleet_server_id }} className="block text-xs text-primary hover:underline" aria-label={`Open host operations for ${vm.name} (${guestKind(vm)} ${vm.vm_id})`}>
+          Host operations enabled · Open host
+        </Link>
+      ) : <span className="block text-xs text-muted-foreground">Inventory · Host operations not enabled</span>}
+    </div>
     );
   return (
     <Card>
@@ -930,18 +966,18 @@ export function VmTable({
         <div>
           <CardTitle className="flex items-center gap-2 text-base">
             <Boxes className="h-4 w-4" />
-            Virtual machines
+            VMs and containers
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
-            Explicitly select inventory VMs and CTs and adopt them into Shipyard with their
-            access details.
+            {vms.length} VMs and containers in this inventory · {selectable.length} without host operations.
+            Select resources to configure their host access.
           </p>
         </div>
         {canImportVm && selectable.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 rounded-md border bg-background px-2 py-1.5">
             <Button size="sm" onClick={() => onImportVms(selectable)}>
               <ServerCog />
-              Import all orphaned virtual machines
+              Enable host operations for all ({selectable.length})
             </Button>
             {selectedVms.length > 0 && <>
             <span className="text-xs text-muted-foreground">
@@ -949,7 +985,7 @@ export function VmTable({
             </span>
             <Button size="sm" variant="outline" onClick={() => onImportVms(selectedVms)}>
               <CheckSquare2 />
-              Adopt into Shipyard
+              Enable host operations ({selectedVms.length})
             </Button>
             <Button
               size="icon"
@@ -993,7 +1029,7 @@ export function VmTable({
                       {name(vm)}
                     </div>
                     <StatusBadge tone={tone(vm.status)} dot>
-                      {vm.status}
+                      {statusLabel(vm.status)}
                     </StatusBadge>
                   </div>
                   <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-muted-foreground">
@@ -1034,7 +1070,7 @@ export function VmTable({
             })
           ) : (
             <div className="p-6 text-center text-sm text-muted-foreground">
-              No virtual machines on this node.
+              No VMs and containers on this node.
             </div>
           )}
         </div>
@@ -1049,7 +1085,7 @@ export function VmTable({
                   <th className="w-11">
                     <input
                       type="checkbox"
-                      aria-label="Select all adoptable virtual machines"
+                      aria-label="Select all adoptable VMs and containers"
                       checked={allSelected}
                       ref={(input) => {
                         if (input) input.indeterminate = someSelected;
@@ -1098,7 +1134,7 @@ export function VmTable({
                       <td className="font-mono text-xs">{vm.vm_id}</td>
                       <td>
                         <StatusBadge tone={tone(vm.status)} dot>
-                          {vm.status}
+                          {statusLabel(vm.status)}
                         </StatusBadge>
                       </td>
                       <td className="font-mono tabular-nums">
@@ -1120,7 +1156,7 @@ export function VmTable({
                     colSpan={canImportVm ? 10 : 9}
                     className="py-7 text-center text-muted-foreground"
                   >
-                    No virtual machines on this node.
+                    No VMs and containers on this node.
                   </td>
                 </tr>
               )}
@@ -1132,182 +1168,4 @@ export function VmTable({
   );
 }
 
-export function BulkImportProxmoxVmsDialog({
-  connectionId,
-  environmentId,
-  vms,
-  open,
-  onOpenChange,
-}: {
-  connectionId: string;
-  environmentId: string;
-  vms: Vm[];
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const queryClient = useQueryClient();
-  const [sshUser, setSshUser] = useState("root");
-  const [sshPort, setSshPort] = useState("22");
-  const [groupId, setGroupId] = useState("");
-  const groupsQuery = useQuery({
-    queryKey: ["server-groups", environmentId],
-    queryFn: () =>
-      apiFetch<Folder[]>(
-        `/servers/groups?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
-    enabled: open,
-    staleTime: 30_000,
-  });
-  const groups = asArray<Folder>(groupsQuery.data).filter(
-    (group) => String(group.environment_id || environmentId) === environmentId,
-  );
-  const importMutation = useMutation({
-    mutationFn: async () => {
-      const results = await Promise.allSettled(
-        vms.map((vm) =>
-          apiFetch(
-            `/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/import-vm`,
-            {
-              method: "POST",
-              body: {
-                name: vm.name,
-                node_name: vm.node_name,
-                vm_id: vm.vm_id,
-                guest_type: vm.guest_type || "qemu",
-                ssh_user: sshUser,
-                ssh_port: Number(sshPort),
-                group_id: groupId || undefined,
-              },
-            },
-          ),
-        ),
-      );
-      return {
-        succeeded: results.filter((result) => result.status === "fulfilled")
-          .length,
-        failed: results.filter((result) => result.status === "rejected"),
-      };
-    },
-    onSuccess: ({ succeeded, failed }) => {
-      void queryClient.invalidateQueries({ queryKey: ["servers"] });
-      void queryClient.invalidateQueries({
-        queryKey: ["opentofu", "infrastructure", environmentId],
-      });
-      if (failed.length)
-        showToast(
-          `${succeeded} virtual machines adopted; ${failed.length} could not be adopted. Check the VM IP address and duplicate hosts.`,
-          "warning",
-        );
-      else
-        showToast(
-          `${succeeded} virtual machines were adopted as hosts.`,
-          "success",
-        );
-      onOpenChange(false);
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
-            <ServerCog className="h-5 w-5" />
-            Adopt {vms.length} virtual machines into Shipyard
-          </DialogTitle>
-          <DialogDescription>
-            The VMs and CTs remain unchanged in Proxmox. Shipyard only creates
-            hosts and reads their reported IPv4 addresses.
-          </DialogDescription>
-        </DialogHeader>
-        <div className="rounded-md border bg-muted/20 p-3">
-          <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Selection
-          </div>
-          <div className="mt-2 max-h-32 space-y-1 overflow-y-auto font-mono text-sm">
-            {vms.map((vm) => (
-              <div key={`${vm.node_name}:${vm.vm_id}`}>
-                {vm.node_name} / {vm.vm_id} · {vm.name}
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-import-ssh-user">SSH user</Label>
-            <Input
-              id="bulk-import-ssh-user"
-              required
-              value={sshUser}
-              onChange={(event) => setSshUser(event.target.value)}
-              placeholder="ubuntu"
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="bulk-import-ssh-port">SSH port</Label>
-            <Input
-              id="bulk-import-ssh-port"
-              required
-              inputMode="numeric"
-              value={sshPort}
-              onChange={(event) => setSshPort(event.target.value)}
-            />
-          </div>
-        </div>
-        {groupsQuery.isError && (
-          <QueryErrorState
-            compact
-            className="py-3"
-            error={groupsQuery.error}
-            title="Host folders could not be loaded"
-            onRetry={() => void groupsQuery.refetch()}
-          />
-        )}
-        <div className="space-y-1.5">
-          <Label htmlFor="bulk-import-folder">Folder</Label>
-          <select
-            id="bulk-import-folder"
-            value={groupId}
-            onChange={(event) => setGroupId(event.target.value)}
-            disabled={groupsQuery.isLoading || groupsQuery.isError}
-            className="h-8 w-full rounded-sm border bg-background px-2.5 text-[13px]"
-          >
-            <option value="">No folder</option>
-            {groups.map((group) => (
-              <option key={group.id} value={group.id}>
-                {group.name}
-              </option>
-            ))}
-          </select>
-        </div>
-        <p className="rounded-md border border-amber-500/25 bg-amber-500/5 p-3 text-xs text-muted-foreground">
-          Virtual machines without a reported IPv4 address are skipped. QEMU VMs require
-          an enabled Guest Agent for automatic address detection.
-          They can later be adopted individually with a manually entered IP.
-        </p>
-        <DialogFooter>
-          <Button
-            type="button"
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-          >
-            Cancel
-          </Button>
-          <Button
-            onClick={() => importMutation.mutate()}
-            disabled={
-              importMutation.isPending || !sshUser.trim() || !Number(sshPort)
-            }
-          >
-            {importMutation.isPending ? (
-              <RefreshCw className="animate-spin" />
-            ) : (
-              <ServerCog />
-            )}
-            Adopt selection
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
+export { BulkImportProxmoxVmsDialog } from './BulkImportProxmoxVmsDialog';

@@ -86,6 +86,11 @@ export function LoginPage() {
         ? await api.authSetup(username || 'admin', password)
         : await api.authLogin(username, password);
 
+      if ('requiresMfaEnrollment' in res && res.requiresMfaEnrollment && res.token) {
+        setToken(res.token);
+        await navigate({to:'/mfa-enrollment'});
+        return;
+      }
       if ('requires2FA' in res && res.requires2FA && res.tempToken) {
         // MFA is intentionally a real second page step. Password managers often only
         // inspect OTP fields on page load, not when React inserts them after login.

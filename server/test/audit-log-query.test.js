@@ -102,3 +102,14 @@ test('audit change focus keeps user, security, and configuration events', () => 
   ]);
   assert.equal(filterAuditFocus(rows, 'all').length, rows.length);
 });
+
+test('full-text search covers metadata with literal wildcards and environment isolation',t=>{
+ db.auditLog.write('file.test','server=old-host progress=50% file=build_a','192.0.2.7',true,'search-actor');
+ t.after(()=>db.db.prepare("DELETE FROM audit_log WHERE action='file.test'").run());
+ for(const q of ['old-host','50%','build_a','192.0.2.7','search-actor']) {
+  assert.equal(db.auditLog.query({q}).length,1);assert.equal(db.auditLog.count({q}),1);
+ }
+ assert.equal(db.auditLog.query({q:'buildXa'}).length,0);
+ assert.equal(db.auditLog.query({q:'old-host',environmentId:'other'}).length,0);
+ assert.equal(db.auditLog.query({q:'old-host',success:'0'}).length,0);
+});

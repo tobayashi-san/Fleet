@@ -1,3 +1,4 @@
+const { canAccessWorkflowHistory } = require('../utils/workflow-history-scope');
 const { WebSocketServer } = require('ws');
 const db = require('../db');
 const scheduler = require('../services/scheduler');
@@ -75,7 +76,7 @@ function canReceiveEventType(data, permissions) {
   if (type.startsWith('tofu_') || data.workspaceId) {
     return can(permissions, 'canViewDeployments') || can(permissions, 'canManageDeployments');
   }
-  if (type.startsWith('ansible_')) return can(permissions, 'canViewPlaybooks');
+  if (type.startsWith('ansible_')) return can(permissions, 'canViewSchedules');
   if (type.startsWith('schedule_') || data.scheduleId) return can(permissions, 'canViewSchedules');
   if (type.startsWith('bulk_update_')) return can(permissions, 'canViewUpdates');
   if (type.startsWith('resource_alert')) return can(permissions, 'canViewServers');
@@ -117,6 +118,17 @@ function canReceive(data, meta) {
   // environment checks above are therefore the complete authorization rule.
   const type = String(data.type || '');
   if (type === 'cache_updated' || type.startsWith('tofu_')) return true;
+
+  if (type.startsWith('ansible_') || type.startsWith('schedule_')) {
+    const runId = data.runId || data.historyId;
+    const workflow = runId ? db.scheduleHistory.getById(runId) : null;
+    if (workflow) {
+      if (String(workflow.environment_id || 'default') !== meta.environmentId) return false;
+      return canAccessWorkflowHistory(meta.perms, workflow, db.servers.getAll(meta.environmentId));
+    }
+    // Never infer execution output access from a current host name or partial target match.
+    if (type.startsWith('ansible_') || runId) return false;
+  }
 
   const serverIds = getVisibleServerIds(data, meta.environmentId);
   if (serverIds === null) {

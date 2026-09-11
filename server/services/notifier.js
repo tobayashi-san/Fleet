@@ -2,6 +2,11 @@
  * Unified notification service — sends webhooks and/or SMTP email.
  * Call notify(title, message, success) anywhere in the app.
  */
+const { createHash } = require('crypto');
+const { coveredByMaintenance } = require('../utils/notification-maintenance');
+const { currentEnvironment } = require('../utils/request-environment');
+const { createNotificationDeduper } = require('../utils/notification-dedupe');
+const dedupe = createNotificationDeduper();
 const https = require('https');
 const http = require('http');
 const dns = require('dns').promises;
@@ -67,7 +72,7 @@ function isDiscordWebhookUrl(parsedUrl) {
 
 // ── Webhook ────────────────────────────────────────────────────────────────
 
-async function sendWebhook(title, message, success) {
+async function performWebhook(title, message, success) {
   const url = db.settings.get('webhook_url');
   if (!url) return;
 
@@ -166,7 +171,7 @@ async function sendWebhook(title, message, success) {
 let _smtpTransporter = null;
 let _smtpConfigHash  = '';
 
-async function sendEmail(title, message, success) {
+async function performEmail(title, message, success) {
   const host = db.settings.get('smtp_host');
   const to   = db.settings.get('smtp_to');
   if (!host || !to) return;
@@ -202,22 +207,63 @@ async function sendEmail(title, message, success) {
 
   function escHtml(s) { return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   const icon = success ? '✅' : '❌';
-  await transporter.sendMail({
+  const delivery = await transporter.sendMail({
     from,
     to,
     subject: `${icon} ${title}`,
     text: `${title}\n\n${message}`,
     html: `<p><strong>${icon} ${escHtml(title)}</strong></p><p>${escHtml(message).replace(/\n/g, '<br>')}</p>`,
   });
+  const accepted = Array.isArray(delivery.accepted) ? delivery.accepted.length : 0;
+  const rejected = Array.isArray(delivery.rejected) ? delivery.rejected.length : 0;
+  return { ok: accepted > 0 && rejected === 0, partial: accepted > 0 && rejected > 0 };
+}
+
+// Only delivery metadata is retained: never message bodies, credentials or webhook paths.
+async function recordedDelivery(channel, title, send) {
+  const configured = channel === 'webhook' ? db.settings.get('webhook_url') : db.settings.get('smtp_host');
+  if (!configured || (channel === 'smtp' && !db.settings.get('smtp_to'))) return;
+  let destination = 'Configured endpoint';
+  try { destination = channel === 'webhook' ? new URL(configured).hostname : new URL(`smtp://${configured}`).hostname; } catch {}
+  const started = Date.now();
+  let result;
+  let failed = false;
+  try {
+    result = await send();
+    failed = result?.ok === false;
+    return result;
+  } catch (error) {
+    failed = true;
+    throw error;
+  } finally {
+    try {
+      db.db.transaction(() => {
+        db.db.prepare('INSERT INTO notification_deliveries (id, channel, destination, event_title, status, status_code, duration_ms) VALUES (?, ?, ?, ?, ?, ?, ?)')
+          .run(db.uuidv4(), channel, destination, String(title || '').slice(0, 200), result?.reason === 'maintenance' ? 'maintenance' : result?.suppressed ? 'suppressed' : result?.partial ? 'partial' : failed ? 'failed' : 'accepted', Number.isInteger(result?.status) ? result.status : null, Date.now() - started);
+        db.db.prepare("DELETE FROM notification_deliveries WHERE created_at < datetime('now', '-30 days') OR id NOT IN (SELECT id FROM notification_deliveries ORDER BY created_at DESC, rowid DESC LIMIT 1000)").run();
+      })();
+    } catch (error) { log.warn({ error: error.code }, 'Delivery history could not be recorded'); }
+  }
+}
+function sendWebhook(title, message, success) {
+  return recordedDelivery('webhook', title, () => performWebhook(title, message, success));
+}
+function sendEmail(title, message, success) {
+  return recordedDelivery('smtp', title, () => performEmail(title, message, success));
 }
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
-async function notify(title, message, success) {
-  await Promise.allSettled([
-    sendWebhook(title, message, success),
-    sendEmail(title, message, success),
-  ]);
+async function notify(title, message, success, options = {}) {
+  const minutes = Number(db.settings.get('notify_dedupe_minutes') || 0);
+  const environmentId = options.environmentId || currentEnvironment();
+  const inMaintenance = db.settings.get('notify_suppress_maintenance') === '1' && coveredByMaintenance(db.db, environmentId, options.serverIds);
+  const windowMs = Number.isInteger(minutes) && minutes >= 0 && minutes <= 60 ? minutes * 60000 : 0;
+  await Promise.allSettled(['webhook', 'smtp'].map(channel => {
+    const keys = channel === 'webhook' ? ['webhook_url', 'webhook_secret'] : ['smtp_host', 'smtp_port', 'smtp_user', 'smtp_pass', 'smtp_from', 'smtp_to'];
+    const key = environmentId ? createHash('sha256').update(JSON.stringify([environmentId, Array.isArray(options.serverIds) ? [...options.serverIds].sort() : null, channel, windowMs, keys.map(name => db.settings.get(name)), title, message, success])).digest('hex') : null;
+    return recordedDelivery(channel, title, () => inMaintenance ? {ok:true,suppressed:true,reason:'maintenance'} : dedupe(key, windowMs, () => channel === 'webhook' ? performWebhook(title, message, success) : performEmail(title, message, success)));
+  }));
 }
 
 module.exports = { notify, sendWebhook, sendEmail };

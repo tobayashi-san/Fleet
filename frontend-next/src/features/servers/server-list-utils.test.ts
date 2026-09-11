@@ -13,6 +13,11 @@ describe('server list helpers', () => {
     expect(server).toMatchObject({ name: 'api, primary', ip_address: '10.0.0.2', tags: ['prod'], ssh_port: 22 });
   });
 
+  it('preserves invalid CSV ports for API validation instead of changing their meaning', () => {
+    expect(parseCsvServers('name,ip_address,ssh_port\nbad,192.0.2.1,22junk')[0].ssh_port).toBe('22junk');
+    expect(parseCsvServers('name,ip_address,ssh_port\nbad,192.0.2.1,0')[0].ssh_port).toBe(0);
+  });
+
   it('prevents cycles while building group trees', () => {
     const tree = buildGroupTree([
       { id: 'root', name: 'Root' },

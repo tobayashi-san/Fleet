@@ -1115,36 +1115,38 @@ router.post("/subnets", guard("canEditNetworks"), (req, res) => {
     const role = String(body.role || "")
       .trim()
       .slice(0, 60);
-    db.db
-      .prepare(
-        "INSERT INTO ipam_subnets (id, environment_id, name, cidr, gateway, dhcp_start, dhcp_end, dns_servers, vlan_id, bridge, description, status, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-      )
-      .run(
-        id,
-        environmentId,
-        name,
-        parsed.cidr,
-        gateway,
-        dhcpStart,
-        dhcpEnd,
-        JSON.stringify(parseDns(body.dns_servers)),
-        vlan,
-        String(body.bridge || "")
-          .trim()
-          .slice(0, 80),
-        String(body.description || "")
-          .trim()
-          .slice(0, 500),
-        status,
-        role,
+    db.db.transaction(() => {
+      db.db
+        .prepare(
+          "INSERT INTO ipam_subnets (id, environment_id, name, cidr, gateway, dhcp_start, dhcp_end, dns_servers, vlan_id, bridge, description, status, role) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        )
+        .run(
+          id,
+          environmentId,
+          name,
+          parsed.cidr,
+          gateway,
+          dhcpStart,
+          dhcpEnd,
+          JSON.stringify(parseDns(body.dns_servers)),
+          vlan,
+          String(body.bridge || "")
+            .trim()
+            .slice(0, 80),
+          String(body.description || "")
+            .trim()
+            .slice(0, 500),
+          status,
+          role,
+        );
+      db.auditLog.write(
+        "ipam.subnet_create",
+        `subnet=${name} cidr=${parsed.cidr}`,
+        req.ip,
+        true,
+        req.user?.username,
       );
-    db.auditLog.write(
-      "ipam.subnet_create",
-      `subnet=${name} cidr=${parsed.cidr}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    })();
     res
       .status(201)
       .json(db.db.prepare("SELECT * FROM ipam_subnets WHERE id = ?").get(id));
@@ -1204,31 +1206,33 @@ router.put("/subnets/:id", guard("canEditNetworks"), (req, res) => {
       allSubnets,
     );
     const status = validateChoice(body.status, SUBNET_STATUSES, subnet.status || "active");
-    db.db.prepare(`
-      UPDATE ipam_subnets
-      SET name = ?, gateway = ?, dhcp_start = ?, dhcp_end = ?, dns_servers = ?, vlan_id = ?, bridge = ?,
-          description = ?, status = ?, role = ?
-      WHERE id = ?
-    `).run(
-      name,
-      gateway,
-      dhcpStart,
-      dhcpEnd,
-      JSON.stringify(dnsServers),
-      vlan,
-      String(body.bridge ?? subnet.bridge ?? "").trim().slice(0, 80),
-      String(body.description ?? subnet.description ?? "").trim().slice(0, 500),
-      status,
-      String(body.role ?? subnet.role ?? "").trim().slice(0, 60),
-      subnet.id,
-    );
-    db.auditLog.write(
-      "ipam.subnet_update",
-      `subnet=${subnet.cidr} name=${name}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    db.db.transaction(() => {
+      db.db.prepare(`
+        UPDATE ipam_subnets
+        SET name = ?, gateway = ?, dhcp_start = ?, dhcp_end = ?, dns_servers = ?, vlan_id = ?, bridge = ?,
+            description = ?, status = ?, role = ?
+        WHERE id = ?
+      `).run(
+        name,
+        gateway,
+        dhcpStart,
+        dhcpEnd,
+        JSON.stringify(dnsServers),
+        vlan,
+        String(body.bridge ?? subnet.bridge ?? "").trim().slice(0, 80),
+        String(body.description ?? subnet.description ?? "").trim().slice(0, 500),
+        status,
+        String(body.role ?? subnet.role ?? "").trim().slice(0, 60),
+        subnet.id,
+      );
+      db.auditLog.write(
+        "ipam.subnet_update",
+        `subnet=${subnet.cidr} name=${name}`,
+        req.ip,
+        true,
+        req.user?.username,
+      );
+    })();
     const updated = db.db.prepare("SELECT * FROM ipam_subnets WHERE id = ?").get(subnet.id);
     const all = db.db.prepare("SELECT * FROM ipam_subnets WHERE environment_id = ?").all(subnet.environment_id);
     res.json(enrichSubnet(updated, all));
@@ -1259,6 +1263,13 @@ router.delete("/subnets/:id", guard("canEditNetworks"), (req, res) => {
     db.db.prepare("DELETE FROM ipam_reservations WHERE subnet_id = ?").run(subnet.id);
     db.db.prepare("DELETE FROM ipam_ip_ranges WHERE subnet_id = ?").run(subnet.id);
     db.db.prepare("DELETE FROM ipam_subnets WHERE id = ?").run(subnet.id);
+    db.auditLog.write(
+      "ipam.subnet_delete",
+      `subnet=${subnet.cidr} reservations=${counts.reservations} ranges=${counts.ranges}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
   });
   try {
     transaction();
@@ -1267,13 +1278,6 @@ router.delete("/subnets/:id", guard("canEditNetworks"), (req, res) => {
       error: error.message || "The prefix could not be deleted.",
     });
   }
-  db.auditLog.write(
-    "ipam.subnet_delete",
-    `subnet=${subnet.cidr} reservations=${counts.reservations} ranges=${counts.ranges}`,
-    req.ip,
-    true,
-    req.user?.username,
-  );
   res.json({ success: true, deleted: counts });
 });
 
@@ -1288,16 +1292,18 @@ router.patch("/subnets/:id/status", guard("canEditNetworks"), (req, res) => {
   if (!guardEnvironment(req, res, subnet.environment_id)) return;
   try {
     const status = validateChoice(req.body?.status, SUBNET_STATUSES);
-    db.db
-      .prepare("UPDATE ipam_subnets SET status = ? WHERE id = ?")
-      .run(status, subnet.id);
-    db.auditLog.write(
-      "ipam.subnet_status_update",
-      `subnet=${subnet.cidr} status=${status}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    db.db.transaction(() => {
+      db.db
+        .prepare("UPDATE ipam_subnets SET status = ? WHERE id = ?")
+        .run(status, subnet.id);
+      db.auditLog.write(
+        "ipam.subnet_status_update",
+        `subnet=${subnet.cidr} status=${status}`,
+        req.ip,
+        true,
+        req.user?.username,
+      );
+    })();
     res.json(
       db.db.prepare("SELECT * FROM ipam_subnets WHERE id = ?").get(subnet.id),
     );
@@ -1620,33 +1626,35 @@ router.post(
       const serverId = String(req.body?.server_id || "").trim() || null;
       const serverError = assignedServerError(subnet.environment_id, serverId);
       if (serverError) return res.status(400).json({ error: serverError });
-      db.db
-        .prepare(
-          "INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          id,
-          subnet.id,
-          address,
-          String(req.body?.hostname || "")
-            .trim()
-            .slice(0, 100),
-          serverId,
-          parseMac(req.body?.mac_address),
-          status,
-          role,
-          String(req.body?.description || "")
-            .trim()
-            .slice(0, 500),
-          "manual",
+      db.db.transaction(() => {
+        db.db
+          .prepare(
+            "INSERT INTO ipam_reservations (id, subnet_id, address, hostname, server_id, mac_address, status, role, description, source_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            id,
+            subnet.id,
+            address,
+            String(req.body?.hostname || "")
+              .trim()
+              .slice(0, 100),
+            serverId,
+            parseMac(req.body?.mac_address),
+            status,
+            role,
+            String(req.body?.description || "")
+              .trim()
+              .slice(0, 500),
+            "manual",
+          );
+        db.auditLog.write(
+          "ipam.reservation_create",
+          `subnet=${subnet.cidr} address=${address}`,
+          req.ip,
+          true,
+          req.user?.username,
         );
-      db.auditLog.write(
-        "ipam.reservation_create",
-        `subnet=${subnet.cidr} address=${address}`,
-        req.ip,
-        true,
-        req.user?.username,
-      );
+      })();
       res
         .status(201)
         .json(
@@ -1735,31 +1743,33 @@ router.put("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     const serverId = String(req.body?.server_id || "").trim() || null;
     const serverError = assignedServerError(subnet.environment_id, serverId);
     if (serverError) return res.status(400).json({ error: serverError });
-    db.db
-      .prepare(
-        "UPDATE ipam_reservations SET address = ?, hostname = ?, server_id = ?, mac_address = ?, status = ?, role = ?, description = ? WHERE id = ?",
-      )
-      .run(
-        address,
-        String(req.body?.hostname || "")
-          .trim()
-          .slice(0, 100),
-        serverId,
-        parseMac(req.body?.mac_address),
-        status,
-        role,
-        String(req.body?.description || "")
-          .trim()
-          .slice(0, 500),
-        reservation.id,
+    db.db.transaction(() => {
+      db.db
+        .prepare(
+          "UPDATE ipam_reservations SET address = ?, hostname = ?, server_id = ?, mac_address = ?, status = ?, role = ?, description = ? WHERE id = ?",
+        )
+        .run(
+          address,
+          String(req.body?.hostname || "")
+            .trim()
+            .slice(0, 100),
+          serverId,
+          parseMac(req.body?.mac_address),
+          status,
+          role,
+          String(req.body?.description || "")
+            .trim()
+            .slice(0, 500),
+          reservation.id,
+        );
+      db.auditLog.write(
+        "ipam.reservation_update",
+        `subnet=${subnet.cidr} address=${address}`,
+        req.ip,
+        true,
+        req.user?.username,
       );
-    db.auditLog.write(
-      "ipam.reservation_update",
-      `subnet=${subnet.cidr} address=${address}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    })();
     res.json(
       withEffectiveReservationStatus(
         db.db
@@ -1797,25 +1807,27 @@ router.patch("/reservations/:id/device-name", guard("canEditNetworks"), (req, re
   try {
     const macAddress = parseMac(reservation.mac_address);
     const name = String(req.body?.name || "").trim().slice(0, 100);
-    if (name) {
-      db.db.prepare(`
-        INSERT INTO ipam_device_names (environment_id, mac_address, name)
-        VALUES (?, ?, ?)
-        ON CONFLICT(environment_id, mac_address) DO UPDATE SET
-          name = excluded.name, updated_at = datetime('now')
-      `).run(reservation.environment_id, macAddress, name);
-    } else {
-      db.db.prepare(
-        "DELETE FROM ipam_device_names WHERE environment_id = ? AND mac_address = ?",
-      ).run(reservation.environment_id, macAddress);
-    }
-    db.auditLog.write(
-      "ipam.device_name_update",
-      `subnet=${reservation.cidr} address=${reservation.address} mac=${macAddress} name=${name || "removed"}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    db.db.transaction(() => {
+      if (name) {
+        db.db.prepare(`
+          INSERT INTO ipam_device_names (environment_id, mac_address, name)
+          VALUES (?, ?, ?)
+          ON CONFLICT(environment_id, mac_address) DO UPDATE SET
+            name = excluded.name, updated_at = datetime('now')
+        `).run(reservation.environment_id, macAddress, name);
+      } else {
+        db.db.prepare(
+          "DELETE FROM ipam_device_names WHERE environment_id = ? AND mac_address = ?",
+        ).run(reservation.environment_id, macAddress);
+      }
+      db.auditLog.write(
+        "ipam.device_name_update",
+        `subnet=${reservation.cidr} address=${reservation.address} mac=${macAddress} name=${name || "removed"}`,
+        req.ip,
+        true,
+        req.user?.username,
+      );
+    })();
     res.json({ mac_address: macAddress, device_name: name });
   } catch (error) {
     res.status(400).json({
@@ -1898,28 +1910,30 @@ router.post(
         "reserved",
       );
       const role = validateChoice(req.body?.role, ADDRESS_ROLES, "");
-      db.db
-        .prepare(
-          "INSERT INTO ipam_ip_ranges (id, subnet_id, start_address, end_address, status, role, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        )
-        .run(
-          db.uuidv4(),
-          subnet.id,
-          toIpv4(start),
-          toIpv4(end),
-          status,
-          role,
-          String(req.body?.description || "")
-            .trim()
-            .slice(0, 500),
+      db.db.transaction(() => {
+        db.db
+          .prepare(
+            "INSERT INTO ipam_ip_ranges (id, subnet_id, start_address, end_address, status, role, description) VALUES (?, ?, ?, ?, ?, ?, ?)",
+          )
+          .run(
+            db.uuidv4(),
+            subnet.id,
+            toIpv4(start),
+            toIpv4(end),
+            status,
+            role,
+            String(req.body?.description || "")
+              .trim()
+              .slice(0, 500),
+          );
+        db.auditLog.write(
+          "ipam.reservation_range_create",
+          `subnet=${subnet.cidr} start=${toIpv4(start)} end=${toIpv4(end)}`,
+          req.ip,
+          true,
+          req.user?.username,
         );
-      db.auditLog.write(
-        "ipam.reservation_range_create",
-        `subnet=${subnet.cidr} start=${toIpv4(start)} end=${toIpv4(end)}`,
-        req.ip,
-        true,
-        req.user?.username,
-      );
+      })();
       res.status(201).json({ success: true, count });
     } catch (error) {
       res
@@ -1944,18 +1958,21 @@ router.delete("/reservations/:id", guard("canEditNetworks"), (req, res) => {
     return res.status(409).json({
       error: "Synchronized addresses can only be removed through their source.",
     });
-  const result = db.db
-    .prepare("DELETE FROM ipam_reservations WHERE id = ?")
-    .run(req.params.id);
+  const result = db.db.transaction(() => {
+    const result = db.db
+      .prepare("DELETE FROM ipam_reservations WHERE id = ?")
+      .run(req.params.id);
+    if (result.changes) db.auditLog.write(
+      "ipam.reservation_delete",
+      `subnet=${reservation.cidr} address=${reservation.address} source=${reservation.source_type || "manual"} hostname=${reservation.hostname || "-"}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
+    return result;
+  })();
   if (!result.changes)
     return res.status(404).json({ error: "Reservation not found." });
-  db.auditLog.write(
-    "ipam.reservation_delete",
-    `subnet=${reservation.cidr} address=${reservation.address} source=${reservation.source_type || "manual"} hostname=${reservation.hostname || "-"}`,
-    req.ip,
-    true,
-    req.user?.username,
-  );
   res.json({ success: true });
 });
 
@@ -1968,18 +1985,21 @@ router.delete("/ranges/:id", guard("canEditNetworks"), (req, res) => {
   if (!range)
     return res.status(404).json({ error: "IP range not found." });
   if (!guardEnvironment(req, res, range.environment_id)) return;
-  const result = db.db
-    .prepare("DELETE FROM ipam_ip_ranges WHERE id = ?")
-    .run(req.params.id);
+  const result = db.db.transaction(() => {
+    const result = db.db
+      .prepare("DELETE FROM ipam_ip_ranges WHERE id = ?")
+      .run(req.params.id);
+    if (result.changes) db.auditLog.write(
+      "ipam.reservation_range_delete",
+      `subnet=${range.cidr} start=${range.start_address} end=${range.end_address} description=${range.description || "-"}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
+    return result;
+  })();
   if (!result.changes)
     return res.status(404).json({ error: "IP range not found." });
-  db.auditLog.write(
-    "ipam.reservation_range_delete",
-    `subnet=${range.cidr} start=${range.start_address} end=${range.end_address} description=${range.description || "-"}`,
-    req.ip,
-    true,
-    req.user?.username,
-  );
   res.json({ success: true });
 });
 
@@ -2038,37 +2058,40 @@ router.post("/sources", guard("canEditNetworks"), (req, res) => {
       throw new Error(
         "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
       );
-    db.db
-      .prepare(
-        `INSERT INTO ipam_sync_sources (id, environment_id, type, name, endpoint, api_token, site, path, insecure, enabled, auto_sync, sync_interval_min)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        id,
-        environmentId,
-        type,
-        name,
-        endpoint.toString().replace(/\/$/, ""),
-        encryptedToken,
-        String(body.site || "default")
-          .trim()
-          .slice(0, 80),
-        path.slice(0, 300),
-        body.insecure === true ? 1 : 0,
-        body.enabled === false ? 0 : 1,
-        body.auto_sync === false ? 0 : 1,
-        syncIntervalMinutes(body.sync_interval_min),
+    const source = db.db.transaction(() => {
+      db.db
+        .prepare(
+          `INSERT INTO ipam_sync_sources (id, environment_id, type, name, endpoint, api_token, site, path, insecure, enabled, auto_sync, sync_interval_min)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          id,
+          environmentId,
+          type,
+          name,
+          endpoint.toString().replace(/\/$/, ""),
+          encryptedToken,
+          String(body.site || "default")
+            .trim()
+            .slice(0, 80),
+          path.slice(0, 300),
+          body.insecure === true ? 1 : 0,
+          body.enabled === false ? 0 : 1,
+          body.auto_sync === false ? 0 : 1,
+          syncIntervalMinutes(body.sync_interval_min),
+        );
+      const source = db.db
+        .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
+        .get(id);
+      db.auditLog.write(
+        "ipam.source_create",
+        `source=${name} type=${type}`,
+        req.ip,
+        true,
+        req.user?.username,
       );
-    const source = db.db
-      .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
-      .get(id);
-    db.auditLog.write(
-      "ipam.source_create",
-      `source=${name} type=${type}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+      return source;
+    })();
     res.status(201).json(sourceSummary(source));
   } catch (error) {
     res
@@ -2108,42 +2131,45 @@ router.put("/sources/:id", guard("canEditNetworks"), (req, res) => {
       throw new Error(
         "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
       );
-    db.db
-      .prepare(
-        `UPDATE ipam_sync_sources SET type = ?, name = ?, endpoint = ?, api_token = ?, site = ?, path = ?, insecure = ?, enabled = ?, auto_sync = ?, sync_interval_min = ?, updated_at = datetime('now') WHERE id = ?`,
-      )
-      .run(
-        type,
-        name,
-        endpoint.toString().replace(/\/$/, ""),
-        nextToken,
-        String(body.site ?? source.site)
-          .trim()
-          .slice(0, 80),
-        path.slice(0, 300),
-        body.insecure === undefined ? source.insecure : body.insecure ? 1 : 0,
-        body.enabled === undefined ? source.enabled : body.enabled ? 1 : 0,
-        body.auto_sync === undefined
-          ? (source.auto_sync ?? 1)
-          : body.auto_sync
-            ? 1
-            : 0,
-        syncIntervalMinutes(
-          body.sync_interval_min,
-          syncIntervalMinutes(source.sync_interval_min),
-        ),
-        source.id,
+    const updated = db.db.transaction(() => {
+      db.db
+        .prepare(
+          `UPDATE ipam_sync_sources SET type = ?, name = ?, endpoint = ?, api_token = ?, site = ?, path = ?, insecure = ?, enabled = ?, auto_sync = ?, sync_interval_min = ?, updated_at = datetime('now') WHERE id = ?`,
+        )
+        .run(
+          type,
+          name,
+          endpoint.toString().replace(/\/$/, ""),
+          nextToken,
+          String(body.site ?? source.site)
+            .trim()
+            .slice(0, 80),
+          path.slice(0, 300),
+          body.insecure === undefined ? source.insecure : body.insecure ? 1 : 0,
+          body.enabled === undefined ? source.enabled : body.enabled ? 1 : 0,
+          body.auto_sync === undefined
+            ? (source.auto_sync ?? 1)
+            : body.auto_sync
+              ? 1
+              : 0,
+          syncIntervalMinutes(
+            body.sync_interval_min,
+            syncIntervalMinutes(source.sync_interval_min),
+          ),
+          source.id,
+        );
+      const updated = db.db
+        .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
+        .get(source.id);
+      db.auditLog.write(
+        "ipam.source_update",
+        `source=${source.name}`,
+        req.ip,
+        true,
+        req.user?.username,
       );
-    const updated = db.db
-      .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")
-      .get(source.id);
-    db.auditLog.write(
-      "ipam.source_update",
-      `source=${source.name}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+      return updated;
+    })();
     res.json(sourceSummary(updated));
   } catch (error) {
     res
@@ -2174,16 +2200,16 @@ router.delete("/sources/:id", guard("canEditNetworks"), (req, res) => {
     for (const reservationId of affected)
       reservations += reconcileSourceReservation(reservationId, source.id);
     db.db.prepare("DELETE FROM ipam_sync_sources WHERE id = ?").run(source.id);
+    db.auditLog.write(
+      "ipam.source_delete",
+      `source=${source.name} reservations=${reservations}`,
+      req.ip,
+      true,
+      req.user?.username,
+    );
     return reservations;
   });
   const reservations = remove();
-  db.auditLog.write(
-    "ipam.source_delete",
-    `source=${source.name} reservations=${reservations}`,
-    req.ip,
-    true,
-    req.user?.username,
-  );
   res.json({ deleted: true, reservations_removed: reservations });
 });
 
@@ -2214,26 +2240,29 @@ router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
       token,
       Boolean(source.insecure),
     );
+    assertCurrentSourceConfiguration(source, "connection test");
     const records = sourceRecords(source.type, payload);
     const matching = records.filter((record) =>
       Boolean(findSubnetForAddress(source.environment_id, record.address)),
     );
     const testedAt = new Date().toISOString();
-    db.db
-      .prepare(
-        `UPDATE ipam_sync_sources SET
-          last_tested_at = ?, last_test_status = 'success', last_test_error = '',
-          last_record_count = ?, last_ignored_count = ?, updated_at = datetime('now')
-         WHERE id = ?`,
-      )
-      .run(testedAt, records.length, records.length - matching.length, source.id);
-    db.auditLog.write(
-      "ipam.source_test",
-      `source=${source.name} records=${records.length} matching=${matching.length}`,
-      req.ip,
-      true,
-      req.user?.username,
-    );
+    db.db.transaction(() => {
+      db.db
+        .prepare(
+          `UPDATE ipam_sync_sources SET
+            last_tested_at = ?, last_test_status = 'success', last_test_error = '',
+            last_record_count = ?, last_ignored_count = ?, updated_at = datetime('now')
+           WHERE id = ?`,
+        )
+        .run(testedAt, records.length, records.length - matching.length, source.id);
+      db.auditLog.write(
+        "ipam.source_test",
+        `source=${source.name} records=${records.length} matching=${matching.length}`,
+        req.ip,
+        true,
+        req.user?.username,
+      );
+    })();
     res.json({
       reachable: true,
       tested_at: testedAt,
@@ -2249,25 +2278,33 @@ router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
         })),
     });
   } catch (error) {
-    db.db
-      .prepare(
-        `UPDATE ipam_sync_sources SET last_tested_at = ?, last_test_status = 'failed', last_test_error = ?, updated_at = datetime('now') WHERE id = ?`,
-      )
-      .run(
-        new Date().toISOString(),
-        String(error.message || "Connection test failed.").slice(
-          0,
-          500,
-        ),
-        source.id,
-      );
-    db.auditLog.write(
-      "ipam.source_test",
-      `source=${source.name} failed`,
-      req.ip,
-      false,
-      req.user?.username,
-    );
+    try { assertCurrentSourceConfiguration(source, "connection test"); }
+    catch (changed) { return res.status(409).json({ error: changed.message }); }
+    try {
+      db.db.transaction(() => {
+        db.db
+          .prepare(
+            `UPDATE ipam_sync_sources SET last_tested_at = ?, last_test_status = 'failed', last_test_error = ?, updated_at = datetime('now') WHERE id = ?`,
+          )
+          .run(
+            new Date().toISOString(),
+            String(error.message || "Connection test failed.").slice(
+              0,
+              500,
+            ),
+            source.id,
+          );
+        db.auditLog.write(
+          "ipam.source_test",
+          `source=${source.name} failed`,
+          req.ip,
+          false,
+          req.user?.username,
+        );
+      })();
+    } catch {
+      return res.status(500).json({ error: "The connection test result could not be recorded. Retry after resolving the server storage error." });
+    }
     res
       .status(502)
       .json({ error: error.message || "Connection test failed." });
@@ -2333,6 +2370,16 @@ function reconcileSourceReservation(reservationId, sourceId) {
   return db.db.prepare("DELETE FROM ipam_reservations WHERE id = ?").run(reservationId).changes;
 }
 
+function assertCurrentSourceConfiguration(source, operation = "synchronization") {
+  const current = db.db.prepare("SELECT * FROM ipam_sync_sources WHERE id = ?").get(source.id);
+  const fields = ["environment_id", "type", "name", "endpoint", "api_token", "site", "path", "insecure", "enabled", "auto_sync", "sync_interval_min"];
+  if (!current || fields.some(field => current[field] !== source[field])) {
+    const error = new Error(`The source changed or was removed during ${operation}. Review its current configuration before retrying.`);
+    error.code = "IPAM_SOURCE_CHANGED";
+    throw error;
+  }
+}
+
 async function syncIpamSource(source, { ip, actor } = {}) {
   if (!source?.id) throw new Error("Source not found.");
   if (!source.enabled) throw new Error("This source is disabled.");
@@ -2352,6 +2399,7 @@ async function syncIpamSource(source, { ip, actor } = {}) {
       token,
       Boolean(source.insecure),
     );
+    assertCurrentSourceConfiguration(source);
     const records = sourceRecords(source.type, payload);
     let created = 0;
     let updated = 0;
@@ -2550,15 +2598,15 @@ async function syncIpamSource(source, { ip, actor } = {}) {
            WHERE id = ?`,
         )
         .run(now, now, records.length, ignored, source.id);
+      db.auditLog.write(
+        "ipam.source_sync",
+        `source=${source.name} created=${created} updated=${updated} removed=${removed} conflicts=${conflicts} ignored=${ignored}`,
+        ip,
+        true,
+        actor,
+      );
     });
     transaction();
-    db.auditLog.write(
-      "ipam.source_sync",
-      `source=${source.name} created=${created} updated=${updated} removed=${removed} conflicts=${conflicts} ignored=${ignored}`,
-      ip,
-      true,
-      actor,
-    );
     return {
       created,
       updated,
@@ -2569,24 +2617,27 @@ async function syncIpamSource(source, { ip, actor } = {}) {
       synced_at: now,
     };
   } catch (error) {
-    db.db
-      .prepare(
-        `UPDATE ipam_sync_sources SET last_status = 'failed', last_error = ?, updated_at = datetime('now') WHERE id = ?`,
-      )
-      .run(
-        String(error.message || "Synchronization failed").slice(
-          0,
-          500,
-        ),
-        source.id,
+    assertCurrentSourceConfiguration(source);
+    db.db.transaction(() => {
+      db.db
+        .prepare(
+          `UPDATE ipam_sync_sources SET last_status = 'failed', last_error = ?, updated_at = datetime('now') WHERE id = ?`,
+        )
+        .run(
+          String(error.message || "Synchronization failed").slice(
+            0,
+            500,
+          ),
+          source.id,
+        );
+      db.auditLog.write(
+        "ipam.source_sync",
+        `source=${source.name} failed`,
+        ip,
+        false,
+        actor,
       );
-    db.auditLog.write(
-      "ipam.source_sync",
-      `source=${source.name} failed`,
-      ip,
-      false,
-      actor,
-    );
+    })();
     throw error;
   } finally {
     syncingSources.delete(source.id);
@@ -2605,7 +2656,7 @@ router.post("/sources/:id/sync", guard("canEditNetworks"), async (req, res) => {
     );
   } catch (error) {
     const message = error.message || "Synchronization failed.";
-    const status = /not found/i.test(message)
+    const status = error.code === "IPAM_SOURCE_CHANGED" ? 409 : /not found/i.test(message)
       ? 404
       : /deaktiviert|entschl/.test(message)
         ? 409

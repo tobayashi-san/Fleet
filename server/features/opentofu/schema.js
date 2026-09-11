@@ -10,6 +10,7 @@ const { ensureManagedServersTable, removeOrphanedServerMappings } = require('./m
  */
 function setupOpenTofuDatabase(database) {
   const db = { db: database };
+  require('./storage-history').setupStorageHistory(database);
   // ── DB setup ──────────────────────────────────────────────────────────────
   db.db.prepare(`
     CREATE TABLE IF NOT EXISTS tofu_workspaces (
@@ -31,6 +32,7 @@ function setupOpenTofuDatabase(database) {
       api_token      TEXT NOT NULL,
       insecure       INTEGER NOT NULL DEFAULT 0,
       ssh_public_key TEXT NOT NULL DEFAULT '',
+      ca_certificate TEXT NOT NULL DEFAULT '',
       auto_sync_ipam INTEGER NOT NULL DEFAULT 1,
       sync_interval_min INTEGER NOT NULL DEFAULT 15,
       last_ipam_synced_at TEXT,
@@ -42,6 +44,7 @@ function setupOpenTofuDatabase(database) {
     )
   `).run();
   try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN auto_sync_ipam INTEGER NOT NULL DEFAULT 1').run(); } catch {}
+  try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN ca_certificate TEXT NOT NULL DEFAULT ''").run(); } catch {}
   try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN sync_interval_min INTEGER NOT NULL DEFAULT 15').run(); } catch {}
   try { db.db.prepare('ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_synced_at TEXT').run(); } catch {}
   try { db.db.prepare("ALTER TABLE tofu_proxmox_connections ADD COLUMN last_ipam_status TEXT NOT NULL DEFAULT ''").run(); } catch {}
@@ -168,6 +171,41 @@ function setupOpenTofuDatabase(database) {
     )
   `).run();
   
+  db.db.exec(`
+    CREATE TABLE IF NOT EXISTS proxmox_guest_audit (
+      audit_id TEXT PRIMARY KEY REFERENCES audit_log(id) ON DELETE CASCADE,
+      connection_id TEXT NOT NULL,
+      environment_id TEXT NOT NULL,
+      node_name TEXT NOT NULL,
+      vm_id INTEGER NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_proxmox_guest_audit_target ON proxmox_guest_audit(connection_id, environment_id, node_name, vm_id);
+    CREATE TABLE IF NOT EXISTS proxmox_object_audit (
+      audit_id TEXT PRIMARY KEY REFERENCES audit_log(id) ON DELETE CASCADE,
+      connection_id TEXT NOT NULL,
+      environment_id TEXT NOT NULL,
+      node_name TEXT
+    );
+    CREATE INDEX IF NOT EXISTS idx_proxmox_object_audit_target ON proxmox_object_audit(environment_id, connection_id, node_name);
+    INSERT OR IGNORE INTO proxmox_object_audit (audit_id, connection_id, environment_id, node_name)
+      SELECT g.audit_id, g.connection_id, g.environment_id, g.node_name
+      FROM proxmox_guest_audit g JOIN audit_log a ON a.id=g.audit_id AND a.environment_id=g.environment_id;
+    CREATE TABLE IF NOT EXISTS proxmox_guest_tasks (
+      connection_id TEXT NOT NULL,
+      environment_id TEXT NOT NULL,
+      endpoint TEXT NOT NULL,
+      node_name TEXT NOT NULL,
+      vm_id INTEGER NOT NULL,
+      task_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      resource_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'unknown',
+      exit_status TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      checked_at TEXT,
+      PRIMARY KEY (connection_id, node_name, vm_id, task_id)
+    );
+  `);
   ensureManagedServersTable(db);
   removeOrphanedServerMappings(db);
   

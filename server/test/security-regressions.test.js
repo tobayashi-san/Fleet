@@ -101,6 +101,7 @@ test('user email validation is bounded and rejects malformed values', async () =
       email: ' Valid.User@Example.COM ',
       password: 'newuserpass12345',
       role: 'user',
+      roleRevision: require('../utils/role-revision').roleRevision(db.roles.getById('user')),
     });
   assert.equal(accepted.status, 201);
   assert.equal(accepted.body.email, 'valid.user@example.com');
@@ -113,6 +114,7 @@ test('user email validation is bounded and rejects malformed values', async () =
       email: '',
       password: 'newuserpass12345',
       role: 'user',
+      roleRevision: require('../utils/role-revision').roleRevision(db.roles.getById('user')),
     });
   assert.equal(empty.status, 201);
   assert.equal(empty.body.email, '');
@@ -138,6 +140,7 @@ test('user email validation is bounded and rejects malformed values', async () =
         email,
         password: 'newuserpass12345',
         role: 'user',
+      roleRevision: require('../utils/role-revision').roleRevision(db.roles.getById('user')),
       });
     assert.equal(res.status, 400);
   }
@@ -192,6 +195,7 @@ test('usernames preserve case but remain unique and loginable case-insensitively
       username: 'Max.User',
       password: 'newuserpass12345',
       role: 'user',
+      roleRevision: require('../utils/role-revision').roleRevision(db.roles.getById('user')),
     });
   assert.equal(created.status, 201);
   assert.equal(created.body.username, 'Max.User');
@@ -203,6 +207,7 @@ test('usernames preserve case but remain unique and loginable case-insensitively
       username: 'max.user',
       password: 'newuserpass12345',
       role: 'user',
+      roleRevision: require('../utils/role-revision').roleRevision(db.roles.getById('user')),
     });
   assert.equal(duplicate.status, 409);
 
@@ -953,7 +958,7 @@ test('DELETE /api/servers/:id/docker/compose/stack validates path parameter and 
       .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/home/user/project; rm -rf /`)
       .set('Authorization', `Bearer ${token}`);
     assert.equal(resInjection.status, 400);
-    assert.equal(resInjection.body.error, 'Invalid path format');
+    assert.match(resInjection.body.error, /absolute directory path/);
 
     // 2. Rejected payload: blocked system directory
     const resBlocked = await request(app)
@@ -967,7 +972,8 @@ test('DELETE /api/servers/:id/docker/compose/stack validates path parameter and 
       .delete(`/api/servers/${srv.id}/docker/compose/stack?path=/home/user/../etc`)
       .set('Authorization', `Bearer ${token}`);
     assert.equal(resTraversal.status, 400);
-    assert.equal(resTraversal.body.error, 'Invalid path format');
+    assert.match(resTraversal.body.error, /absolute directory path/);
+    assert.equal(executedCommands.length, 0, 'Rejected paths must never reach SSH');
 
     db.composeProjects.upsert(srv.id, 'custom_project', '/home/user/stack');
     db.dockerContainers.syncForServer(srv.id, [{

@@ -170,7 +170,7 @@ export function NodePage({
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="configuration">
             <ServerCog className="h-4 w-4" />
-            Configuration
+            Inventory
           </TabsTrigger>
           <TabsTrigger value="vms">
             <Boxes className="h-4 w-4" />
@@ -227,6 +227,7 @@ export function NodePage({
         <TabsContent value="datastores" className="mt-0">
           <DatastoresCard
             stores={node.datastores ?? []}
+            sources={[node]}
             emptyText="No datastores reported for this node."
           />
         </TabsContent>

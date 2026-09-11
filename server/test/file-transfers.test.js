@@ -449,3 +449,26 @@ test('SSH manager streams host-to-host data and enforces the byte limit', async 
     sshManager.refCounts.delete(sshManager._connectionKey(target));
   }
 });
+
+test('disconnect during destination preflight never starts an SSH upload', async () => {
+  const { EventEmitter } = require('events');
+  const originalExists = sshManager.remoteFileExists;
+  const originalUpload = sshManager.uploadStream;
+  const req = new EventEmitter();
+  let pipeCalls=0;
+  Object.assign(req, { query: {path:'/tmp/early-cancel.bin'}, params:{id:source.id}, server:source, user:{username:'admin'}, ip:'127.0.0.1', aborted:false,
+    get:()=> '4', is:()=>true, pipe:destination=>{pipeCalls++;return destination;} });
+  const res = new EventEmitter();
+  Object.assign(res,{destroyed:false,writableEnded:false,status(){return this;},json(){throw new Error('Disconnected response must not be written');}});
+  let uploads=0;
+  sshManager.remoteFileExists=async()=>{req.aborted=true;res.destroyed=true;req.emit('aborted');res.emit('close');return false;};
+  sshManager.uploadStream=async()=>{uploads++;};
+  const handler=fileTransfersRouter.stack.find(layer=>layer.route?.path==='/:id/files/upload').route.stack.at(-1).handle;
+  try {
+    await handler(req,res);
+    assert.equal(uploads,0);
+    assert.equal(pipeCalls,0);
+    assert.equal(req.listenerCount('aborted'),0);
+    assert.equal(res.listenerCount('close'),0);
+  } finally {sshManager.remoteFileExists=originalExists;sshManager.uploadStream=originalUpload;}
+});

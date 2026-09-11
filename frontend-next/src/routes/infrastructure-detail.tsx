@@ -50,7 +50,6 @@ import {
   type InfrastructureResponse,
   type Node,
   type Vm,
-  tasksForObject,
 } from "@/features/infrastructure/detail-model";
 
 
@@ -105,11 +104,18 @@ export function InfrastructureDetailPage() {
   // "recent tasks" area disappear for read-only operations roles that were
   // deliberately granted audit access.
   const canViewAudit = hasCap(profile, "canViewAudit");
-  const auditQuery = useQuery<AuditTask[]>({
-    queryKey: ["audit-log", "infrastructure-object", environmentId],
-    queryFn: () =>
-      api.getAuditLog({ limit: 300 }) as unknown as Promise<AuditTask[]>,
-    enabled: Boolean(cluster) && canViewAudit,
+  const [auditPage, setAuditPage] = useState({scope: '', offset: 0});
+  const auditScope = `${environmentId}:${clusterId}:${nodeName || ''}`;
+  const auditOffset = auditPage.scope === auditScope ? auditPage.offset : 0;
+  const auditConnectionId = cluster?.connections?.[0]?.id;
+  const auditQuery = useQuery<{events: AuditTask[]; total: number; offset: number; limit: number}>({
+    queryKey: ["audit-log", "infrastructure-object", auditScope, auditConnectionId, auditOffset],
+    queryFn: () => {
+      const params = new URLSearchParams({environment_id: environmentId, offset: String(auditOffset)});
+      if (nodeName) params.set('node_name', nodeName);
+      return apiFetch(`/opentofu/proxmox-connections/${encodeURIComponent(auditConnectionId!)}/audit?${params}`, {environmentId});
+    },
+    enabled: Boolean(auditConnectionId) && canViewAudit,
     staleTime: 15_000,
   });
 
@@ -152,7 +158,7 @@ export function InfrastructureDetailPage() {
   };
   const canImportVm = hasCap(profile, "canEditServers");
   const canRunUpdates = hasCap(profile, "canRunUpdates");
-  const auditRows = asArray<AuditTask>(auditQuery.data);
+  const auditRows = asArray<AuditTask>(auditQuery.data?.events);
   const importVms = (vms: Vm[]) => {
     const connectionId = cluster.connections?.[0]?.id;
     if (connectionId && vms.length) setVmsToImport({ connectionId, vms });
@@ -169,7 +175,7 @@ export function InfrastructureDetailPage() {
       refreshing={query.isFetching}
       showAudit={canViewAudit}
       auditTasks={
-        canViewAudit && auditQuery.isSuccess ? tasksForObject(auditRows, cluster, node.name) : undefined
+        canViewAudit && auditQuery.isSuccess ? auditRows : undefined
       }
       auditLoading={canViewAudit && auditQuery.isLoading}
       auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
@@ -185,7 +191,7 @@ export function InfrastructureDetailPage() {
       onRefresh={() => void refreshInventory()}
       refreshing={query.isFetching}
       showAudit={canViewAudit}
-      auditTasks={canViewAudit && auditQuery.isSuccess ? tasksForObject(auditRows, cluster) : undefined}
+      auditTasks={canViewAudit && auditQuery.isSuccess ? auditRows : undefined}
       auditLoading={canViewAudit && auditQuery.isLoading}
       auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
       onRetryAudit={() => void auditQuery.refetch()}
@@ -206,6 +212,19 @@ export function InfrastructureDetailPage() {
         </div>
       )}
       {page}
+      {canViewAudit && auditConnectionId && (
+        <nav aria-label="Object audit pagination" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+          <span className="text-sm text-muted-foreground" aria-live="polite">
+            {auditQuery.isSuccess ? `${auditQuery.data.total} audit events · Page ${Math.floor(auditOffset / 20) + 1}` : 'Object audit history'}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={auditOffset === 0 || auditQuery.isFetching}
+              onClick={() => setAuditPage({scope: auditScope, offset: Math.max(0, auditOffset - 20)})}>Previous audit page</Button>
+            <Button variant="outline" size="sm" disabled={!auditQuery.isSuccess || auditQuery.isFetching || auditOffset + 20 >= auditQuery.data.total}
+              onClick={() => setAuditPage({scope: auditScope, offset: auditOffset + 20})}>Next audit page</Button>
+          </div>
+        </nav>
+      )}
       {vmToImport && (
         <ImportProxmoxVmDialog
           connectionId={vmToImport.connectionId}

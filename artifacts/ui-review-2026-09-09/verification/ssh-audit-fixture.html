@@ -1,0 +1,7 @@
+<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
+import React from 'react';import{createRoot}from'react-dom/client';import{AuditTableRow,AuditMobileRow}from'/src/features/operations/AuditLogPanel.tsx';import'/src/index.css';import'/src/lib/i18n.ts';
+window.fetch=async()=>Response.json([]);
+const row={action:'ssh.import',user:'review-admin',ip:'127.0.0.1',success:1,created_at:'2026-09-10T16:00:00Z',detail:JSON.stringify({kind:'ssh-key-change',version:1,resource:{id:'new-key-id',name:'shipyard_imported'},changes:[{label:'Key ID',before:'old-key-id',after:'new-key-id'},{label:'Fingerprint',before:'SHA256:OLD_PUBLIC_FINGERPRINT_012345678901234567890',after:'SHA256:NEW_PUBLIC_FINGERPRINT_012345678901234567890'}]})};
+const legacy={...row,action:'ssh.export',detail:'SSH private key exported (passphrase-protected)'};
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement('h1',null,'SSH audit verification'),React.createElement('table',{style:{width:'100%',marginBottom:24}},React.createElement('tbody',null,React.createElement(AuditTableRow,{row}),React.createElement(AuditTableRow,{row:legacy}))),React.createElement('section',{style:{width:320,border:'1px solid #555'}},React.createElement(AuditMobileRow,{row}))));
+</script></html>

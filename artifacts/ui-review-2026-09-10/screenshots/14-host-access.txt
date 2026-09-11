@@ -1,0 +1,272 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - button "Back":
+  - navigation "Object path":
+    - link "Managed Hosts":
+      - /url: /servers
+    - generic: /
+    - generic: hr01-media-hms
+  - heading "hr01-media-hms" [level=1]
+  - generic: Online
+  - paragraph: 10.77.40.20 · hr01-media-hms
+  - button "Actions":
+  - tablist "Host sections":
+    - tab "Overview"
+    - tab "System"
+    - tab "Workloads"
+    - tab "Updates"
+    - tab "Activity"
+    - tab "Notes"
+    - tab "Access" [active] [selected]
+  - tabpanel "Access":
+    - generic: Terminal
+    - paragraph: Open an interactive SSH terminal for this host.
+    - button "Open terminal":
+      - text: Open terminal
+    - heading "Files" [level=3]
+    - paragraph: Browse and transfer files through this host's trusted SSH connection.
+    - button "Upload":
+      - text: Upload
+    - button "Parent directory":
+    - textbox "Remote directory":
+      - /placeholder: /home/user
+      - text: /root
+    - button "Open"
+    - button "Refresh directory":
+    - table:
+      - rowgroup:
+        - row "Name Size Modified Mode Actions":
+          - columnheader "Name"
+          - columnheader "Size"
+          - columnheader "Modified"
+          - columnheader "Mode"
+          - columnheader "Actions"
+      - rowgroup:
+        - row ".ansible — 19 Mar 2026, 21:11 700 Actions for .ansible":
+          - cell ".ansible":
+            - button ".ansible":
+              - generic: .ansible
+          - cell "—"
+          - cell "19 Mar 2026, 21:11"
+          - cell "700"
+          - cell "Actions for .ansible":
+            - button "Actions for .ansible":
+        - row ".config — 28 Feb 2026, 17:24 700 Actions for .config":
+          - cell ".config":
+            - button ".config":
+              - generic: .config
+          - cell "—"
+          - cell "28 Feb 2026, 17:24"
+          - cell "700"
+          - cell "Actions for .config":
+            - button "Actions for .config":
+        - row ".docker — 8 Apr 2026, 10:08 700 Actions for .docker":
+          - cell ".docker":
+            - button ".docker":
+              - generic: .docker
+          - cell "—"
+          - cell "8 Apr 2026, 10:08"
+          - cell "700"
+          - cell "Actions for .docker":
+            - button "Actions for .docker":
+        - row ".local — 23 Jan 2025, 09:34 755 Actions for .local":
+          - cell ".local":
+            - button ".local":
+              - generic: .local
+          - cell "—"
+          - cell "23 Jan 2025, 09:34"
+          - cell "755"
+          - cell "Actions for .local":
+            - button "Actions for .local":
+        - row ".ssh — 28 Jul 2026, 10:32 700 Actions for .ssh":
+          - cell ".ssh":
+            - button ".ssh":
+              - generic: .ssh
+          - cell "—"
+          - cell "28 Jul 2026, 10:32"
+          - cell "700"
+          - cell "Actions for .ssh":
+            - button "Actions for .ssh":
+        - row "config — 4 Apr 2026, 21:17 755 Actions for config":
+          - cell "config":
+            - button "config":
+              - generic: config
+          - cell "—"
+          - cell "4 Apr 2026, 21:17"
+          - cell "755"
+          - cell "Actions for config":
+            - button "Actions for config":
+        - row "hms — 13 May 2026, 11:22 755 Actions for hms":
+          - cell "hms":
+            - button "hms":
+              - generic: hms
+          - cell "—"
+          - cell "13 May 2026, 11:22"
+          - cell "755"
+          - cell "Actions for hms":
+            - button "Actions for hms":
+        - row ".bash_history 14 KB 7 Sept 2026, 22:24 600 Actions for .bash_history":
+          - cell ".bash_history":
+            - button ".bash_history" [disabled]:
+              - generic: .bash_history
+          - cell "14 KB"
+          - cell "7 Sept 2026, 22:24"
+          - cell "600"
+          - cell "Actions for .bash_history":
+            - button "Actions for .bash_history":
+        - row ".bash_history-04179.tmp 0 B 29 Mar 2025, 17:10 600 Actions for .bash_history-04179.tmp":
+          - cell ".bash_history-04179.tmp":
+            - button ".bash_history-04179.tmp" [disabled]:
+              - generic: .bash_history-04179.tmp
+          - cell "0 B"
+          - cell "29 Mar 2025, 17:10"
+          - cell "600"
+          - cell "Actions for .bash_history-04179.tmp":
+            - button "Actions for .bash_history-04179.tmp":
+        - row ".bash_history-05547.tmp 0 B 23 Feb 2025, 13:27 600 Actions for .bash_history-05547.tmp":
+          - cell ".bash_history-05547.tmp":
+            - button ".bash_history-05547.tmp" [disabled]:
+              - generic: .bash_history-05547.tmp
+          - cell "0 B"
+          - cell "23 Feb 2025, 13:27"
+          - cell "600"
+          - cell "Actions for .bash_history-05547.tmp":
+            - button "Actions for .bash_history-05547.tmp":
+        - row ".bash_history-72697.tmp 0 B 23 May 2025, 13:47 600 Actions for .bash_history-72697.tmp":
+          - cell ".bash_history-72697.tmp":
+            - button ".bash_history-72697.tmp" [disabled]:
+              - generic: .bash_history-72697.tmp
+          - cell "0 B"
+          - cell "23 May 2025, 13:47"
+          - cell "600"
+          - cell "Actions for .bash_history-72697.tmp":
+            - button "Actions for .bash_history-72697.tmp":
+        - row ".bash_history-83909.tmp 0 B 16 May 2025, 21:19 600 Actions for .bash_history-83909.tmp":
+          - cell ".bash_history-83909.tmp":
+            - button ".bash_history-83909.tmp" [disabled]:
+              - generic: .bash_history-83909.tmp
+          - cell "0 B"
+          - cell "16 May 2025, 21:19"
+          - cell "600"
+          - cell "Actions for .bash_history-83909.tmp":
+            - button "Actions for .bash_history-83909.tmp":
+        - row ".bashrc 571 B 10 Apr 2021, 22:00 644 Actions for .bashrc":
+          - cell ".bashrc":
+            - button ".bashrc" [disabled]:
+              - generic: .bashrc
+          - cell "571 B"
+          - cell "10 Apr 2021, 22:00"
+          - cell "644"
+          - cell "Actions for .bashrc":
+            - button "Actions for .bashrc":
+        - row ".lesshst 20 B 23 Aug 2026, 20:14 600 Actions for .lesshst":
+          - cell ".lesshst":
+            - button ".lesshst" [disabled]:
+              - generic: .lesshst
+          - cell "20 B"
+          - cell "23 Aug 2026, 20:14"
+          - cell "600"
+          - cell "Actions for .lesshst":
+            - button "Actions for .lesshst":
+        - row ".profile 161 B 9 Jul 2019, 12:05 644 Actions for .profile":
+          - cell ".profile":
+            - button ".profile" [disabled]:
+              - generic: .profile
+          - cell "161 B"
+          - cell "9 Jul 2019, 12:05"
+          - cell "644"
+          - cell "Actions for .profile":
+            - button "Actions for .profile":
+        - row ".wget-hsts 165 B 8 Apr 2026, 10:04 644 Actions for .wget-hsts":
+          - cell ".wget-hsts":
+            - button ".wget-hsts" [disabled]:
+              - generic: .wget-hsts
+          - cell "165 B"
+          - cell "8 Apr 2026, 10:04"
+          - cell "644"
+          - cell "Actions for .wget-hsts":
+            - button "Actions for .wget-hsts":
+        - row "dovi_tool 5.6 MB 15 Jun 2025, 19:48 755 Actions for dovi_tool":
+          - cell "dovi_tool":
+            - button "dovi_tool" [disabled]:
+              - generic: dovi_tool
+          - cell "5.6 MB"
+          - cell "15 Jun 2025, 19:48"
+          - cell "755"
+          - cell "Actions for dovi_tool":
+            - button "Actions for dovi_tool":
+        - row "dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz 2.3 MB 4 Jun 2025, 02:22 644 Actions for dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz":
+          - cell "dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz":
+            - button "dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz" [disabled]:
+              - generic: dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz
+          - cell "2.3 MB"
+          - cell "4 Jun 2025, 02:22"
+          - cell "644"
+          - cell "Actions for dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz":
+            - button "Actions for dovi_tool-2.3.0-x86_64-unknown-linux-musl.tar.gz":
+        - row "install-pangolin.sh 2.2 KB 28 Feb 2026, 17:23 755 Actions for install-pangolin.sh":
+          - cell "install-pangolin.sh":
+            - button "install-pangolin.sh" [disabled]:
+              - generic: install-pangolin.sh
+          - cell "2.2 KB"
+          - cell "28 Feb 2026, 17:23"
+          - cell "755"
+          - cell "Actions for install-pangolin.sh":
+            - button "Actions for install-pangolin.sh":
+        - row "wget-log 581 B 15 Jun 2025, 18:51 644 Actions for wget-log":
+          - cell "wget-log":
+            - button "wget-log" [disabled]:
+              - generic: wget-log
+          - cell "581 B"
+          - cell "15 Jun 2025, 18:51"
+          - cell "644"
+          - cell "Actions for wget-log":
+            - button "Actions for wget-log":
+        - row "wget-log.1 581 B 15 Jun 2025, 18:52 644 Actions for wget-log.1":
+          - cell "wget-log.1":
+            - button "wget-log.1" [disabled]:
+              - generic: wget-log.1
+          - cell "581 B"
+          - cell "15 Jun 2025, 18:52"
+          - cell "644"
+          - cell "Actions for wget-log.1":
+            - button "Actions for wget-log.1":

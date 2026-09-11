@@ -1,0 +1,87 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Administration" [level=1]
+  - paragraph: Configure console, access, integrations and system operations
+  - navigation "Administration":
+    - generic: Administration
+    - generic: General
+    - list:
+      - link "Appearance":
+        - /url: /settings/appearance
+    - generic: Access & security
+    - list:
+      - link "SSH":
+        - /url: /settings/ssh
+      - link "User Management" [active]:
+        - /url: /settings/users-roles
+    - generic: Integrations
+    - list:
+      - link "Git Integration":
+        - /url: /settings/git
+      - link "Plugins":
+        - /url: /settings/plugins
+      - link "Notifications":
+        - /url: /settings/notifications
+    - generic: System
+    - list:
+      - link "System":
+        - /url: /settings/system
+      - link "Danger Zone":
+        - /url: /settings/danger
+  - tablist:
+    - tab "User Management" [selected]:
+      - text: User Management
+    - tab "Role Management":
+      - text: Role Management
+  - tabpanel "User Management":
+    - heading "User Management" [level=3]
+    - generic: 1 users
+    - button "Add User":
+      - text: Add User
+    - generic: A
+    - generic: admin
+    - generic: "@admin"
+    - generic: "Last login: 9 Sept 2026, 20:31"
+    - generic: Admin
+    - generic: 2FA off
+    - text: "0"
+    - button "Actions for admin":

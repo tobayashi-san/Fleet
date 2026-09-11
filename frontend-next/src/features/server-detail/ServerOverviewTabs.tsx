@@ -1,3 +1,6 @@
+import { imageCatalogFreshness } from './image-catalog-freshness';
+import { managementLabel } from '@/lib/resource-model';
+import { summarizeUpdates } from './update-summary';
 import {
   lazy,
   Suspense,
@@ -109,6 +112,7 @@ import {
   formatDate,
   formatUptime,
   HostStorageInventory,
+  HostMetricTrends,
   RecentHostTasks,
   SummaryField,
 } from "./server-detail-model";
@@ -153,9 +157,12 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
+    deploymentContextLoading,
+    deploymentContextFailed,
+    refetchDeploymentContext,
     managedProxmoxDeployment,
     startActionRun,
     rawServer,
@@ -175,18 +182,19 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     notesData,
     customTasks,
     customTaskList,
+    customTasksLoading,
+    customTasksFailed,
     agentStatus,
     refetchAgent,
     imageUpdates,
+    imageCatalog,
     setImageUpdates,
     notes,
     setNotes,
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -226,6 +234,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     saveComposeMut,
     latencyMs,
     setLatencyMs,
+    latencyCheckedAt,
+    infoHistory,
     agentUrl,
     setAgentUrl,
     agentCa,
@@ -255,6 +265,21 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
   } = controller;
 
   if (!server) return null;
+  const managementSummary = !canViewManagementRelationships ? "Management relationships unavailable for this role"
+    : deploymentContextFailed ? "Management context unavailable"
+    : deploymentContextLoading ? "Loading management context…"
+    : managementLabel(server.id, managedDeployments.some(deployment => deployment.kind !== "inventory"));
+  const updateSummary = summarizeUpdates({
+    offline: server.status === 'offline',
+    osCount: rawUpdates == null ? null : updatesList.length,
+    reasons: server.attention?.reasons,
+    imageCount: hasCap(profile, "canViewDocker") && hasCap(profile, "canViewUpdates") ? containers.filter(container => (imageUpdates[container.container_name] || imageUpdates[container.image] || imageUpdates[container.image + ":latest"]) === "update_available").length : undefined,
+    imageStale: hasCap(profile, "canViewDocker") && hasCap(profile, "canViewUpdates") && !imageCatalogFreshness(imageCatalog).fresh,
+    customCount: hasCap(profile, "canViewCustomUpdates") ? customTaskList.filter(task => task.has_update).length : undefined,
+    customFailed: hasCap(profile, "canViewCustomUpdates") && customTaskList.some(task => Boolean(task.last_check_error)),
+    customStale: hasCap(profile, "canViewCustomUpdates") && (customTasksLoading || customTasksFailed || customTaskList.some(task => !imageCatalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh)),
+    stale: rawUpdates && !Array.isArray(rawUpdates) ? rawUpdates.stale : undefined,
+  });
 
   return (
     <>
@@ -268,6 +293,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 <ul className="mt-1 list-disc space-y-1 pl-4">
                   {server.attention.reasons.map((reason) => (
                     <li key={reason.code}>
+                      {reason.code === "custom_check_failed" && `${reason.count} custom update checks failed. Review the last attempt in Updates.`}
                       {reason.code === "reboot_required" && "A reboot is required to finish applying system changes."}
                       {reason.code === "failed_operations" && `${reason.count} of the four most recent operations ${reason.count === 1 ? "has" : "have"} failed.`}
                       {reason.code === "offline" && "The host is not reachable."}
@@ -301,32 +327,16 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 <dl className="console-object-info-grid xl:grid-cols-3">
                   <SummaryField
                     label={t("det.tabUpdates")}
-                    value={
-                      server.status === "offline"
-                        ? "Not checked"
-                        : server.attention?.reasons.some((reason) => reason.code === "reboot_required")
-                          ? "Reboot required"
-                        : updatesList.length === 0
-                          ? t("det.statusHealthy")
-                          : `${updatesList.length} ${t("det.statusAttention")}`
-                    }
-                    tone={
-                      server.status === "offline"
-                        ? "info"
-                        : server.attention?.reasons.some((reason) => reason.code === "reboot_required")
-                          ? "warning"
-                        : updatesList.length > 0
-                          ? "warning"
-                          : "success"
-                    }
+                    value={updateSummary.label}
+                    tone={updateSummary.tone}
                   />
                   <SummaryField
-                    label={t("det.latency")}
+                    label="Shipyard API round-trip"
                     value={
                       server.status === "offline"
                         ? "Not measurable"
                         : latencyMs !== null
-                          ? `${latencyMs} ms`
+                          ? `${latencyMs} ms${latencyCheckedAt ? ` · ${formatDate(latencyCheckedAt, hour12)}` : ""}`
                           : "—"
                     }
                     mono
@@ -340,11 +350,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                   />
                   <SummaryField
                     label="Management"
-                    value={
-                      managedProxmoxDeployment
-                        ? `Shipyard + Proxmox · ${managedProxmoxDeployment.vm?.node_name || "—"}`
-                        : "Shipyard via SSH"
-                    }
+                    value={managementSummary}
                     tone="info"
                   />
                   <SummaryField label={t("det.os")} value={info?.os || "—"} />
@@ -382,6 +388,9 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                   </Button>
                 </div>
                 <div className="mt-3 space-y-3">
+                  <p className="text-[11px] text-muted-foreground">
+                    Measured {formatDate(info?.updated_at, hour12)} · {info?._source === "agent" ? "Shipyard Agent" : "SSH"}{info?._cached ? " · cached while refresh runs" : ""}
+                  </p>
                   <CapacitySummary
                     label={t("det.cpu")}
                     value={cpuPct === null ? "—" : `${cpuPct}%`}
@@ -400,6 +409,10 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                     pct={diskPct}
                     warningAt={healthThresholds.disk}
                   />
+                  <div className="border-t pt-3">
+                    <div className="mb-2 text-xs font-medium">Recent capacity</div>
+                    <HostMetricTrends points={infoHistory} warningAt={healthThresholds} hour12={hour12} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -466,13 +479,11 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                       <dt>Management mode</dt>
                     <dd
                       className="!overflow-visible !whitespace-normal !break-words"
-                      title={managedProxmoxDeployment ? "Shipyard + Proxmox" : "Shipyard via SSH"}
+                      title={managementSummary}
                     >
-                      {managedProxmoxDeployment
-                        ? "Shipyard + Proxmox"
-                        : "Shipyard via SSH"}
+                      {managementSummary}
                       {agentEnabled && agentStatus?.installed
-                        ? " · Agent active"
+                        ? " · Agent installed; reachability not confirmed"
                         : ""}
                     </dd>
                   </div>
@@ -573,7 +584,13 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-0">
-                {managedDeployments.length === 0 ? (
+                {!canViewManagementRelationships ? (
+                  <p className="p-4 text-sm text-muted-foreground">Your role cannot view management relationships.</p>
+                ) : deploymentContextFailed ? (
+                  <div role="alert" className="p-4 text-sm"><p>Management relationships could not be loaded.</p><Button size="sm" variant="outline" onClick={() => void refetchDeploymentContext()}>Retry</Button></div>
+                ) : deploymentContextLoading ? (
+                  <p role="status" className="p-4 text-sm text-muted-foreground">Loading management relationships…</p>
+                ) : managedDeployments.length === 0 ? (
                   <div className="px-4 py-5 text-sm text-muted-foreground">
                     This host is not linked to a platform VM or declarative
                     deployment.
@@ -607,6 +624,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                                   : deployment.workspace_name}
                               </div>
                               <div className="mt-1 flex flex-wrap gap-x-3 gap-y-1 font-mono text-xs text-muted-foreground">
+                                {deployment.vm && <span>VM name: {deployment.vm.name || "Not available; open inventory"}</span>}
                                 {deployment.vm?.node_name && (
                                   <span>
                                     {t("det.node")}: {deployment.vm.node_name}

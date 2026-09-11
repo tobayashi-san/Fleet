@@ -1,0 +1,5 @@
+<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{DatastoresCard}from'/src/features/infrastructure/DetailPanels.tsx';import'/src/index.css';
+const base={capacity_history:Array.from({length:12},(_,i)=>({sampled_at:Date.UTC(2026,8,10,0,i*5),used:10+i*2,total:100})),node_name:'pve001',active:true,enabled:true,capacity_reported:true,used:100*1024**3,total:500*1024**3,available:400*1024**3};const stores=[{...base,id:'local-zfs',type:'zfspool',content:['images','rootdir'],shared:false},{...base,id:'backup-share',type:'nfs',content:['backup','iso'],shared:true},{...base,id:'offline-lvm',type:'lvmthin',active:false,content:['images'],shared:false},{...base,id:'unreported',capacity_reported:false,active:null}];
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement(DatastoresCard,{stores,emptyText:'No datastores',sources:[{name:'pve001',datastores_status:'available',datastores_checked_at:'2026-09-10T00:00:00Z'}]})));
+</script></html>

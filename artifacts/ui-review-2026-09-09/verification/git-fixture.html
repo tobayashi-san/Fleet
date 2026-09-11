@@ -1,0 +1,20 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import {QueryClient,QueryClientProvider} from '@tanstack/react-query';
+import {createRouter,createRootRoute,RouterProvider} from '@tanstack/react-router';
+import {GitTab} from '/src/routes/settings/tabs/git.tsx';
+import '/src/lib/i18n.ts';
+import '/src/index.css';
+let config={repoUrl:'https://git.example.invalid/platform/runbooks.git',branch:'main',readOnly:true,autoPull:true,autoPush:false,hasToken:true};
+window.fetch=async (url,init)=>{
+ const endpoint=String(url);
+ if(init?.method==='POST' && endpoint.endsWith('/settings')) config={...config,...JSON.parse(init.body)};
+ const data=endpoint.endsWith('/config')?config:endpoint.endsWith('/status')?{initialized:true,branch:'main',revision:'87d192cf680c3859368413cf764792302394708a',lastPullAt:'2026-09-09T15:20:00Z',changed:[{status:'M',file:'playbooks/rolling-update.yml'}]}:endpoint.endsWith('/branches')?{local:['main'],remote:['main','release/stable']}:endpoint.includes('/log')?{items:[],pagination:{total:0}}:{success:true};
+ return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
+};
+const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+const route=createRootRoute({component:()=>React.createElement('main',{style:{maxWidth:1050,margin:'24px auto',padding:24}},React.createElement('h1',null,'Git integration · local review fixture'),React.createElement(GitTab))});
+const router=createRouter({routeTree:route});
+createRoot(document.getElementById('root')).render(React.createElement(QueryClientProvider,{client},React.createElement(RouterProvider,{router})));
+</script></body></html>

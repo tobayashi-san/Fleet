@@ -5,8 +5,18 @@ const log = require('../utils/logger').child('db');
 const { applySchema } = require('./schema');
 const { applyMigrations } = require('./migrations');
 const { seedDb } = require('./seed');
+const { parseVariableValue } = require('../utils/variable-value');
 const cryptoUtil = require('../utils/crypto');
+const { captureWorkflowHostIds } = require('../utils/workflow-history-scope');
 const { currentEnvironment } = require('../utils/request-environment');
+
+const CUSTOM_CHECK_FIELDS = ['type', 'check_command', 'github_repo', 'trigger_output', 'latest_command'];
+function customCheckGuard(task) {
+  return task ? {
+    sql: CUSTOM_CHECK_FIELDS.map(column => ` AND ${column} IS ?`).join(''),
+    values: CUSTOM_CHECK_FIELDS.map(column => task[column] || null),
+  } : { sql: '', values: [] };
+}
 
 function inclusiveAuditUpperBound(value) {
   const text = String(value || '').trim();
@@ -107,11 +117,11 @@ const serverQueries = {
   getAllByEnvironment: db.prepare('SELECT * FROM servers WHERE environment_id = ? ORDER BY name'),
   getById: db.prepare('SELECT * FROM servers WHERE id = ?'),
   insert: db.prepare(`
-    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, environment_id)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO servers (id, name, hostname, ip_address, ssh_port, ssh_user, owner, tags, services, links, storage_mounts, environment_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `),
   update: db.prepare(`
-    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, docker_enabled = ?, environment_id = ?, updated_at = datetime('now')
+    UPDATE servers SET name = ?, hostname = ?, ip_address = ?, ssh_port = ?, ssh_user = ?, owner = ?, tags = ?, services = ?, links = ?, storage_mounts = ?, docker_enabled = ?, environment_id = ?, updated_at = datetime('now')
     WHERE id = ?
   `),
   delete: db.prepare('DELETE FROM servers WHERE id = ?'),
@@ -136,12 +146,34 @@ const infoQueries = {
       zfs_pools = excluded.zfs_pools,
       updated_at = datetime('now')
   `),
+  insertHistory: db.prepare(`
+    INSERT INTO server_info_history
+      (server_id, source, cpu_usage_pct, ram_used_mb, ram_total_mb, disk_used_gb, disk_total_gb)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `),
+  pruneHistory: db.prepare(`
+    DELETE FROM server_info_history
+    WHERE server_id = ? AND id NOT IN (
+      SELECT id FROM server_info_history
+      WHERE server_id = ?
+      ORDER BY collected_at DESC, id DESC
+      LIMIT 48
+    )
+  `),
+  getHistory: db.prepare(`
+    SELECT collected_at, source, cpu_usage_pct, ram_used_mb, ram_total_mb,
+           disk_used_gb, disk_total_gb
+    FROM server_info_history
+    WHERE server_id = ?
+    ORDER BY collected_at DESC, id DESC
+    LIMIT ?
+  `),
 };
 
 // Update History
 const historyQueries = {
   getByServer: db.prepare('SELECT * FROM update_history WHERE server_id = ? ORDER BY started_at DESC LIMIT 20'),
-  insert: db.prepare('INSERT INTO update_history (id, server_id, environment_id, action, status, triggered_by) VALUES (?, ?, ?, ?, ?, ?)'),
+  insert: db.prepare('INSERT INTO update_history (id, server_id, environment_id, action, status, triggered_by, server_name_snapshot) VALUES (?, ?, ?, ?, ?, ?, ?)'),
   updateStatus: db.prepare(`UPDATE update_history SET status = ?, output = ?, completed_at = datetime('now') WHERE id = ?`),
 };
 
@@ -246,6 +278,7 @@ module.exports = {
         server.ip_address,
         server.ssh_port || 22,
         server.ssh_user || 'root',
+        server.owner || '',
         JSON.stringify(server.tags || []),
         JSON.stringify(server.services || []),
         JSON.stringify(server.links || []),
@@ -261,6 +294,7 @@ module.exports = {
         server.ip_address,
         server.ssh_port || 22,
         server.ssh_user || 'root',
+        server.owner || '',
         JSON.stringify(server.tags || []),
         JSON.stringify(server.services || []),
         JSON.stringify(server.links || []),
@@ -296,8 +330,9 @@ module.exports = {
         zfs_pools: parseJsonArray(row.zfs_pools),
       };
     },
-    upsert: (serverId, info) => {
-      infoQueries.upsert.run(
+    upsert: (serverId, info, source = 'ssh') => {
+      const save = db.transaction(() => {
+        infoQueries.upsert.run(
         serverId,
         info.os,
         info.kernel,
@@ -312,21 +347,36 @@ module.exports = {
         info.load_avg,
         info.reboot_required ? 1 : 0,
         info.cpu_usage_pct ?? null,
-        JSON.stringify(info.zfs_pools || [])
-      );
+          JSON.stringify(info.zfs_pools || [])
+        );
+        infoQueries.insertHistory.run(
+          serverId,
+          source === 'agent' ? 'agent' : 'ssh',
+          info.cpu_usage_pct ?? null,
+          info.ram_used_mb ?? null,
+          info.ram_total_mb ?? null,
+          info.disk_used_gb ?? null,
+          info.disk_total_gb ?? null
+        );
+        infoQueries.pruneHistory.run(serverId, serverId);
+      });
+      save();
     },
+    getHistory: (serverId, limit = 24) =>
+      infoQueries.getHistory.all(serverId, Math.max(1, Math.min(48, Number(limit) || 24))).reverse(),
   },
   updateHistory: {
     getByServer: (serverId) => historyQueries.getByServer.all(serverId),
     create: (serverId, action, triggeredBy = null, environmentId = null) => {
       const id = uuidv4();
-      const server = db.prepare('SELECT environment_id FROM servers WHERE id = ?').get(serverId);
+      const server = db.prepare('SELECT environment_id, name FROM servers WHERE id = ?').get(serverId);
+      if (!server) throw new Error('Host not found for execution history');
       const scopedEnvironment = environmentId || server?.environment_id || currentEnvironment() || 'default';
       // update_history is deliberately single-server history. Callers that
       // operate on target expressions or bulk inventories must use
       // schedule_history instead of receiving an ID for a row that was never
       // inserted.
-      historyQueries.insert.run(id, serverId, scopedEnvironment, action, 'pending', triggeredBy);
+      historyQueries.insert.run(id, serverId, scopedEnvironment, action, 'pending', triggeredBy, server.name);
       return id;
     },
     updateStatus: (id, status, output) => historyQueries.updateStatus.run(status, output, id),
@@ -435,15 +485,21 @@ module.exports = {
       const id = uuidv4();
       const scopedEnvironment = environmentId || currentEnvironment() || 'default';
       db.prepare('INSERT INTO audit_log (id, environment_id, action, detail, user, ip, success) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, scopedEnvironment, action, detail || null, user || null, ip || null, success ? 1 : 0);
+      return id;
     },
     getRecent: (limit = 100) => db.prepare('SELECT * FROM audit_log ORDER BY created_at DESC LIMIT ?').all(limit),
-    query: ({ environmentId = 'default', action, user, ip, success, from, to, limit = 200, offset = 0 } = {}) => {
+    query: ({ environmentId = 'default', action, user, ip, success, from, to, q, limit = 200, offset = 0 } = {}) => {
       // Escape SQL LIKE wildcards so user-supplied filters can't widen the match.
       const escapeLike = (s) => String(s).replace(/[\\%_]/g, ch => '\\' + ch);
       const conditions = ['environment_id = ?'];
       const params = [environmentId];
       if (action) { conditions.push("action LIKE ? ESCAPE '\\'"); params.push(`${escapeLike(action)}%`); }
       if (user) { conditions.push('user = ?'); params.push(user); }
+      if (q) {
+        const pattern = `%${escapeLike(q)}%`;
+        conditions.push("(action LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\' OR user LIKE ? ESCAPE '\\' OR ip LIKE ? ESCAPE '\\')");
+        params.push(pattern, pattern, pattern, pattern);
+      }
       if (ip) { conditions.push("ip LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(ip)}%`); }
       if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
       if (from) { conditions.push('created_at >= ?'); params.push(from); }
@@ -454,12 +510,17 @@ module.exports = {
       params.push(safeLimit, safeOffset);
       return db.prepare(`SELECT * FROM audit_log ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`).all(...params);
     },
-    count: ({ environmentId = 'default', action, user, ip, success, from, to } = {}) => {
+    count: ({ environmentId = 'default', action, user, ip, success, from, to, q } = {}) => {
       const escapeLike = (s) => String(s).replace(/[\\%_]/g, ch => '\\' + ch);
       const conditions = ['environment_id = ?'];
       const params = [environmentId];
       if (action) { conditions.push("action LIKE ? ESCAPE '\\'"); params.push(`${escapeLike(action)}%`); }
       if (user) { conditions.push('user = ?'); params.push(user); }
+      if (q) {
+        const pattern = `%${escapeLike(q)}%`;
+        conditions.push("(action LIKE ? ESCAPE '\\' OR detail LIKE ? ESCAPE '\\' OR user LIKE ? ESCAPE '\\' OR ip LIKE ? ESCAPE '\\')");
+        params.push(pattern, pattern, pattern, pattern);
+      }
       if (ip) { conditions.push("ip LIKE ? ESCAPE '\\'"); params.push(`%${escapeLike(ip)}%`); }
       if (success !== undefined && success !== '') { conditions.push('success = ?'); params.push(Number(success)); }
       if (from) { conditions.push('created_at >= ?'); params.push(from); }
@@ -549,15 +610,25 @@ module.exports = {
         .run(id, serverId, fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
     },
-    update: (id, fields) => {
+    update: (id, fields) => db.transaction(() => {
+      const previous = db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
+      const changed = previous && CUSTOM_CHECK_FIELDS.some(column => (previous[column] || null) !== (fields[column] || null));
       db.prepare(`UPDATE custom_update_tasks SET name = ?, type = ?, check_command = ?, github_repo = ?, update_command = ?, trigger_output = ?, latest_command = ? WHERE id = ?`)
         .run(fields.name, fields.type, fields.check_command || null, fields.github_repo || null, fields.update_command || '', fields.trigger_output || null, fields.latest_command || null, id);
+      if (changed) db.prepare('UPDATE custom_update_tasks SET current_version = NULL, last_version = NULL, has_update = 0, last_checked_at = NULL, last_attempted_at = NULL, last_check_error = NULL WHERE id = ?').run(id);
       return db.prepare('SELECT * FROM custom_update_tasks WHERE id = ?').get(id);
-    },
+    })(),
     delete: (id) => db.prepare('DELETE FROM custom_update_tasks WHERE id = ?').run(id),
-    setVersionInfo: (id, currentVersion, lastVersion, hasUpdate) =>
-      db.prepare(`UPDATE custom_update_tasks SET current_version = ?, last_version = ?, has_update = ?, last_checked_at = datetime('now') WHERE id = ?`)
-        .run(currentVersion || null, lastVersion || null, hasUpdate ? 1 : 0, id),
+    setVersionInfo: (id, currentVersion, lastVersion, hasUpdate, expectedTask) => {
+      const guard = customCheckGuard(expectedTask);
+      return db.prepare(`UPDATE custom_update_tasks SET current_version = ?, last_version = ?, has_update = ?, last_checked_at = datetime('now'), last_attempted_at = datetime('now'), last_check_error = NULL WHERE id = ?${guard.sql}`)
+        .run(currentVersion || null, lastVersion || null, hasUpdate ? 1 : 0, id, ...guard.values);
+    },
+    setCheckFailure: (id, expectedTask) => {
+      const guard = customCheckGuard(expectedTask);
+      return db.prepare(`UPDATE custom_update_tasks SET last_attempted_at = datetime('now'), last_check_error = ? WHERE id = ?${guard.sql}`).run('Check failed. Review command output, host connectivity and release source; previous successful results are retained.', id, ...guard.values);
+    },
+    countCheckFailures: (serverId) => db.prepare("SELECT COUNT(*) AS c FROM custom_update_tasks WHERE server_id = ? AND last_check_error IS NOT NULL").get(serverId).c,
     countHasUpdate: (serverId) =>
       db.prepare('SELECT COUNT(*) as c FROM custom_update_tasks WHERE server_id = ? AND has_update = 1').get(serverId).c,
   },
@@ -749,6 +820,14 @@ module.exports = {
   },
 
   updatesCache: {
+    getWithMeta: (serverId) => {
+      const row = db.prepare('SELECT updates_json, updated_at FROM server_updates_cache WHERE server_id = ?').get(serverId);
+      if (!row) return null;
+      try {
+        const updates = JSON.parse(row.updates_json);
+        return Array.isArray(updates) ? { updates, updated_at: row.updated_at } : null;
+      } catch { return null; }
+    },
     get: (serverId) => {
       const row = db.prepare('SELECT * FROM server_updates_cache WHERE server_id = ?').get(serverId);
       if (!row) return null;
@@ -768,17 +847,17 @@ module.exports = {
 
   scheduleHistory: {
     getAll: (limit = 100, scheduleId = null, environmentId = null) => {
-      const columns = 'id,schedule_id,environment_id,schedule_name,playbook,targets,triggered_by,check_mode,started_at,completed_at,status';
-      if (scheduleId && environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? AND environment_id = ? ORDER BY started_at DESC LIMIT ?`).all(scheduleId, environmentId, limit);
-      if (scheduleId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? ORDER BY started_at DESC LIMIT ?`).all(scheduleId, limit);
-      if (environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE environment_id = ? ORDER BY started_at DESC LIMIT ?`).all(environmentId, limit);
-      return db.prepare(`SELECT ${columns} FROM schedule_history ORDER BY started_at DESC LIMIT ?`).all(limit);
+      const columns = 'id,schedule_id,environment_id,schedule_name,playbook,targets,target_server_ids,triggered_by,check_mode,started_at,completed_at,status';
+      if (scheduleId && environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? AND environment_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`).all(scheduleId, environmentId, limit);
+      if (scheduleId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE schedule_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`).all(scheduleId, limit);
+      if (environmentId) return db.prepare(`SELECT ${columns} FROM schedule_history WHERE environment_id = ? ORDER BY started_at DESC, rowid DESC LIMIT ?`).all(environmentId, limit);
+      return db.prepare(`SELECT ${columns} FROM schedule_history ORDER BY started_at DESC, rowid DESC LIMIT ?`).all(limit);
     },
     getById: (id) => db.prepare('SELECT * FROM schedule_history WHERE id = ?').get(id),
     create: (scheduleId, scheduleName, playbook, targets, options = {}) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO schedule_history (id, schedule_id, environment_id, schedule_name, playbook, targets, triggered_by, check_mode) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-        .run(id, scheduleId || null, options.environmentId || 'default', scheduleName, playbook, targets || 'all', options.triggeredBy || null, options.checkMode ? 1 : 0);
+      db.prepare('INSERT INTO schedule_history (id, schedule_id, environment_id, schedule_name, playbook, targets, triggered_by, check_mode, target_server_ids) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, scheduleId || null, options.environmentId || 'default', scheduleName, playbook, targets || 'all', options.triggeredBy || null, options.checkMode ? 1 : 0, captureWorkflowHostIds(targets, db.prepare('SELECT id,name FROM servers WHERE environment_id=?').all(options.environmentId || 'default')));
       return id;
     },
     appendOutput: (id, output) => db.prepare("UPDATE schedule_history SET output = output || ? WHERE id = ? AND status = 'running'").run(String(output || ''), id),
@@ -800,7 +879,18 @@ module.exports = {
       return result.changes;
     },
     prune: () => {
-      db.prepare("DELETE FROM schedule_history WHERE id NOT IN (SELECT id FROM schedule_history ORDER BY started_at DESC LIMIT 200)").run();
+      return db.prepare(`
+        DELETE FROM schedule_history WHERE id IN (
+          SELECT id FROM (
+            SELECT id, ROW_NUMBER() OVER (
+              PARTITION BY environment_id
+              ORDER BY julianday(COALESCE(completed_at, started_at)) DESC, rowid DESC
+            ) AS retention_rank
+            FROM schedule_history
+            WHERE status IN ('success', 'completed', 'successful', 'failed', 'error', 'cancelled', 'canceled', 'skipped')
+          ) WHERE retention_rank > 200
+        )
+      `).run();
     },
   },
 
@@ -814,8 +904,8 @@ module.exports = {
     getById: (id, options = {}) => readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), options.revealSecrets === true),
     create: (key, value, description, options = {}) => {
       const id = uuidv4();
-      db.prepare('INSERT INTO ansible_vars (id, environment_id, key, value, is_secret, description) VALUES (?, ?, ?, ?, ?, ?)')
-        .run(id, options.environmentId || 'default', key, cryptoUtil.encrypt(String(value)), options.isSecret ? 1 : 0, description || '');
+      db.prepare('INSERT INTO ansible_vars (id, environment_id, key, value, is_secret, description, rotation_due, value_updated_at, value_type) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)')
+        .run(id, options.environmentId || 'default', key, cryptoUtil.encrypt(String(value)), options.isSecret ? 1 : 0, description || '', options.rotationDue || null, new Date().toISOString(), options.valueType || 'string');
       return readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), false);
     },
     update: (id, key, value, description, options = {}) => {
@@ -823,13 +913,13 @@ module.exports = {
       if (!existing) return null;
       const storedValue = options.keepValue ? existing.value : cryptoUtil.encrypt(String(value));
       const isSecret = options.isSecret === undefined ? existing.is_secret : (options.isSecret ? 1 : 0);
-      db.prepare('UPDATE ansible_vars SET key = ?, value = ?, is_secret = ?, description = ? WHERE id = ?').run(key, storedValue, isSecret, description || '', id);
+      db.prepare('UPDATE ansible_vars SET key = ?, value = ?, is_secret = ?, description = ?, rotation_due = ?, value_updated_at = ?, value_type = ? WHERE id = ?').run(key, storedValue, isSecret, description || '', options.rotationDue === undefined ? existing.rotation_due : options.rotationDue || null, options.keepValue ? existing.value_updated_at : new Date().toISOString(), options.valueType || existing.value_type || 'string', id);
       return readAnsibleVarRow(db.prepare('SELECT * FROM ansible_vars WHERE id = ?').get(id), false);
     },
     delete: (id) => db.prepare('DELETE FROM ansible_vars WHERE id = ?').run(id),
     toExtraVars: (environmentId = 'default') => {
-      const rows = db.prepare('SELECT key, value FROM ansible_vars WHERE environment_id = ?').all(environmentId);
-      return Object.fromEntries(rows.map(row => [row.key, cryptoUtil.decrypt(row.value)]));
+      const rows = db.prepare('SELECT key, value, value_type FROM ansible_vars WHERE environment_id = ?').all(environmentId);
+      return Object.fromEntries(rows.map(row => [row.key, parseVariableValue(cryptoUtil.decrypt(row.value), row.value_type || 'string')]));
     },
     secretValues: (environmentId = 'default') => db.prepare('SELECT value FROM ansible_vars WHERE environment_id = ? AND is_secret = 1').all(environmentId)
       .map(row => cryptoUtil.decrypt(row.value)).filter(value => typeof value === 'string' && value.length > 0),

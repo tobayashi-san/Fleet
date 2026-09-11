@@ -72,3 +72,11 @@ test('resource usage uses the same warning thresholds as the dashboard queue', (
   ]);
   assert.equal(attention.thresholds.warning.disk, 85);
 });
+
+test('failed custom checks create attention only for permitted viewers', () => {
+ const input={server:{status:'online'},customCheckFailures:2};
+ const visible=buildServerAttention({...input,includeCustomUpdates:true});
+ assert.equal(visible.requiresAttention,true);
+ assert.deepEqual(visible.reasons,[{code:'custom_check_failed',severity:'warning',count:2}]);
+ assert.equal(buildServerAttention(input).requiresAttention,false);
+});

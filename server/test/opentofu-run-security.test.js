@@ -150,6 +150,7 @@ test('isolated VM Apply accepts only a plan for its single resource address', as
   const workspacePath = path.join(workspaceRoot, 'isolated-app');
   fs.mkdirSync(workspacePath, { recursive: true });
   fs.writeFileSync(path.join(workspacePath, 'isolation-safe'), 'safe');
+  fs.writeFileSync(path.join(workspacePath, 'terraform.tfstate'), '{"version":3,"resources":[]}');
   db.db.prepare(`INSERT INTO tofu_workspaces (id, name, path, description, env_vars, environment_id, workspace_kind)
     VALUES ('isolated-workspace', 'vm-isolated-app', ?, '', '{}', 'default', 'isolated_vm')`).run(workspacePath);
   db.db.prepare(`INSERT INTO tofu_proxmox_vms (id, workspace_id, name, config, is_isolated)
@@ -160,6 +161,29 @@ test('isolated VM Apply accepts only a plan for its single resource address', as
   const safePlan = await waitForRun(safeStart.body.dbRunId, 'success');
   assert.equal(safePlan.plan_safe, 1);
   assert.equal(JSON.parse(safePlan.plan_validation).expected_address, 'proxmox_virtual_environment_vm.isolated-app');
+
+  const applyStart = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: safePlan.id });
+  assert.equal(applyStart.status, 200);
+  const applied = await waitForRun(applyStart.body.dbRunId, 'success');
+  assert.equal(applied.approved_plan_id, safePlan.id);
+  const driftStart = await request(app).post('/api/opentofu/vms/isolated-vm/check-drift').set(auth).send({});
+  assert.equal(driftStart.status, 200);
+  const drift = await waitForRun(driftStart.body.dbRunId, 'success');
+  assert.equal(drift.action, 'drift');
+  assert.equal(drift.plan_safe, 1);
+
+  const safety = await request(app).get('/api/opentofu/vms/isolated-vm/state-safety').set(auth);
+  assert.equal(safety.status, 200);
+  assert.equal(safety.body.mode, 'encrypted-backup');
+  const backups = await request(app).get('/api/opentofu/vms/isolated-vm/state-backups').set(auth);
+  assert.equal(backups.status, 200);
+  assert.ok(backups.body.items.length > 0);
+  const beforeApply = backups.body.items.find(item => item.name.includes('before-apply'));
+  assert.ok(beforeApply);
+  fs.writeFileSync(path.join(workspacePath, 'terraform.tfstate'), '{"broken":true}');
+  const restored = await request(app).post('/api/opentofu/vms/isolated-vm/state-backups/restore').set(auth).send({ backup: beforeApply.name, confirmation: 'RESTORE STATE isolated-app' });
+  assert.equal(restored.status, 200, JSON.stringify(restored.body));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(workspacePath, 'terraform.tfstate'), 'utf8')).version, 3);
 
   fs.unlinkSync(path.join(workspacePath, 'isolation-safe'));
   fs.writeFileSync(path.join(workspacePath, 'isolation-unsafe'), 'unsafe');

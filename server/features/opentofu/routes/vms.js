@@ -1,6 +1,7 @@
 'use strict';
 
 const fs = require('fs');
+const { inventoryGuestName } = require('../inventory-name');
 const { randomUUID } = require('crypto');
 const log = require('../../../utils/logger').child('features:opentofu:vms');
 const { can, filterServers, getPermissions } = require('../../../utils/permissions');
@@ -307,13 +308,12 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
       };
     });
     const adopted = db.db.prepare(`
-      SELECT inventory.connection_id, inventory.node_name, inventory.vm_id, source.name AS source_name
+      SELECT inventory.connection_id, inventory.node_name, inventory.vm_id, inventory.guest_type, source.environment_id, source.name AS source_name
       FROM proxmox_inventory_servers inventory
       JOIN tofu_proxmox_connections source ON source.id = inventory.connection_id
       WHERE inventory.server_id = ?
     `).get(serverId);
     if (adopted) {
-      const server = db.servers.getById(serverId);
       let clusterId = null;
       let connectionId = null;
       try {
@@ -330,7 +330,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
         kind: 'inventory',
         cluster_id: clusterId,
         connection_id: connectionId,
-        vm: { name: server?.name || `VM ${adopted.vm_id}`, node_name: adopted.node_name, vm_id: adopted.vm_id, post_deploy_playbooks: [] },
+        vm: { name: inventoryGuestName(db.settings.get(`tofu.infrastructure.summary.${encodeURIComponent(adopted.environment_id)}`), adopted), node_name: adopted.node_name, vm_id: adopted.vm_id, post_deploy_playbooks: [] },
       });
     }
     res.json({ resources });

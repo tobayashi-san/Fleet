@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Calendar, Clock, Plus, Settings2, Trash2 } from "lucide-react";
-import { api } from "@/lib/api";
+import { filterTargetHosts, scheduleTargetPreview } from "./target-hosts";
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
+import { api, apiFetch } from "@/lib/api";
 import { asArray } from "@/lib/utils";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -31,6 +33,7 @@ import {
   WEEKDAYS,
 } from "./playbook-utils";
 import type { Playbook, Schedule } from "./playbook-types";
+import { ScheduleMaintenancePreview } from "./ScheduleMaintenancePreview";
 import { PlaybookTargetSummary } from "./components/PlaybookTargetSummary";
 
 export function useCronLabel() {
@@ -68,10 +71,25 @@ export function SchedulesTab() {
   });
   const schedules = schedulesQuery.data;
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  const [draftState, setDraftState] = useState({dirty:false,busy:false});
+  useUnsavedChanges(dialogOpen && (draftState.dirty || draftState.busy));
+  const changeDialogOpen = (open: boolean) => {
+    if (!open && draftState.busy) return;
+    if (!open && draftState.dirty) { setDiscardOpen(true); return; }
+    setDialogOpen(open);
+    if (!open) setDraftState({dirty:false,busy:false});
+  };
   const [editId, setEditId] = useState<string | null>(null);
   const [deleteSchedule, setDeleteSchedule] = useState<Schedule | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+
+  const registrationMut = useMutation({
+    mutationFn: ({id, environment}: {id:string; environment:string}) => apiFetch(`/schedules/${encodeURIComponent(id)}/retry-registration`, {method:'POST',environmentId:environment}),
+    onSuccess: (_data, variables) => qc.invalidateQueries({queryKey:['schedules',variables.environment]}),
+    onError: (error: Error) => showToast(error.message,'error'),
+  });
 
   const toggleMut = useMutation({
     mutationFn: (id: string) => api.toggleSchedule(id),
@@ -300,8 +318,13 @@ export function SchedulesTab() {
                             <Clock className="h-3 w-3 text-muted-foreground" />
                             {cronLabel(s.cron_expression)}
                           </span>
+                          {s.enabled && s.registration_status === 'unregistered' && <div className="my-1 space-y-1">
+                            <p role="alert" className="text-warning">Saved but not registered · will not run automatically.</p>
+                            {hasCap(profile,'canToggleSchedules') && <Button size="sm" variant="outline" disabled={registrationMut.isPending} onClick={() => registrationMut.mutate({id:s.id,environment:environmentId})}>{registrationMut.isPending && registrationMut.variables?.id === s.id ? 'Retrying…' : 'Retry registration'}</Button>}
+                            {registrationMut.isError && registrationMut.variables?.id === s.id && registrationMut.variables.environment === environmentId && <p role="alert" className="text-destructive">{registrationMut.error.message}</p>}
+                          </div>}
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {s.enabled && s.next_run ? `Next ${fmtDate(s.next_run)}` : s.enabled ? "Next run pending" : "Paused"} · {s.timezone || "server timezone"}
+                            {s.enabled && s.next_run ? `Next ${fmtDate(s.next_run)}` : s.enabled ? (s.registration_status === "unregistered" ? "No automatic start registered" : "Next run pending") : "Paused"} · {s.timezone || "server timezone"}
                           </span>
                         </td>
                         <td className="px-3 text-xs">
@@ -352,17 +375,32 @@ export function SchedulesTab() {
         </CardContent>
       </Card>
 
-      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <ScheduleDialog
+      <Dialog open={dialogOpen} onOpenChange={changeDialogOpen}>
+        {dialogOpen && <ScheduleDialog
           editId={editId}
         schedules={asArray<Schedule>(schedules)}
         environmentId={environmentId}
+          onDraftStateChange={setDraftState}
           onSaved={() => {
+            setDraftState({dirty:false,busy:false});
             setDialogOpen(false);
             qc.invalidateQueries({ queryKey: ["schedules"] });
           }}
-        />
+        />}
       </Dialog>
+      <ConfirmDialog
+        open={discardOpen}
+        onOpenChange={setDiscardOpen}
+        title="Discard schedule changes?"
+        description="Your unsaved changes will be lost. The saved schedule will remain unchanged."
+        confirmLabel="Discard changes"
+        variant="destructive"
+        onConfirm={() => {
+          setDiscardOpen(false);
+          setDialogOpen(false);
+          setDraftState({dirty:false,busy:false});
+        }}
+      />
       <ConfirmDialog
         open={!!deleteSchedule}
         onOpenChange={(open) => {
@@ -407,11 +445,13 @@ export function ScheduleDialog({
   schedules,
   environmentId,
   onSaved,
+  onDraftStateChange,
 }: {
   editId: string | null;
   schedules: Schedule[];
   environmentId: string;
   onSaved: () => void;
+  onDraftStateChange?: (state: {dirty:boolean;busy:boolean}) => void;
 }) {
   const { t } = useTranslation();
   const existing = editId ? schedules.find((s) => s.id === editId) : null;
@@ -434,6 +474,7 @@ export function ScheduleDialog({
     ? parsePlaybookTargets(existing.targets ?? "")
     : { mode: "explicit" as const, included: [] as string[], excluded: [] as string[] };
 
+  const [formEnvironment] = useState(environmentId);
   const [name, setName] = useState(existing?.name ?? "");
   const [playbook, setPlaybook] = useState(existing?.playbook ?? "");
   const [allChecked, setAllChecked] = useState(parsedTargets.mode === "all");
@@ -447,37 +488,26 @@ export function ScheduleDialog({
   const [weekday, setWeekday] = useState(parsed.weekday);
   const [monthday, setMonthday] = useState(parsed.monthday);
   const [busy, setBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [extraVars, setExtraVars] = useState(() => JSON.stringify(existing?.extra_vars || {}, null, 2));
   const [checkMode, setCheckMode] = useState(Boolean(existing?.check_mode));
   const [forks, setForks] = useState(existing?.forks || 5);
+  const [hostSearch, setHostSearch] = useState("");
+  const [hostStatus, setHostStatus] = useState("");
   const [allConfirmed, setAllConfirmed] = useState(false);
   const [customCronMode, setCustomCronMode] = useState(Boolean(existing && !isPresetCron(existing.cron_expression)));
   const [customCron, setCustomCron] = useState(existing?.cron_expression || "0 3 * * *");
+  const effectiveCron = customCronMode ? customCron.trim() : selectorsToCron(interval, hour, minute, weekday, Math.min(28, Math.max(1, monthday)));
+  const [previewCron, setPreviewCron] = useState(effectiveCron);
+  useEffect(() => { const timer = setTimeout(() => setPreviewCron(effectiveCron), 300); return () => clearTimeout(timer); }, [effectiveCron]);
+  const preview = useQuery({ queryKey: ['schedule-preview', previewCron], queryFn: () => apiFetch<{ timezone: string; runs: string[]; computedAt: string }>(`/schedules/preview?expression=${encodeURIComponent(previewCron)}`), retry: false, staleTime: 30_000, refetchInterval: 60_000 });
 
-  // Re-initialize form state whenever the schedule being edited changes
-  useEffect(() => {
-    const p = existing
-      ? cronToSelectors(existing.cron_expression)
-      : { interval: "daily", hour: 3, minute: 0, weekday: 1, monthday: 1 };
-    const pt = existing
-      ? parsePlaybookTargets(existing.targets ?? "")
-      : { mode: "explicit" as const, included: [] as string[], excluded: [] as string[] };
-    setName(existing?.name ?? "");
-    setPlaybook(existing?.playbook ?? "");
-    setAllChecked(pt.mode === "all");
-    setChecked(new Set(pt.mode === "all" ? pt.excluded : pt.included));
-    setInterval2(p.interval);
-    setHour(p.hour);
-    setMinute(p.minute);
-    setWeekday(p.weekday);
-    setMonthday(p.monthday);
-    setExtraVars(JSON.stringify(existing?.extra_vars || {}, null, 2));
-    setCheckMode(Boolean(existing?.check_mode));
-    setForks(existing?.forks || 5);
-    setAllConfirmed(false);
-    setCustomCronMode(Boolean(existing && !isPresetCron(existing.cron_expression)));
-    setCustomCron(existing?.cron_expression || "0 3 * * *");
-  }, [editId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The parent mounts one dialog per editing session. Polling must not replace its draft.
+  const draft = JSON.stringify({name,playbook,allChecked,checked:[...checked].sort(),interval,hour,minute,weekday,monthday,extraVars,checkMode,forks,customCronMode,customCron});
+  const baseline = useRef(draft);
+  const dirty = draft !== baseline.current;
+  useEffect(() => { onDraftStateChange?.({dirty,busy}); }, [dirty,busy,onDraftStateChange]);
 
   const referenceError = playbooksQuery.error || servers.error;
   if (referenceError) {
@@ -500,6 +530,9 @@ export function ScheduleDialog({
 
   const iv = INTERVALS.find((i) => i.value === interval);
 
+  const visibleHosts = filterTargetHosts(srvList, {search:hostSearch,status:hostStatus});
+  const targetPreview = scheduleTargetPreview(srvList, checked, allChecked);
+
   const toggleSrv = (nm: string) => {
     setChecked((prev) => {
       const n = new Set(prev);
@@ -511,6 +544,11 @@ export function ScheduleDialog({
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setSaveError(null);
+    if (formEnvironment !== environmentId) {
+      setSaveError('Switch back to the draft environment before saving this schedule.');
+      return;
+    }
     if (!name.trim() || !playbook) {
       showToast(t("sc.required"), "error");
       return;
@@ -528,13 +566,17 @@ export function ScheduleDialog({
       showToast("Confirm the all-host target before saving this schedule.", "error");
       return;
     }
+    if (!Number.isInteger(forks) || forks < 1 || forks > 50) {
+      setSaveError("Parallel hosts must be an integer from 1 to 50.");
+      return;
+    }
     let parsedExtraVars: Record<string, unknown> = {};
     if (extraVars.trim()) {
       try {
         parsedExtraVars = JSON.parse(extraVars);
-        if (!parsedExtraVars || Array.isArray(parsedExtraVars) || typeof parsedExtraVars !== "object") throw new Error();
+        if (!parsedExtraVars || Array.isArray(parsedExtraVars) || typeof parsedExtraVars !== "object" || JSON.stringify(parsedExtraVars).length > 4096 || !Object.values(parsedExtraVars).every(item => typeof item === "string" || typeof item === "boolean" || (typeof item === "number" && Number.isFinite(item)))) throw new Error();
       } catch {
-        showToast("Extra variables must be a JSON object.", "error");
+        setSaveError("Extra variables must be a flat JSON object with text, finite numbers or Boolean values (maximum 4,096 characters).");
         return;
       }
     }
@@ -565,21 +607,23 @@ export function ScheduleDialog({
       }
       onSaved();
     } catch (err: unknown) {
-      showToast((err as Error).message, "error");
+      setSaveError((err as Error).message);
     } finally {
       setBusy(false);
     }
   };
 
   return (
-    <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
-      <form onSubmit={submit}>
-        <DialogHeader>
+    <DialogContent className="max-w-5xl max-h-[90dvh] overflow-hidden p-0 sm:p-0">
+      <form onSubmit={submit} className="flex min-h-0 max-h-[90dvh] flex-col">
+        <DialogHeader className="shrink-0 border-b px-5 py-4 pr-12">
           <DialogTitle>
             {existing ? t("sc.editTitle") : t("sc.newTitle")}
           </DialogTitle>
         </DialogHeader>
-        <div className="space-y-3 py-3">
+        <div className="grid min-h-0 gap-6 overflow-y-auto p-5 md:grid-cols-2">
+          <section className="min-w-0 space-y-3" aria-label="Workflow and targets">
+          <h3 className="text-sm font-semibold">Workflow and targets</h3>
           <div className="space-y-1">
             <Label htmlFor="schedule-name">{t("sc.name")}</Label>
             <Input
@@ -616,6 +660,8 @@ export function ScheduleDialog({
             <p className="text-xs text-muted-foreground">
               {allChecked ? t("run.excludeHint") : t("run.includeHint")}
             </p>
+            <div className="flex gap-2"><Input aria-label="Search schedule targets" placeholder="Search name, IP or tag" value={hostSearch} onChange={event=>setHostSearch(event.target.value)} /><select aria-label="Target status" className="rounded-md border bg-background px-2 text-xs" value={hostStatus} onChange={event=>setHostStatus(event.target.value)}><option value="">All statuses</option><option value="online">Online</option><option value="offline">Offline</option><option value="unknown">Unknown</option></select></div>
+            <p className="text-xs text-muted-foreground">{visibleHosts.length} of {srvList.length} hosts shown. Filtering does not change the selection.</p>
             <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
@@ -623,13 +669,14 @@ export function ScheduleDialog({
                   checked={allChecked}
                   onChange={(e) => {
                     setAllChecked(e.target.checked);
+                    setAllConfirmed(false);
                     setChecked(new Set());
                   }}
                 />
                 {t("pb.allServers")}
               </label>
               <Separator />
-              {srvList.map((s) => {
+              {visibleHosts.map((s) => {
                 const nm = String(s.name);
                 const isExcluded = allChecked && checked.has(nm);
                 return (
@@ -644,7 +691,7 @@ export function ScheduleDialog({
                       onChange={() => toggleSrv(nm)}
                       className={isExcluded ? "accent-destructive" : ""}
                     />
-                    <span>{nm}</span>
+                    <span className="min-w-0 flex-1"><span className="block">{nm}</span><span className="block text-xs text-muted-foreground">{String(s.ip_address || "No IP")} · {String(s.status || "unknown")}</span></span>
                     {isExcluded && (
                       <span className="text-xs font-medium text-destructive">
                         {t("run.excluded")}
@@ -662,7 +709,7 @@ export function ScheduleDialog({
                   checked={checked.has("localhost")}
                   onChange={() => toggleSrv("localhost")}
                 />
-                <span>localhost</span>
+                <span>localhost <span className="block text-xs text-muted-foreground">Runs inside the Shipyard runtime, not on a remote host.</span></span>
                 {allChecked && checked.has("localhost") && (
                   <span className="text-xs font-medium text-destructive">
                     {t("run.excluded")}
@@ -670,6 +717,8 @@ export function ScheduleDialog({
                 )}
               </label>
             </div>
+            <div className="rounded-md border bg-muted/20 p-3 text-xs"><p className="font-medium">Current target preview · {targetPreview.targets.length} {targetPreview.targets.length === 1 ? 'target' : 'targets'}</p><p className="mt-1 break-words">{targetPreview.targets.slice(0,8).join(', ') || 'No targets selected'}{targetPreview.targets.length>8?` · +${targetPreview.targets.length-8} more`:''}</p>{targetPreview.targets.length>8&&<details><summary className="cursor-pointer">Show all targets</summary><p className="max-h-24 overflow-auto break-words">{targetPreview.targets.join(', ')}</p></details>}{allChecked&&<p className="mt-1 text-muted-foreground">Dynamic scope: future hosts in this environment are included unless excluded.</p>}{targetPreview.unavailable.length>0&&<p role="alert" className="mt-1 text-warning">Saved {allChecked?'exclusions':'targets'} not found in this inventory: {targetPreview.unavailable.join(', ')}. Check renamed, removed or restricted hosts before saving.</p>}</div>
+            {targetPreview.unavailable.length > 0 && <Button type="button" variant="outline" size="sm" onClick={() => setChecked(previous => new Set([...previous].filter(value => !targetPreview.unavailable.includes(value))))}>Remove unavailable {allChecked ? 'exclusions' : 'targets'} from this draft</Button>}
             {allChecked && (
               <label className="mt-2 flex items-start gap-2 rounded-md border border-warning/40 bg-warning/5 p-3 text-sm">
                 <input type="checkbox" className="mt-0.5" checked={allConfirmed} onChange={(event) => setAllConfirmed(event.target.checked)} />
@@ -678,23 +727,9 @@ export function ScheduleDialog({
             )}
           </div>
 
-          <div className="space-y-1">
-            <Label htmlFor="schedule-extra-vars">Extra variables <span className="font-normal text-muted-foreground">(optional JSON)</span></Label>
-            <textarea id="schedule-extra-vars" className="min-h-20 w-full rounded-md border bg-background px-3 py-2 font-mono text-xs" value={extraVars} onChange={(event) => setExtraVars(event.target.value)} />
-            <p className="text-xs text-muted-foreground">Stored encrypted with the schedule. Environment variables and secrets are merged automatically.</p>
-          </div>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
-              <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Use check mode and show diffs</span></span>
-              <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
-            </label>
-            <div className="space-y-1">
-              <Label htmlFor="schedule-forks">Parallel hosts</Label>
-              <Input id="schedule-forks" type="number" min={1} max={50} value={forks} onChange={(event) => setForks(Math.min(50, Math.max(1, Number(event.target.value) || 1)))} />
-              <p className="text-xs text-muted-foreground">Set to 1 for serial execution.</p>
-            </div>
-          </div>
-
+          </section>
+          <section className="min-w-0 space-y-3 md:border-l md:pl-6" aria-label="Timing and execution preview">
+          <h3 className="text-sm font-semibold">Timing and execution preview</h3>
           {/* Interval + time */}
           <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
             <span><span className="block font-medium">Custom cron expression</span><span className="text-xs text-muted-foreground">Use ranges, lists and steps for schedules not covered by presets.</span></span>
@@ -710,11 +745,12 @@ export function ScheduleDialog({
               <p className="text-xs text-muted-foreground">Five fields: minute, hour, day of month, month, weekday. Example: 0 2 * * 1-5.</p>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          {!customCronMode && <div className="grid grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label>{t("sc.interval")}</Label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                aria-label="Schedule interval"
                 value={interval}
                 onChange={(e) => setInterval2(e.target.value)}
               >
@@ -731,6 +767,7 @@ export function ScheduleDialog({
                 <div className="flex items-center gap-1">
                   <select
                     className="flex h-9 w-20 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    aria-label="Schedule hour"
                     value={hour}
                     onChange={(e) => setHour(+e.target.value)}
                   >
@@ -743,6 +780,7 @@ export function ScheduleDialog({
                   <span className="text-muted-foreground">:</span>
                   <select
                     className="flex h-9 w-20 rounded-md border border-input bg-background px-2 py-1 text-sm"
+                    aria-label="Schedule minute"
                     value={minute}
                     onChange={(e) => setMinute(+e.target.value)}
                   >
@@ -755,12 +793,13 @@ export function ScheduleDialog({
                 </div>
               </div>
             )}
-          </div>
-          {iv?.needsWeekday && (
+          </div>}
+          {!customCronMode && iv?.needsWeekday && (
             <div className="space-y-1">
               <Label>{t("sc.weekday")}</Label>
               <select
                 className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm"
+                aria-label="Schedule weekday"
                 value={weekday}
                 onChange={(e) => setWeekday(+e.target.value)}
               >
@@ -772,7 +811,7 @@ export function ScheduleDialog({
               </select>
             </div>
           )}
-          {iv?.needsMonthday && (
+          {!customCronMode && iv?.needsMonthday && (
             <div className="space-y-1">
               <Label>{t("sc.dayOfMonth")}</Label>
               <Input
@@ -785,9 +824,36 @@ export function ScheduleDialog({
               />
             </div>
           )}
+          <section className="rounded-md border bg-muted/20 p-3 text-xs" aria-label="Next executions">
+            <p className="font-medium">Next three executions</p>
+            <p className="my-1 font-mono">{effectiveCron}</p>
+            {previewCron !== effectiveCron || preview.isFetching ? <p>Calculating…</p> : preview.isError ? <p role="alert" className="text-destructive">{preview.error.message}</p> : preview.data && <><p>Scheduler timezone: {preview.data.timezone}</p><ol className="my-2 list-decimal pl-5">{preview.data.runs.map(run=><li key={run}>{new Intl.DateTimeFormat('en-GB', {timeZone:preview.data.timezone,dateStyle:'medium',timeStyle:'long'}).format(new Date(run))}</li>)}</ol><p className="text-muted-foreground">Calculated from the scheduler's current timezone. Paused schedules do not run. If a previous execution of this schedule is still active, the next occurrence is skipped, not queued. Failed runs are not automatically retried; the next regular occurrence follows the cron expression.</p></>}
+            {formEnvironment === environmentId && previewCron === effectiveCron && !preview.isFetching && !preview.isError && preview.data && <ScheduleMaintenancePreview runs={preview.data.runs} targets={targetPreview.targets} hosts={srvList} environmentId={formEnvironment} />}
+          </section>
+          <div className="space-y-1">
+            <Label htmlFor="schedule-extra-vars">Extra variables <span className="font-normal text-muted-foreground">(optional JSON)</span></Label>
+            <textarea id="schedule-extra-vars" className="min-h-20 w-full rounded-md border bg-background px-3 py-2 font-mono text-xs" value={extraVars} onChange={(event) => setExtraVars(event.target.value)} />
+            <p className="text-xs text-muted-foreground">Stored encrypted with the schedule. Environment variables and secrets are merged automatically.</p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="flex items-center justify-between gap-3 rounded-md border px-3 py-2 text-sm">
+              <span><span className="block font-medium">Dry run</span><span className="text-xs text-muted-foreground">Use check mode and show diffs</span></span>
+              <Switch aria-label="Dry run" checked={checkMode} onCheckedChange={setCheckMode} />
+            </label>
+            <div className="space-y-1">
+              <Label htmlFor="schedule-forks">Parallel hosts</Label>
+              <Input id="schedule-forks" aria-invalid={!Number.isInteger(forks) || forks < 1 || forks > 50} aria-describedby="schedule-forks-help" onInvalid={() => setSaveError("Parallel hosts must be an integer from 1 to 50.")} type="number" min={1} max={50} step={1} value={Number.isNaN(forks) ? '' : forks} onChange={(event) => setForks(event.target.valueAsNumber)} />
+              <p id="schedule-forks-help" className="text-xs text-muted-foreground">Enter a whole number from 1 to 50. Set to 1 for serial execution.</p>
+            </div>
+          </div>
+
+          </section>
         </div>
-        <DialogFooter>
-          <Button type="submit" disabled={busy}>
+        <DialogFooter className="shrink-0 border-t px-5 py-3 sm:items-center">
+          {formEnvironment !== environmentId && <p role="alert" className="mr-auto text-sm text-warning">Switch back to the draft environment to save.</p>}
+          {dirty && !saveError && formEnvironment === environmentId && <p className="mr-auto text-xs text-muted-foreground">Unsaved changes</p>}
+          {saveError && <p role="alert" className="mr-auto text-sm text-destructive">{saveError}</p>}
+          <Button type="submit" disabled={busy || formEnvironment !== environmentId}>
             {existing ? t("common.save") : t("common.create")}
           </Button>
         </DialogFooter>

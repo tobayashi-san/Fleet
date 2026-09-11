@@ -1,3 +1,7 @@
+import { Timestamp } from '@/components/ui/timestamp';
+import { MfaPolicyOverview } from '@/features/users/MfaPolicyOverview';
+import { InvitationsPanel, InvitationLink, type Invitation } from '@/features/users/invitations';
+import { RoleAccessChanges, RoleAccessSummary, matchesRolePreset, editableCapabilities } from '@/features/users/role-access-changes';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,10 +11,10 @@ import {
   Puzzle, MoreHorizontal,
   UserX, UserCheck, LogOut,
 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, apiFetch, ApiError } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useProfile } from '@/lib/queries';
-import { asArray, cn, formatDateTime } from '@/lib/utils';
+import { asArray, cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -44,9 +48,11 @@ interface UserRow {
 
 interface RoleRow {
   id: string;
+  revision?: string;
   name: string;
   is_system?: boolean;
   permissions?: RolePermissions;
+  effectivePermissions?: RolePermissions;
 }
 
 interface RolePermissions {
@@ -126,6 +132,8 @@ function UsersPanel() {
         </div>
       }
     >
+      <MfaPolicyOverview />
+      <InvitationsPanel roles={roles} />
       {usersLoading && (
         <div className="py-2">
           <SkeletonRow cols={3} />
@@ -167,7 +175,7 @@ function UsersPanel() {
                   <span className="font-mono text-[11px] text-muted-foreground">@{u.username}</span>
                   <span className="text-[11px] text-muted-foreground">
                     {u.last_login_at
-                      ? t('set.lastLogin', { date: formatDateTime(`${u.last_login_at}Z`) })
+                      ? <>{t('set.lastLogin', { date: '' })}<Timestamp value={u.last_login_at} /></>
                       : t('set.neverLoggedIn')}
                   </span>
                 </span>
@@ -282,71 +290,113 @@ function RevokeSessionsDialog({ user, onClose }: { user: UserRow; onClose: () =>
   );
 }
 
-function UserFormDialog({
+function useAccessResources() {
+  const environmentId = useUi((state) => state.environmentId);
+
+  const serversQ = useQuery<ServerRow[]>({ queryKey: ['servers', environmentId], queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerRow[]> });
+  // Resolve host and folder names within the selected environment, using
+  // the same cache keys as the infrastructure views.
+  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', environmentId], queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<GroupRow[]> });
+  const pluginsQ = useQuery<PluginRow[]>({ queryKey: ['plugins'], queryFn: () => api.getPlugins() as unknown as Promise<PluginRow[]> });
+  const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
+
+  const labels = {
+    servers: Object.fromEntries((serversQ.data || []).map(item => [String(item.id), item.name])),
+    groups: Object.fromEntries((groupsQ.data || []).map(item => [String(item.id), item.name])),
+    playbooks: Object.fromEntries((playbooksQ.data || []).map(item => [item.filename, item.filename])),
+    plugins: Object.fromEntries((pluginsQ.data || []).map(item => [item.id, item.name || item.sidebar?.label || item.id])),
+  };
+  return {serversQ, groupsQ, pluginsQ, playbooksQ, labels};
+}
+
+export function UserFormDialog({
   user, roles, onClose,
 }: { user: UserRow | null; roles: RoleRow[]; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const isEdit = !!user;
+  const [invite, setInvite] = useState(true);
+  const [invitation, setInvitation] = useState<Invitation | null>(null);
+  const {labels} = useAccessResources();
   const [username, setUsername] = useState(user?.username ?? '');
   const [displayName, setDisplayName] = useState(user?.display_name ?? '');
   const [email, setEmail] = useState(user?.email ?? '');
   const [password, setPassword] = useState('');
-  const [role, setRole] = useState(user?.role ?? 'user');
+  const [role, setRole] = useState(user?.role ?? '');
+  const previousPermissions = user?.role === 'admin' ? {full:true} : roles.find(item => item.id === user?.role)?.effectivePermissions;
+  const selectedPermissions = role === 'admin' ? {full:true} : roles.find(item => item.id === role)?.effectivePermissions;
+  const roleChanged = !user || role !== user.role;
+  const accessReviewAvailable = !roleChanged || (!!selectedPermissions && (!user || !!previousPermissions));
+  const [roleConflict, setRoleConflict] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const save = useMutation({
     mutationFn: async () => {
+      if (!roles.some((item) => item.id === role)) throw new Error('Select a role before saving.');
+      if (!accessReviewAvailable || roleConflict) throw new Error('Reload and review role permissions before saving.');
       if (!username.trim()) throw new Error(t('set.usernameRequired') as string);
-      if (!isEdit && password.length < 12) throw new Error(t('set.passwordTooShort') as string);
+      if (!isEdit && !invite && password.length < 12) throw new Error(t('set.passwordTooShort') as string);
       if (isEdit) {
-        return api.updateUser(user!.id, { username, displayName, email, role });
+        return api.updateUser(user!.id, { username, displayName, email, role, expectedRole:user!.role, roleRevision:roles.find(item => item.id === role)?.revision });
       }
-      return api.createUser({ username, displayName, email, password, role });
+      if (invite) return apiFetch<Invitation>('/users/invitations', {method: 'POST', body: {username, displayName, email, role, roleRevision: roles.find(item => item.id === role)?.revision}});
+      return api.createUser({ username, displayName, email, password, role, roleRevision:roles.find(item => item.id === role)?.revision });
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
+      if (!isEdit && invite) { setInvitation(result as Invitation); void qc.invalidateQueries({queryKey: ['user-invitations']}); return; }
       showToast(isEdit ? (t('user.updated') as string) : (t('user.created') as string), 'success');
       qc.invalidateQueries({ queryKey: ['users'] });
       onClose();
     },
-    onError: (e) => setError((e as Error).message),
+    onError: (e) => {
+      setError((e as Error).message);
+      if (e instanceof ApiError && e.field === 'role_revision') {
+        setRoleConflict(true);
+        void qc.invalidateQueries({queryKey:['roles']});
+        void qc.invalidateQueries({queryKey:['users']});
+      }
+    },
   });
 
+  if (invitation) return <Dialog open onOpenChange={value => { if (!value) onClose(); }}><DialogContent className="max-w-lg"><DialogHeader><DialogTitle>Invitation created</DialogTitle></DialogHeader><InvitationLink invitation={invitation}/><DialogFooter><Button onClick={onClose}>Done</Button></DialogFooter></DialogContent></Dialog>;
+
   return (
-    <Dialog open onOpenChange={(v) => { if (!v) onClose(); }}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
+    <Dialog open onOpenChange={(v) => { if (!v && !save.isPending) onClose(); }}>
+      <DialogContent className="flex max-w-lg max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle>{isEdit ? t('set.editUser') : t('set.addUser')}</DialogTitle>
         </DialogHeader>
-        <div className="space-y-3">
+        <fieldset disabled={save.isPending} className="min-h-0 space-y-3 overflow-y-auto pr-1">
+          {!isEdit && <div><Label htmlFor="user-creation-method">Account setup</Label><select id="user-creation-method" value={invite ? 'invite' : 'direct'} onChange={event => { setInvite(event.target.value === 'invite'); setPassword(''); }} className="mt-1 h-9 w-full rounded-md border bg-background px-3 text-sm"><option value="invite">Invite with a link (recommended)</option><option value="direct">Create with an initial password</option></select><p className="mt-1 text-xs text-muted-foreground">An invitation lets the recipient choose their password. Review the role below before creating the link.</p></div>}
           <div>
-            <Label>{t('set.username')}</Label>
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
+            <Label htmlFor="user-username">{t('set.username')}</Label>
+            <Input id="user-username" value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="off" />
             <p className="mt-1 text-[11px] text-muted-foreground">{t('set.usernameHint')}</p>
           </div>
           <div>
-            <Label>{t('set.displayName')}</Label>
-            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={username} autoComplete="off" />
+            <Label htmlFor="user-display-name">{t('set.displayName')}</Label>
+            <Input id="user-display-name" value={displayName} onChange={(e) => setDisplayName(e.target.value)} placeholder={username} autoComplete="off" />
             <p className="mt-1 text-[11px] text-muted-foreground">{t('set.displayNameHint')}</p>
           </div>
           <div>
-            <Label>{t('set.email')}</Label>
-            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
+            <Label htmlFor="user-email">{t('set.email')}</Label>
+            <Input id="user-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="off" />
           </div>
-          {!isEdit && (
+          {!isEdit && !invite && (
             <div>
-              <Label>{t('set.password')}</Label>
-              <Input type="password" value={password} onChange={(e) => setPassword(e.target.value)}
+              <Label htmlFor="user-password">{t('set.password')}</Label>
+              <Input id="user-password" type="password" value={password} onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('set.passwordMinHint') as string} autoComplete="new-password" />
             </div>
           )}
           <div>
-            <Label>{t('set.role') ?? 'Role'}</Label>
-            <select
+            <Label htmlFor="user-role">{t('set.role') ?? 'Role'}</Label>
+            <select id="user-role"
               value={role}
               onChange={(e) => setRole(e.target.value)}
               className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
             >
+              <option value="" disabled>Select a role…</option>
               {roles.map(r => (
                 <option key={r.id} value={r.id}>
                 {r.name}{r.is_system ? '' : ` ${t('set.roleCustomSuffix')}`}
@@ -354,12 +404,27 @@ function UserFormDialog({
               ))}
             </select>
           </div>
-          {error && <p className="text-sm text-destructive">{error}</p>}
-        </div>
-        <DialogFooter>
-          <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
-            {isEdit ? t('set.saveBtn') : t('set.createBtn')}
+          {!isEdit && <details className="rounded-md border p-3 text-xs">
+            <summary className="cursor-pointer font-medium">Choose by role preset</summary>
+            <p className="mt-2 text-muted-foreground">Choose an existing role with matching capabilities, then review its resource scope below. Selecting a preset does not create or modify a shared role.</p>
+            <div className="mt-3 space-y-3">{ROLE_PRESETS.map(preset => {
+              const matchingRoles = roles.filter(item => item.id !== 'admin' && matchesRolePreset(item.effectivePermissions, preset.caps));
+              return <div key={preset.id}>
+                <p className="font-medium">{preset.label}</p>
+                <p className="text-muted-foreground">{preset.description}</p>
+                {matchingRoles.length ? <div className="mt-1 flex flex-wrap gap-2">{matchingRoles.map(item => <Button key={item.id} type="button" size="sm" variant={role === item.id ? 'default' : 'outline'} onClick={() => setRole(item.id)} aria-pressed={role === item.id}>Select {item.name}</Button>)}</div>
+                  : <p className="mt-1 text-muted-foreground">No existing role matches. Create one from this preset in Role Management.</p>}
+              </div>;
+            })}</div>
+          </details>}
+          {isEdit && roleChanged && <RoleAccessChanges labels={labels} before={previousPermissions} after={selectedPermissions} capabilityKeys={ALL_CAPS.map(cap => cap.key)} />}
+          {role && <RoleAccessSummary permissions={selectedPermissions} labels={labels} sensitiveCapabilityKeys={ALL_CAPS.filter(cap => DANGEROUS_CAPS.has(cap.key)).map(cap => cap.key)} />}
+        </fieldset>
+        {error && <p role="alert" className="shrink-0 text-sm text-destructive">{error}</p>}
+        <DialogFooter className="shrink-0">
+          <Button variant="secondary" disabled={save.isPending} onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || roleConflict || !role || !accessReviewAvailable}>
+            {save.isPending ? 'Saving…' : isEdit ? t('set.saveBtn') : invite ? 'Create invitation' : t('set.createBtn')}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -528,20 +593,20 @@ function RolesPanel() {
           />
         )}
         {rolesQ.isSuccess && custom.map((r, i) => {
-          const p = r.permissions || {};
-          const serverSummary = p.servers === 'all' || p.servers == null
+          const p = r.effectivePermissions || {};
+          const serverSummary = p.full === true || p.servers === 'all'
             ? t('set.allServers')
-            : `${p.servers.groups?.length || 0} group(s), ${p.servers.servers?.length || 0} server(s)`;
-          const pbSummary = p.playbooks === 'all' || p.playbooks == null
-            ? t('set.allPlaybooks') : `${(p.playbooks as string[]).length} playbook(s)`;
-          const plSummary = p.plugins === 'all' || p.plugins == null
-            ? t('set.allPlugins') : `${(p.plugins as string[]).length} plugin(s)`;
+            : `${p.servers?.groups?.length || 0} group(s), ${p.servers?.servers?.length || 0} server(s)`;
+          const pbSummary = p.full === true || p.playbooks === 'all'
+            ? t('set.allPlaybooks') : `${(p.playbooks as string[] | undefined)?.length || 0} playbook(s)`;
+          const plSummary = p.full === true || p.plugins === 'all'
+            ? t('set.allPlugins') : `${(p.plugins as string[] | undefined)?.length || 0} plugin(s)`;
           return (
             <SettingsRow
               key={r.id}
               noBorder={i === custom.length - 1}
               label={r.name}
-              hint={`${serverSummary} · ${pbSummary} · ${plSummary}`}
+              hint={r.effectivePermissions ? `${serverSummary} · ${pbSummary} · ${plSummary}` : 'Effective permission details unavailable'}
             >
               <OverflowMenu title={`Actions for ${r.name}`}>
                 <OverflowItem icon={Pencil} onClick={() => setEditing(r)}>
@@ -571,13 +636,19 @@ function DeleteRoleDialog({ role, onClose }: { role: RoleRow; onClose: () => voi
   const { t } = useTranslation();
   const qc = useQueryClient();
   const m = useMutation({
-    mutationFn: () => api.deleteRole(role.id),
+    mutationFn: () => api.deleteRole(role.id, role.revision || ''),
     onSuccess: () => {
       showToast(t('role.deleted') as string, 'success');
       qc.invalidateQueries({ queryKey: ['roles'] });
       onClose();
     },
-    onError: (e) => showToast(t('common.errorPrefix', { msg: (e as Error).message }) as string, 'error'),
+    onError: async (e) => {
+      showToast(t('common.errorPrefix', {msg:(e as Error).message}) as string, 'error');
+      if (e instanceof ApiError && e.field === 'revision') {
+        await qc.invalidateQueries({queryKey:['roles']});
+        onClose();
+      }
+    },
   });
   return (
     <ConfirmDialog
@@ -714,7 +785,7 @@ const ROLE_PRESETS: RolePreset[] = [
   {
     id: 'operator',
     label: 'Operator',
-    description: 'Can run approved playbooks and routine update actions.',
+    description: 'Can run selected playbooks and routine update actions.',
     serversMode: 'all',
     pbMode: 'all',
     plMode: 'restricted',
@@ -744,17 +815,11 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const { t } = useTranslation();
   const qc = useQueryClient();
   const isEdit = !!role;
-  const environmentId = useUi((state) => state.environmentId);
+  const {serversQ, groupsQ, pluginsQ, playbooksQ, labels} = useAccessResources();
 
-  const serversQ = useQuery<ServerRow[]>({ queryKey: ['servers', environmentId], queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerRow[]> });
-  // Keep the folder inventory on the same invalidation family as the
-  // infrastructure tree and resource list. This dialog deliberately reads
-  // all folders, while environment-specific views use a second key segment.
-  const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', environmentId], queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<GroupRow[]> });
-  const pluginsQ = useQuery<PluginRow[]>({ queryKey: ['plugins'], queryFn: () => api.getPlugins() as unknown as Promise<PluginRow[]> });
-  const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
-
-  const p = role?.permissions || {};
+  const usersQ = useQuery<UserRow[]>({queryKey:['users'], queryFn:() => api.getUsers() as unknown as Promise<UserRow[]>, enabled:isEdit});
+  const p = role?.effectivePermissions || {};
+  const assignedUsers = (usersQ.data || []).filter(user => user.role === role?.id);
   const initServersMode = p.servers === 'all' ? 'all' : 'restricted';
   const initPbMode = p.playbooks === 'all' ? 'all' : 'restricted';
   const initPlMode = p.plugins === 'all' ? 'all' : 'restricted';
@@ -775,17 +840,15 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const [plSel, setPlSel] = useState<Set<string>>(
     new Set(Array.isArray(p.plugins) ? p.plugins : [])
   );
-  const [caps, setCaps] = useState<Record<string, boolean>>(() => {
-    const out: Record<string, boolean> = {};
-    [...SERVER_CAPS, ...DOCKER_CAPS, ...UPDATE_CAPS, ...PLAYBOOK_CAPS,
-      ...SCHEDULE_CAPS, ...VAR_CAPS, ...OTHER_CAPS].forEach(c => {
-      const legacyDeployment = (p as Record<string, unknown>).canManageDeployments === true
-        && ['canViewDeployments', 'canEditDeployments', 'canPlanDeployments', 'canApplyDeployments', 'canDestroyDeployments', 'canManageDeploymentPlatforms'].includes(c.key);
-      out[c.key] = (p as Record<string, unknown>)[c.key] === true || legacyDeployment;
-    });
-    return out;
-  });
+  const [caps, setCaps] = useState<Record<string, boolean>>(() => editableCapabilities(p, ALL_CAPS.map(cap => cap.key)));
+  const proposedPermissions: RolePermissions = {
+    ...caps,
+    servers: serversMode === 'all' ? 'all' : {groups:[...groupsSel],servers:[...serversSel]},
+    playbooks: pbMode === 'all' ? 'all' : [...pbSel],
+    plugins: plMode === 'all' ? 'all' : [...plSel],
+  };
   const [error, setError] = useState<string | null>(null);
+  const [revisionConflict, setRevisionConflict] = useState(false);
 
   const toggleSet = (set: Set<string>, setter: (s: Set<string>) => void, val: string) => {
     const next = new Set(set);
@@ -796,13 +859,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const save = useMutation({
     mutationFn: async () => {
       if (!name.trim()) throw new Error(t('sc.nameRequired') as string);
-      const permissions: RolePermissions = { ...caps };
-      permissions.servers = serversMode === 'all'
-        ? 'all'
-        : { groups: [...groupsSel], servers: [...serversSel] };
-      permissions.playbooks = pbMode === 'all' ? 'all' : [...pbSel];
-      permissions.plugins = plMode === 'all' ? 'all' : [...plSel];
-      if (isEdit) return api.updateRole(role!.id, { name, permissions });
+      if (isEdit && !role?.effectivePermissions) throw new Error('Effective permission details are unavailable. Reload roles before editing access.');
+      const permissions = proposedPermissions;
+      if (isEdit) return api.updateRole(role!.id, { name, permissions, revision:role!.revision });
       return api.createRole({ name, permissions });
     },
     onSuccess: () => {
@@ -810,7 +869,13 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
       qc.invalidateQueries({ queryKey: ['roles'] });
       onClose();
     },
-    onError: (e) => setError((e as Error).message),
+    onError: (e) => {
+      setError((e as Error).message);
+      if (e instanceof ApiError && e.field === 'revision') {
+        setRevisionConflict(true);
+        void qc.invalidateQueries({queryKey:['roles']});
+      }
+    },
   });
 
   const sidebarPlugins = asArray<PluginRow>(pluginsQ.data).filter(pl => pl.sidebar);
@@ -827,7 +892,7 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     setPlMode(preset.plMode);
   };
 
-  const referenceQueries = [serversQ, groupsQ, pluginsQ, playbooksQ];
+  const referenceQueries = [serversQ, groupsQ, pluginsQ, playbooksQ, ...(isEdit ? [usersQ] : [])];
   const referenceError = referenceQueries.find((query) => query.isError)?.error;
   const referencesLoading = referenceQueries.some((query) => query.isLoading);
   if (referenceError || referencesLoading) {
@@ -876,6 +941,8 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
             <Label>{t('set.roleName')}</Label>
             <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ops Team" />
           </div>
+
+          {isEdit && <RoleAccessChanges labels={labels} before={role?.effectivePermissions} after={proposedPermissions} capabilityKeys={ALL_CAPS.map(cap => cap.key)} description={`Saved role → proposed changes. Affects ${assignedUsers.length} assigned user${assignedUsers.length === 1 ? '' : 's'}, including disabled accounts.`} />}
 
           <div className="rounded-md border bg-muted/20 p-3">
             <div className="mb-2 flex items-center justify-between gap-3">
@@ -1029,12 +1096,13 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
             <CapGrid caps={OTHER_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+
         </div>
 
+        {error && <p role="alert" className="shrink-0 px-5 py-2 text-sm text-destructive">{error}</p>}
         <DialogFooter className="shrink-0 border-t bg-card px-5 py-3">
           <Button variant="secondary" onClick={onClose}>{t('common.cancel')}</Button>
-          <Button onClick={() => save.mutate()} disabled={save.isPending}>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || revisionConflict || (isEdit && !role?.effectivePermissions)}>
             {isEdit ? t('set.saveBtn') : t('set.createRole')}
           </Button>
         </DialogFooter>

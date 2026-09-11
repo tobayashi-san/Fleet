@@ -47,10 +47,11 @@ describe("UI refactor contract", () => {
     expect(hostDialog).not.toContain('role="switch"');
   });
 
-  it("keeps VM creation split into two desktop columns", () => {
+  it("keeps VM creation guided with an explicit review step", () => {
     const dialog = source("features/deployments/VmFormDialog.tsx");
-    expect(dialog).toContain('className="grid gap-5 lg:grid-cols-2 lg:items-start"');
-    expect(dialog.match(/className="min-w-0 space-y-5"/g)).toHaveLength(2);
+    expect(dialog).toContain('aria-label="VM setup steps"');
+    expect(dialog).toContain('aria-label="Review VM definition"');
+    expect(dialog).toContain("if (step < 4) { nextStep(); return; }");
     expect(dialog).toContain("Compute & Storage");
     expect(dialog).toContain("Network & VM access");
     expect(dialog).toContain("Post-deploy workflows");
@@ -79,13 +80,14 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain('t("nav.administration")');
     expect(sidebar).not.toContain('t("nav.profile")');
     expect(sidebar).toContain('t("nav.help")');
-    expect(tree).toContain("const nodeOpen = !collapsed.has(nodeKey)");
+    expect(tree).toContain("const nodeOpen = searching || !collapsed.has(nodeKey)");
+    expect(tree).toContain("const open = searching || !collapsed.has");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
     expect(tree).toContain("!platformServerIds.has(server.id)");
     expect(tree).toContain('to="/servers/$id"');
-    expect(tree).toContain("{vm.fleet_server_id ? (");
-    expect(tree).toContain('title={`Open managed host ${vm.name || vmId}`}');
-    expect(tree).toContain('title="Open Proxmox virtual machine details"');
+    expect(tree).not.toContain("{vm.fleet_server_id ? (");
+    expect(tree).toContain('aria-label={`Open host ${linkedHostName || vm.fleet_server_id} linked to ${vm.name || vmId}`}');
+    expect(tree).toContain('title={`Open host operations: ${linkedHostName || vm.fleet_server_id}`}');
     expect(tree).toContain("showInfrastructureVmIds");
     expect(tree).toContain("{showVmIds && <span");
   });
@@ -173,28 +175,29 @@ describe("UI refactor contract", () => {
     const servers = source("features/servers/ServersPage.tsx");
     const palette = source("components/CommandPalette.tsx");
     expect(servers).toContain('aria-label={`Select ${s.name}`}');
-    expect(servers.match(/aria-label=\{t\("common\.all"\)\}/g)).toHaveLength(2);
+    expect(servers.match(/aria-label=\{useGroups \? "Select all hosts matching current filters" : "Select all hosts on this page"\}/g)).toHaveLength(2);
     expect(palette).toContain("aria-label={t('cmd.placeholder')}");
   });
 
   it("requires the VM name for an immediate force stop", () => {
     const vm = source("routes/proxmox-vm-detail.tsx");
-    expect(vm).toContain('powerAction === "stop" ? `STOP ${vm.name}` : undefined');
-    expect(vm).toContain("Unsaved virtual machine data may be lost.");
-    expect(vm).toContain('variant={powerAction === "stop" ? "destructive" : "warning"}');
+    const dialog = source("features/infrastructure/GuestPowerDialog.tsx");
+    expect(vm).toContain('<GuestPowerDialog action={powerAction}');
+    expect(dialog).toContain('typed===`STOP ${target.guestName}`');
+    expect(dialog).toContain('Unsaved data may be lost.');
+    expect(dialog).toContain("variant={force?'destructive':'default'}");
+    expect(dialog).toContain('confirm_guest_name:force?target.guestName:undefined');
   });
 
   it("keeps playbook creation central and targeting reviewable", () => {
-    const page = source("features/playbooks/PlaybooksPage.tsx");
     const templates = source("features/playbooks/PlaybookTemplates.tsx");
     const runs = source("features/playbooks/PlaybookRuns.tsx");
     const variables = source("features/playbooks/PlaybookVariables.tsx");
-    expect(page).toContain("setCreateRequest((value) => value + 1)");
     expect(templates).not.toContain("const startNew");
     expect(runs).toContain('placeholder="Search name, IP, or tag"');
     expect(runs).toContain('aria-label="Filter hosts by group"');
     expect(runs).toContain('aria-label="Filter hosts by tag"');
-    expect(runs).toContain("<summary className=\"cursor-pointer text-sm font-medium\">Advanced options</summary>");
+    expect(runs).toContain("<summary className=\"cursor-pointer text-sm font-medium\">Advanced execution options</summary>");
     expect(variables).toContain('{ label: "Secrets"');
     expect(variables).toContain('v.is_secret ? "••••••••"');
   });
@@ -219,10 +222,10 @@ describe("UI refactor contract", () => {
     const vm = source("routes/proxmox-vm-detail.tsx");
     expect(infrastructure).toContain('title="Infrastructure inventory could not be loaded"');
     expect(vm).toContain('title="Virtual machine inventory could not be loaded"');
-    expect(vm).toContain('title="Virtual machine configuration could not be loaded"');
+    // Resource-specific configuration errors are verified by rendered component tests.
     expect(vm).toContain('title="VM management context could not be loaded"');
     expect(vm).toContain('title="Snapshots could not be loaded"');
-    expect(vm).toContain('title="VM tasks could not be loaded"');
+    expect(vm).toContain('title="Guest audit activity could not be loaded"');
     expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "snapshots")');
     expect(vm).toContain('(vmTabs.value === "overview" || vmTabs.value === "tasks")');
     expect(vm).not.toContain('Connections, declaration, and management for this virtual\n                  virtual machine.');
@@ -307,7 +310,7 @@ describe("UI refactor contract", () => {
     expect(palette).toContain("Some search results could not be loaded.");
     expect(tree).toContain("Managed hosts could not be loaded");
     expect(login).toContain('title="Shipyard could not be reached"');
-    expect(dashboard).toContain('title="Failed operation count could not be loaded"');
+    expect(dashboard).toContain('title="Operation counts could not be loaded"');
     expect(servers).toContain('title="Host folders could not be loaded"');
     expect(servers).toContain('title="Playbooks could not be loaded"');
     expect(audit).toContain('title="Audit filters could not be loaded"');
@@ -378,7 +381,7 @@ describe("UI refactor contract", () => {
     expect(operations).toContain('DialogTitle>Task details</DialogTitle>');
     expect(operations).toContain("target_detail?: string");
     expect(network).toContain('connectionRows.length === 0\n                      ? tr("noProxmoxConnection")');
-    expect(history).toContain('if (!item.output?.trim()) return "No error details were recorded."');
+    expect(history).toContain('import { historyFailureCause } from "@/lib/history-failure"');
     expect(history).not.toContain('h.output && <button');
     expect(infrastructure).toContain('IPAM schedule</th>');
     expect(infrastructure).toContain('Last sync</th>');

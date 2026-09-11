@@ -1,3 +1,5 @@
+const {requiresMfa,enrollmentOnly,enrollmentRoute}=require('../utils/mfa-policy');
+const {validSession}=require('../utils/auth-sessions');
 const jwt = require('jsonwebtoken');
 const db = require('../db');
 const { getJwtSecret } = require('../utils/jwt-secret');
@@ -57,6 +59,15 @@ const authMiddleware = function authMiddleware(req, res, next) {
   if (payload.tv !== undefined && payload.tv !== (user.token_version || 0)) {
     return res.status(401).json({ error: 'Token revoked' });
   }
+  if (!validSession(payload, authHeader.slice(7))) return res.status(401).json({error:'Session revoked or expired'});
+  if(enrollmentOnly(user,payload) && !enrollmentRoute(req)) {
+    return res.status(403).json({error:'Set up multi-factor authentication before accessing the workspace.',field:'mfa_enrollment_required'});
+  }
+  if(requiresMfa(user) && user.totp_enabled && payload.mfa!==true) {
+    return res.status(401).json({error:'Sign in again with multi-factor authentication.'});
+  }
+  req.authPayload = payload;
+  req.sessionId = payload.sid || null;
   req.user = user;
   return next();
 };

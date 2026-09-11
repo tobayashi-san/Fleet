@@ -1,0 +1,368 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Playbooks" [level=1]
+  - paragraph: Reusable Ansible workflows for configuration and repeatable host automation
+  - generic: Git repository not configured
+  - button "Pull from remote":
+  - button "Push to remote":
+  - button "Git settings":
+    - text: Git settings
+  - button "New Playbook":
+    - text: New Playbook
+  - tablist:
+    - tab "Playbooks":
+      - text: Playbooks
+    - tab "Runs" [active] [selected]:
+      - text: Runs
+    - tab "Variables & Secrets":
+      - text: Variables & Secrets
+    - tab "Schedules":
+      - text: Schedules
+  - tabpanel "Runs":
+    - text: Quick Run
+    - text: Playbook
+    - combobox "Playbook":
+      - option "— Select Playbook —" [selected]
+      - option "Check Disk Usage"
+      - option "Cleanup APT Cache"
+      - option "Cleanup Docker Resources"
+      - option "Cleanup Old Logs"
+      - option "Switch to DHCP (Netplan)"
+      - option "Firewall Setup (UFW)"
+      - option "Firewall Status Report"
+      - option "Install Docker Engine"
+      - option "Network Info Report"
+      - option "Set Hostname"
+      - option "Configure Static IP (Netplan)"
+      - option "Timezone Sync"
+      - option "System Update"
+    - text: Target hosts
+    - paragraph: When "All hosts" is disabled, only checked hosts are targeted.
+    - textbox "Search hosts":
+      - /placeholder: Search name, IP, or tag
+    - combobox "Filter hosts by group":
+      - option "All groups" [selected]
+    - combobox "Filter hosts by tag":
+      - option "All tags" [selected]
+      - option "lxc"
+      - option "proxmox"
+      - option "proxmox-node"
+      - option "proxmox:Production"
+      - option "qemu"
+    - generic: 14 of 14 managed hosts
+    - button "Select filtered"
+    - checkbox "All hosts"
+    - text: All hosts
+    - checkbox "hr01-ctl-fleet01 10.77.25.10 proxmox qemu +1 Online"
+    - generic: hr01-ctl-fleet01
+    - generic: 10.77.25.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-edge-newt-admin01 10.77.80.10 proxmox qemu +1 Online"
+    - generic: hr01-edge-newt-admin01
+    - generic: 10.77.80.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-edge-newt-apps01 10.77.80.20 proxmox qemu +1 Online"
+    - generic: hr01-edge-newt-apps01
+    - generic: 10.77.80.20
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-edge-newt-game01 10.77.80.40 proxmox qemu +1 Online"
+    - generic: hr01-edge-newt-game01
+    - generic: 10.77.80.40
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-edge-newt-media01 10.77.80.30 proxmox qemu +1 Online"
+    - generic: hr01-edge-newt-media01
+    - generic: 10.77.80.30
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-ext-cloud01 10.77.30.30 proxmox lxc +1 Online"
+    - generic: hr01-ext-cloud01
+    - generic: 10.77.30.30
+    - generic: proxmox
+    - generic: lxc
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-ext-immich01 10.77.30.20 proxmox lxc +1 Online"
+    - generic: hr01-ext-immich01
+    - generic: 10.77.30.20
+    - generic: proxmox
+    - generic: lxc
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-ext-unif01 10.77.30.10 proxmox qemu +1 Online"
+    - generic: hr01-ext-unif01
+    - generic: 10.77.30.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-game-minecraft01 10.77.50.10 proxmox qemu +1 Online"
+    - generic: hr01-game-minecraft01
+    - generic: 10.77.50.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-media-hms 10.77.40.20 proxmox qemu +1 Online"
+    - generic: hr01-media-hms
+    - generic: 10.77.40.20
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-media-plex 10.77.40.10 proxmox qemu +1 Online"
+    - generic: hr01-media-plex
+    - generic: 10.77.40.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "hr01-ops-jump01 10.77.20.10 proxmox qemu +1 Online"
+    - generic: hr01-ops-jump01
+    - generic: 10.77.20.10
+    - generic: proxmox
+    - generic: qemu
+    - generic: "+1"
+    - generic: Online
+    - checkbox "nbg1-dmz-Pangolin 46.225.131.214 Online"
+    - generic: nbg1-dmz-Pangolin
+    - generic: 46.225.131.214
+    - generic: Online
+    - checkbox "pve001 10.77.10.10 proxmox-node proxmox:Production Online"
+    - generic: pve001
+    - generic: 10.77.10.10
+    - generic: proxmox-node
+    - generic: proxmox:Production
+    - generic: Online
+    - checkbox "localhost"
+    - generic: localhost
+    - generic: Target preview · 0 hosts
+    - paragraph: Select at least one host.
+    - text: Extra Variables (JSON)
+    - generic: (optional)
+    - 'textbox "{\"key\": \"value\"}"'
+    - paragraph: Environment variables and encrypted secrets are merged automatically. Values entered here override them for this run.
+    - generic "Advanced options"
+    - button "Run":
+      - text: Run
+    - text: Output
+    - heading "Select a playbook and run it" [level=3]
+    - text: Job History
+    - combobox:
+      - option "All Schedules" [selected]
+      - option "Weekly Updates"
+    - table:
+      - rowgroup:
+        - row "Schedule Playbook Targets Started Status Actions":
+          - columnheader "Schedule"
+          - columnheader "Playbook"
+          - columnheader "Targets"
+          - columnheader "Started"
+          - columnheader "Status"
+          - columnheader "Actions":
+            - generic: Actions
+      - rowgroup:
+        - row "Weekly Updates update.yml 9 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "13 hosts"
+          - cell "9 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 8 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "13 hosts"
+          - cell "8 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 7 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "13 hosts"
+          - cell "7 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 6 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "6 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 5 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "5 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 4 Sept 2026, 01:00 Failed Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "4 Sept 2026, 01:00"
+          - cell "Failed":
+            - generic: Failed
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 3 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "3 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Manual run cleanup-docker.yml 2 Sept 2026, 19:09 Success Show Output":
+          - cell "Manual run":
+            - generic: Manual run
+          - cell "cleanup-docker.yml"
+          - cell:
+            - generic "1 host"
+          - cell "2 Sept 2026, 19:09"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 2 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "2 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 1 Sept 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "1 Sept 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 31 Aug 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "31 Aug 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 30 Aug 2026, 01:00 Success Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "14 hosts"
+          - cell "30 Aug 2026, 01:00"
+          - cell "Success":
+            - generic: Success
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 29 Aug 2026, 01:00 Failed Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "13 hosts"
+          - cell "29 Aug 2026, 01:00"
+          - cell "Failed":
+            - generic: Failed
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Weekly Updates update.yml 28 Aug 2026, 01:00 Failed Show Output":
+          - cell "Weekly Updates"
+          - cell "update.yml"
+          - cell:
+            - generic "13 hosts"
+          - cell "28 Aug 2026, 01:00"
+          - cell "Failed":
+            - generic: Failed
+          - cell "Show Output":
+            - button "Show Output":
+        - row "Manual run update.yml 27 Aug 2026, 18:32 Failed Show Output":
+          - cell "Manual run":
+            - generic: Manual run
+          - cell "update.yml"
+          - cell:
+            - generic "12 hosts"
+          - cell "27 Aug 2026, 18:32"
+          - cell "Failed":
+            - generic: Failed
+          - cell "Show Output":
+            - button "Show Output":

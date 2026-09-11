@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './dialog';
 import { Button } from './button';
 import { Input } from './input';
@@ -8,6 +8,9 @@ import { useUi } from '@/lib/store';
 
 interface ConfirmDialogProps {
   open: boolean;
+  closeOnConfirm?: boolean;
+  error?: string;
+  targetEnvironmentId?: string;
   onOpenChange: (open: boolean) => void;
   title: string;
   description: React.ReactNode;
@@ -24,6 +27,9 @@ interface ConfirmDialogProps {
 
 export function ConfirmDialog({
   open,
+  closeOnConfirm = true,
+  error,
+  targetEnvironmentId,
   onOpenChange,
   title,
   description,
@@ -37,11 +43,14 @@ export function ConfirmDialog({
   confirmInputPlaceholder,
   confirmInputHelp,
 }: ConfirmDialogProps) {
-  const environmentId = useUi((state) => state.environmentId);
+  const activeEnvironmentId = useUi((state) => state.environmentId);
+  const environmentId = targetEnvironmentId ?? activeEnvironmentId;
   const { data: environments } = useEnvironments();
   const environment = environments?.find((item) => String(item.id) === environmentId);
   const environmentName = String(environment?.name || (environmentId === 'default' ? 'Default' : environmentId));
   const [typed, setTyped] = useState('');
+  const submitted = useRef(false);
+  useEffect(() => { if (!isPending) submitted.current = false; }, [isPending, open]);
   const confirmInputId = useId();
   const requiredValue = String(confirmTextValue ?? '');
   const requiresText = requiredValue.length > 0;
@@ -52,7 +61,7 @@ export function ConfirmDialog({
   }, [open]);
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!isPending) onOpenChange(next); }}>
       <DialogContent className="max-w-sm">
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
@@ -61,7 +70,7 @@ export function ConfirmDialog({
           </DialogDescription>
         </DialogHeader>
         <div className="flex items-center justify-between gap-3 rounded-sm border border-border/80 bg-muted/25 px-3 py-2 text-xs">
-          <span className="text-muted-foreground">Active environment</span>
+          <span className="text-muted-foreground">{targetEnvironmentId ? 'Target environment' : 'Active environment'}</span>
           <span className="truncate font-medium" title={environmentName}>{environmentName}</span>
         </div>
         {requiresText && (
@@ -70,6 +79,7 @@ export function ConfirmDialog({
             <Input
               id={confirmInputId}
               value={typed}
+              disabled={isPending}
               // `input` is deliberately handled in addition to React's
               // change abstraction.  Browser autofill/password managers and
               // some WebKit/Firefox paths update the native value first; the
@@ -89,6 +99,7 @@ export function ConfirmDialog({
             </div>
           </div>
         )}
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <DialogFooter className="mt-2 gap-2">
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={isPending}>
             {cancelLabel}
@@ -96,7 +107,12 @@ export function ConfirmDialog({
           <Button
             variant={variant === 'destructive' ? 'destructive' : 'outline'}
             className={variant === 'warning' ? 'border-amber-500 bg-amber-500 text-white hover:bg-amber-600' : undefined}
-            onClick={() => { onConfirm(); onOpenChange(false); }}
+            onClick={() => {
+              if (isPending || !canConfirm || (!closeOnConfirm && submitted.current)) return;
+              if (!closeOnConfirm) submitted.current = true;
+              onConfirm();
+              if (closeOnConfirm) onOpenChange(false);
+            }}
             disabled={isPending || !canConfirm}
           >
             {confirmLabel}

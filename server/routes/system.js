@@ -1,3 +1,6 @@
+const { validHistoryRange } = require('../utils/history-date-range');
+const {sshKeyAuditDetail} = require('../utils/ssh-key-audit');
+const {auditCsv} = require('../utils/audit-export');
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
@@ -22,6 +25,8 @@ const deployLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+const keyExportLimiter = rateLimit({windowMs:15 * 60 * 1000,max:10,message:{error:'Too many private-key export attempts. Please wait 15 minutes.'},standardHeaders:true,legacyHeaders:false});
+
 function isValidTimeZone(value) {
   if (typeof value !== 'string' || !value.trim() || value.length > 100) return false;
   try {
@@ -42,8 +47,25 @@ function hasTable(name) {
 // should not force an administrator to manually search for the affected
 // object. Resolve only exact, current inventory matches; stale/deleted objects
 // intentionally remain plain text instead of producing a misleading link.
-function auditObjectLinks(detail, environmentId = 'default') {
+function auditObjectLinks(detail, environmentId = 'default', action = '') {
   const text = String(detail || '');
+  if (String(action).startsWith('git.')) return [];
+  // A reused name identifies a different object after deletion. Historical
+  // deletion records must never navigate to that replacement.
+  if (['server.delete', 'server.deleted', 'ipam.subnet_delete'].includes(action)) return [];
+  if (['server.create', 'server.created'].includes(action) && text.includes('server_id=')) {
+    const id = text.match(/(?:^|\s)server_id="([^"\r\n]+)"(?:\s|$)/)?.[1];
+    const host = id && db.db.prepare('SELECT id,name FROM servers WHERE id=? AND environment_id=?').get(id, environmentId);
+    return host ? [{kind:'server',id:host.id,label:host.name,href:`/servers/${host.id}`}] : [];
+  }
+  if (action === 'server.update' && text.startsWith('{')) {
+    try {
+      const record = JSON.parse(text);
+      if (record.kind !== 'host-change' || record.version !== 1) return [];
+      const host = db.db.prepare('SELECT id,name FROM servers WHERE id=? AND environment_id=?').get(record.resource?.id, environmentId);
+      return host ? [{kind:'server',id:host.id,label:host.name,href:`/servers/${host.id}`}] : [];
+    } catch { return []; }
+  }
   const links = [];
   const seen = new Set();
   const add = (kind, id, label, href) => {
@@ -51,6 +73,20 @@ function auditObjectLinks(detail, environmentId = 'default') {
     seen.add(`${kind}:${id}`);
     links.push({ kind, id, label, href });
   };
+
+  // These events record historical names and user-controlled task names.
+  // Only the canonical host ID identifies their resource, including after
+  // task deletion or a host rename. Never fall back to text inside a name.
+  if (['server.notes_update', 'terminal.connect', 'terminal.connect_failed', 'terminal.disconnect',
+    'custom_update.create', 'custom_update.update', 'custom_update.delete',
+    'custom_update.check', 'custom_update.preview'].includes(action)) {
+    const id = text.match(/(?:^|\s)server_id="([^"\r\n]+)"(?:\s|$)/)?.[1];
+    if (id) {
+      const row = db.db.prepare('SELECT id, name FROM servers WHERE id = ? AND environment_id = ?').get(id, environmentId);
+      if (row) add('server', row.id, row.name, `/servers/${row.id}${action === 'server.notes_update' ? '#tab=notes' : ''}`);
+    }
+    return links;
+  }
 
   const target = text.match(/(?:^|\s)type=(server|deployment|vm_template)\s+target=([^\s]+)/);
   if (target) {
@@ -159,11 +195,12 @@ router.post('/generate', adminOnly, (req, res) => {
 });
 
 // POST /api/system/key/export - Export private key (optional passphrase)
-router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
+router.post('/key/export', adminOnly, keyExportLimiter, require('../middleware/administrator-credentials')('private-key export', 'exporting the private key'), (req, res) => {
   try {
     const passphrase = typeof req.body.passphrase === 'string' ? req.body.passphrase : '';
     const key = sshManager.getPrivateKeyExport(passphrase);
     db.auditLog.write('ssh.export', `SSH private key exported${passphrase ? ' (passphrase-protected)' : ''}`, req.ip, true, req.user?.username);
+    res.setHeader('Cache-Control','no-store');
     res.json({ privateKey: key, success: true });
   } catch (error) {
     db.auditLog.write('ssh.export', 'SSH private key export failed', req.ip, false, req.user?.username);
@@ -171,18 +208,36 @@ router.post('/key/export', adminOnly, deployLimiter, (req, res) => {
   }
 });
 
-// POST /api/system/key/import - Import private key
-router.post('/key/import', adminOnly, (req, res) => {
+// Preview validates candidate key material without activating it.
+router.post('/key/import-preview', adminOnly, keyExportLimiter, (req,res) => {
   try {
-    const { privateKey, passphrase } = req.body;
-    if (!privateKey || typeof privateKey !== 'string') {
+    const {privateKey,passphrase} = req.body || {};
+    if (typeof privateKey !== 'string' || !privateKey || privateKey.length > 65536 || (passphrase !== undefined && typeof passphrase !== 'string')) return res.status(400).json({error:'Provide a private key of at most 64 KiB and a text passphrase.'});
+    const candidate=sshManager.inspectImport(privateKey,passphrase || '');
+    const current=sshManager.getKeyInfo();
+    res.setHeader('Cache-Control','no-store');
+    res.json({candidate,current:current ? {id:current.id,fingerprint:current.fingerprint,algorithm:current.algorithm} : null});
+  } catch {res.status(400).json({error:'Invalid SSH private key or wrong passphrase.'});}
+});
+
+// POST /api/system/key/import - Import private key
+router.post('/key/import', adminOnly, keyExportLimiter, (req, res) => {
+  try {
+    const { privateKey, passphrase, expectedKeyId, expectedFingerprint } = req.body;
+    if (!Object.hasOwn(req.body,'expectedKeyId') || (expectedKeyId !== null && typeof expectedKeyId !== 'string') || typeof expectedFingerprint !== 'string' || !expectedFingerprint) return res.status(428).json({error:'Preview the key replacement before importing.'});
+    if (typeof passphrase !== 'undefined' && typeof passphrase !== 'string') return res.status(400).json({error:'Passphrase must be text.'});
+    if (!privateKey || typeof privateKey !== 'string' || privateKey.length > 65536) {
       return res.status(400).json({ error: 'privateKey is required' });
     }
-    const result = sshManager.importKey(privateKey, 'shipyard_imported', passphrase || '');
-    db.auditLog.write('ssh.import', 'SSH private key imported', req.ip, true, req.user?.username);
+    const result = sshManager.importKey(privateKey, 'shipyard_imported', passphrase || '', (before,after) => {
+      db.auditLog.write('ssh.import', sshKeyAuditDetail(before,after), req.ip, true, req.user?.username);
+    }, candidate => {
+      if ((db.sshKeys.getFirst()?.id || null) !== expectedKeyId || candidate.fingerprint !== expectedFingerprint) {const error=new Error('The current or selected key changed. Preview the replacement again.');error.status=409;throw error;}
+    });
     res.json(result);
   } catch (error) {
     db.auditLog.write('ssh.import', 'SSH private key import failed', req.ip, false, req.user?.username);
+    if (error.status === 409) return res.status(409).json({error:error.message});
     if (error.message?.includes('passphrase') || error.message?.includes('Invalid SSH')) {
       return res.status(400).json({ error: error.message });
     }
@@ -326,8 +381,11 @@ router.get('/settings', adminOnly, (req, res) => {
       smtpHost:             raw.smtp_host       || '',
       smtpPort:             raw.smtp_port       || '587',
       smtpUser:             raw.smtp_user       || '',
+      hasSmtpPassword:      Boolean(raw.smtp_pass),
       smtpFrom:             raw.smtp_from       || '',
       smtpTo:               raw.smtp_to         || '',
+      notifSuppressMaintenance: raw.notify_suppress_maintenance === '1',
+      notifDedupeMinutes: Number(raw.notify_dedupe_minutes || 0),
       notifPlaybookFailed:  raw.notify_playbook_failed  !== '0',
       notifUpdateFailed:    raw.notify_update_failed    !== '0',
       notifResourceAlerts:  raw.notify_resource_alerts  !== '0',
@@ -344,59 +402,101 @@ router.put('/settings', adminOnly, (req, res) => {
             schedulerTimezone, agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed, notifResourceAlerts } = req.body;
-    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
-    if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
-    if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
-    if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
-    if (showIcon      !== undefined) db.settings.set('wl_show_icon',    showIcon ? '1' : '0');
-    if (logoIcon      !== undefined) db.settings.set('wl_logo_icon',    str(logoIcon, 64));
-    if (logoImage     !== undefined) {
+    const suppressMaintenance = req.body.notifSuppressMaintenance;
+    if (suppressMaintenance !== undefined && typeof suppressMaintenance !== 'boolean') return res.status(400).json({error:'notifSuppressMaintenance must be a boolean.'});
+    const dedupeMinutes = req.body.notifDedupeMinutes;
+    if (dedupeMinutes !== undefined && (!Number.isInteger(dedupeMinutes) || dedupeMinutes < 0 || dedupeMinutes > 60)) return res.status(400).json({error:'notifDedupeMinutes must be an integer from 0 to 60.'});
+    if (appName !== undefined && (typeof appName !== 'string' || appName.length > 100)) return res.status(400).json({error:'appName must be text up to 100 characters',field:'appName'});
+    if (accentColor !== undefined && (typeof accentColor !== 'string' || (accentColor !== '' && !/^#[0-9a-f]{6}$/i.test(accentColor)))) return res.status(400).json({error:'accentColor must be empty or a six-digit hex color',field:'accentColor'});
+    if (logoImage !== undefined) {
       if (typeof logoImage !== 'string') return res.status(400).json({ error: 'logoImage must be a string' });
-      // Cap strictly: this value is exposed on the unauthenticated /api/auth/status
-      // endpoint, so we want to limit payload size. Reject rather than truncate,
-      // because slicing a base64 data URL corrupts the image.
       if (logoImage.length > 32768) return res.status(400).json({ error: 'logoImage too large (max 32 KB)' });
-      db.settings.set('wl_logo_image', logoImage);
     }
-    if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
-    if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
     if (schedulerTimezone !== undefined) {
       if (!isValidTimeZone(schedulerTimezone)) return res.status(400).json({ error: 'Invalid schedulerTimezone' });
-      db.settings.set('scheduler_timezone', schedulerTimezone.trim());
-      scheduler.reloadAllSchedules();
     }
     if (agentEnabled !== undefined) {
       if (typeof agentEnabled !== 'boolean') return res.status(400).json({ error: 'agentEnabled must be a boolean' });
-      db.settings.set('agent_enabled', agentEnabled ? '1' : '0');
     }
-    if (webhookUrl    !== undefined) db.settings.set('webhook_url',     str(webhookUrl, 1000));
-    if (webhookSecret !== undefined) setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
-    if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
-    if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(parseInt(smtpPort, 10) || 587));
-    if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
-    if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
-    if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
-    if (smtpTo               !== undefined) db.settings.set('smtp_to',                  str(smtpTo, 256));
     if (notifPlaybookFailed !== undefined) {
       if (typeof notifPlaybookFailed !== 'boolean') return res.status(400).json({ error: 'notifPlaybookFailed must be a boolean' });
-      db.settings.set('notify_playbook_failed', notifPlaybookFailed ? '1' : '0');
     }
     if (notifUpdateFailed !== undefined) {
       if (typeof notifUpdateFailed !== 'boolean') return res.status(400).json({ error: 'notifUpdateFailed must be a boolean' });
-      db.settings.set('notify_update_failed', notifUpdateFailed ? '1' : '0');
     }
     if (notifResourceAlerts !== undefined) {
       if (typeof notifResourceAlerts !== 'boolean') return res.status(400).json({ error: 'notifResourceAlerts must be a boolean' });
-      db.settings.set('notify_resource_alerts', notifResourceAlerts ? '1' : '0');
     }
+    if (smtpPort !== undefined && !((typeof smtpPort === 'number' && Number.isInteger(smtpPort) || typeof smtpPort === 'string' && /^\d+$/.test(smtpPort)) && Number(smtpPort) >= 1 && Number(smtpPort) <= 65535))
+      return res.status(400).json({error:'SMTP port must be a whole number from 1 to 65535.',field:'smtpPort'});
+    if (webhookUrl !== undefined) {
+      if (typeof webhookUrl !== 'string' || webhookUrl.length > 1000) return res.status(400).json({error:'Webhook URL must be text up to 1000 characters.',field:'webhookUrl'});
+      if (webhookUrl.trim()) {
+        try {
+          const url = new URL(webhookUrl.trim());
+          if (!['http:','https:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid');
+        } catch { return res.status(400).json({error:'Use an HTTP or HTTPS webhook URL without embedded credentials.',field:'webhookUrl'}); }
+      }
+    }
+    const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
+    db.db.transaction(() => {
+      if (appName       !== undefined) db.settings.set('wl_app_name',     str(appName, 100));
+      if (appTagline    !== undefined) db.settings.set('wl_app_tagline',  str(appTagline, 500));
+      if (accentColor   !== undefined) db.settings.set('wl_accent_color', str(accentColor, 20));
+      if (showIcon      !== undefined) db.settings.set('wl_show_icon',    showIcon ? '1' : '0');
+      if (logoIcon      !== undefined) db.settings.set('wl_logo_icon',    str(logoIcon, 64));
+      if (logoImage     !== undefined) {
+        db.settings.set('wl_logo_image', logoImage);
+      }
+      if (theme         !== undefined) db.settings.set('ui_theme',        str(theme, 20));
+      if (timeFormat    !== undefined) db.settings.set('ui_time_format',  str(timeFormat, 10));
+      if (schedulerTimezone !== undefined) {
+        db.settings.set('scheduler_timezone', schedulerTimezone.trim());
+      }
+      if (agentEnabled !== undefined) {
+        db.settings.set('agent_enabled', agentEnabled ? '1' : '0');
+      }
+      if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl.trim());
+      if (webhookSecret !== undefined && webhookSecret !== '••••••••') setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
+      if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
+      if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(Number(smtpPort)));
+      if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
+      if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
+      if (smtpFrom      !== undefined) db.settings.set('smtp_from',       str(smtpFrom, 256));
+      if (smtpTo               !== undefined) db.settings.set('smtp_to',                  str(smtpTo, 256));
+      if (notifPlaybookFailed !== undefined) {
+        db.settings.set('notify_playbook_failed', notifPlaybookFailed ? '1' : '0');
+      }
+      if (notifUpdateFailed !== undefined) {
+        db.settings.set('notify_update_failed', notifUpdateFailed ? '1' : '0');
+      }
+      if (notifResourceAlerts !== undefined) {
+        db.settings.set('notify_resource_alerts', notifResourceAlerts ? '1' : '0');
+      }
+      if (suppressMaintenance !== undefined) db.settings.set('notify_suppress_maintenance', suppressMaintenance ? '1' : '0');
+      if (dedupeMinutes !== undefined) db.settings.set('notify_dedupe_minutes', String(dedupeMinutes));
+      const fields = ['appName','appTagline','accentColor','showIcon','logoIcon','logoImage','theme','timeFormat','schedulerTimezone','agentEnabled','webhookUrl','webhookSecret','smtpHost','smtpPort','smtpUser','smtpPass','smtpFrom','smtpTo','notifPlaybookFailed','notifUpdateFailed','notifResourceAlerts','notifSuppressMaintenance','notifDedupeMinutes'].filter(key=>req.body[key]!==undefined);
+      db.auditLog.write('system.settings', `Updated settings: ${fields.join(', ')}`, req.ip, true, req.user?.username);
+    })();
+    if (schedulerTimezone !== undefined) scheduler.reloadAllSchedules();
     res.json({ success: true });
   } catch (error) {
     serverError(res, error, 'save settings');
   }
 });
 
+// Global channel history, restricted to administrators like the channel settings.
+router.get('/notification-deliveries', adminOnly, (req, res) => {
+  const page = Math.max(1, Math.min(1000, parseInt(req.query.page, 10) || 1));
+  const pageSize = 25;
+  const total = db.db.prepare("SELECT COUNT(*) AS count FROM notification_deliveries WHERE created_at >= datetime('now', '-30 days')").get().count;
+  const items = db.db.prepare("SELECT * FROM notification_deliveries WHERE created_at >= datetime('now', '-30 days') ORDER BY created_at DESC, rowid DESC LIMIT ? OFFSET ?").all(pageSize, (page - 1) * pageSize);
+  res.json({ items, total, page, page_size: pageSize, total_pages: Math.max(1, Math.ceil(total / pageSize)) });
+});
+
 // POST /api/system/webhook-test - Send a test webhook notification
 router.post('/webhook-test', adminOnly, async (req, res) => {
+  if (!db.settings.get('webhook_url')) return res.status(400).json({ error: 'Save a webhook URL before testing.' });
   try {
     const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
     if (result && result.ok === false) {
@@ -410,12 +510,25 @@ router.post('/webhook-test', adminOnly, async (req, res) => {
 
 // POST /api/system/smtp-test - Send a test email
 router.post('/smtp-test', adminOnly, async (req, res) => {
+  if (!db.settings.get('smtp_host') || !db.settings.get('smtp_to')) return res.status(400).json({ error: 'Save an SMTP host and recipient before testing.' });
   try {
-    await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
+    const result = await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
+    if (!result?.ok) return res.status(502).json({ error: result?.partial ? 'The mail server rejected some recipients. Check the configured recipient list.' : 'The mail server did not accept the test message.' });
     res.json({ success: true });
   } catch (error) {
     serverError(res, error, 'smtp test');
   }
+});
+
+router.get('/agent-overview', adminOnly, (req,res) => {
+  res.set('Cache-Control','no-store');
+  res.json(require('../utils/agent-overview').agentOverview(db.servers.getAll(),db.agentConfig.getAll(),db.settings.get('agent_enabled')==='1'));
+});
+
+// Runtime observation only: does not start checks or change configuration.
+router.get('/polling-status', adminOnly, (req,res) => {
+  res.set('Cache-Control','no-store');
+  res.json(scheduler.getRuntimeStatus());
 });
 
 // GET /api/system/polling-config
@@ -431,20 +544,28 @@ router.get('/polling-config', adminOnly, (req, res) => {
 
 // PUT /api/system/polling-config
 router.put('/polling-config', adminOnly, (req, res) => {
-  const { info, updates, imageUpdates, customUpdates } = req.body;
-  const save = (key, val) => { if (val !== undefined) db.settings.set(key, String(val)); };
-  const checkEnabled = (section, name) => {
-    if (section && section.enabled !== undefined && typeof section.enabled !== 'boolean')
-      return res.status(400).json({ error: `${name}.enabled must be a boolean` });
-  };
-  if (checkEnabled(info, 'info') || checkEnabled(updates, 'updates') ||
-      checkEnabled(imageUpdates, 'imageUpdates') || checkEnabled(customUpdates, 'customUpdates')) return;
-  if (info)          { save('poll_info_enabled', info.enabled ? '1' : '0');                   save('poll_info_interval_min', Math.max(1, parseInt(info.intervalMin, 10) || 5)); }
-  if (updates)       { save('poll_updates_enabled', updates.enabled ? '1' : '0');             save('poll_updates_interval_min', Math.max(1, parseInt(updates.intervalMin, 10) || 60)); }
-  if (imageUpdates)  { save('poll_image_updates_enabled', imageUpdates.enabled ? '1' : '0'); save('poll_image_updates_interval_min', Math.max(1, parseInt(imageUpdates.intervalMin, 10) || 360)); }
-  if (customUpdates) { save('poll_custom_updates_enabled', customUpdates.enabled ? '1' : '0');save('poll_custom_updates_interval_min', Math.max(1, parseInt(customUpdates.intervalMin, 10) || 360)); }
+  const prefixes = {info:'poll_info',updates:'poll_updates',imageUpdates:'poll_image_updates',customUpdates:'poll_custom_updates'};
+  const body = req.body;
+  if (!body || typeof body !== 'object' || Array.isArray(body) || !Object.keys(body).length || Object.keys(body).some(key => !Object.hasOwn(prefixes,key)))
+    return res.status(400).json({error:'Provide one or more recognized polling sections.'});
+  for (const [name, section] of Object.entries(body)) {
+    if (!section || typeof section !== 'object' || Array.isArray(section) || typeof section.enabled !== 'boolean')
+      return res.status(400).json({error:`${name}.enabled must be a boolean`,field:`${name}.enabled`});
+    if (!Number.isInteger(section.intervalMin) || section.intervalMin < 1 || section.intervalMin > 9999)
+      return res.status(400).json({error:`${name}.intervalMin must be a whole number from 1 to 9999`,field:`${name}.intervalMin`});
+    if (Object.keys(section).some(key => key !== 'enabled' && key !== 'intervalMin'))
+      return res.status(400).json({error:`Unknown field in ${name}`,field:name});
+  }
+  try {
+    db.db.transaction(() => {
+      for (const [name, section] of Object.entries(body)) {
+        db.settings.set(`${prefixes[name]}_enabled`,section.enabled ? '1':'0');
+        db.settings.set(`${prefixes[name]}_interval_min`,String(section.intervalMin));
+      }
+      db.auditLog.write('system.polling', 'Polling configuration updated', req.ip, true, req.user?.username);
+    })();
+  } catch (error) { return serverError(res,error,'save polling configuration'); }
   scheduler.restartPolling();
-  db.auditLog.write('system.polling', 'Polling configuration updated', req.ip, true, req.user?.username);
   res.json({ success: true });
 });
 
@@ -473,15 +594,17 @@ router.post('/onboarding-complete', adminOnly, (req, res) => {
 // authorised operator.  Mutating system endpoints below remain admin-only.
 router.get('/audit', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to, focus } = req.query;
+    const { action, user, ip, success, from, to, focus, q } = req.query;
+    if ((from !== undefined && typeof from !== 'string') || (to !== undefined && typeof to !== 'string') || !validHistoryRange(from, to)) return res.status(400).json({error:'Invalid audit date range.'});
+    if (q !== undefined && (typeof q !== 'string' || q.length > 200)) return res.status(400).json({error:'Search must be text of at most 200 characters.'});
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const limit = Math.min(parseInt(req.query.limit, 10) || 200, 500);
     const offset = Math.max(parseInt(req.query.offset, 10) || 0, 0);
     const rows = filterAuditFocus(queryVisibleAuditRows(
-      { environmentId, action, user, ip, success, from, to },
+      { environmentId, action, user, ip, success, from, to, q },
       getPermissions(req.user),
     ), focus).slice(offset, offset + limit);
-    res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail, environmentId) })));
+    res.json(rows.map(row => ({ ...row, object_links: auditObjectLinks(row.detail, environmentId, row.action) })));
   } catch (error) {
     serverError(res, error, 'audit log');
   }
@@ -490,21 +613,20 @@ router.get('/audit', requireCap('canViewAudit'), (req, res) => {
 // GET /api/system/audit/export - filtered, spreadsheet-compatible audit export
 router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to, focus } = req.query;
+    const { action, user, ip, success, from, to, focus, q } = req.query;
+    if ((from !== undefined && typeof from !== 'string') || (to !== undefined && typeof to !== 'string') || !validHistoryRange(from, to)) return res.status(400).json({error:'Invalid audit date range.'});
+    if (q !== undefined && (typeof q !== 'string' || q.length > 200)) return res.status(400).json({error:'Search must be text of at most 200 characters.'});
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const rows = filterAuditFocus(queryVisibleAuditRows(
-      { environmentId, action, user, ip, success, from, to },
+      { environmentId, action, user, ip, success, from, to, q },
       getPermissions(req.user),
-    ), focus).slice(0, 10_000);
-    const csv = value => `"${String(value ?? '').replace(/"/g, '""')}"`;
-    const body = [
-      ['Time', 'Action', 'User', 'IP address', 'Successful', 'Details'],
-      ...rows.map(row => [row.created_at, row.action, row.user, row.ip, row.success ? 'yes' : 'no', row.detail]),
-    ].map(row => row.map(csv).join(';')).join('\n');
+    ), focus);
+    if (rows.length > 10_000) return res.status(400).json({error:`${rows.length} audit entries match. Narrow the filters to at most 10000 entries before exporting.`, matching:rows.length, limit:10_000});
+    const body = auditCsv(rows);
+    db.auditLog.write('system.audit_export', `rows=${rows.length}`, req.ip, true, req.user?.username, environmentId);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', 'attachment; filename="fleet-audit-log.csv"');
-    res.send(`\ufeff${body}`);
-    db.auditLog.write('system.audit_export', `rows=${rows.length}`, req.ip, true, req.user?.username);
+    res.send(body);
   } catch (error) {
     serverError(res, error, 'audit export');
   }
@@ -513,10 +635,12 @@ router.get('/audit/export', requireCap('canViewAudit'), (req, res) => {
 // GET /api/system/audit/meta - Filter options for audit log UI
 router.get('/audit/meta', requireCap('canViewAudit'), (req, res) => {
   try {
-    const { action, user, ip, success, from, to, focus } = req.query;
+    const { action, user, ip, success, from, to, focus, q } = req.query;
+    if ((from !== undefined && typeof from !== 'string') || (to !== undefined && typeof to !== 'string') || !validHistoryRange(from, to)) return res.status(400).json({error:'Invalid audit date range.'});
+    if (q !== undefined && (typeof q !== 'string' || q.length > 200)) return res.status(400).json({error:'Search must be text of at most 200 characters.'});
     const environmentId = req.environmentId || String(req.query.environment_id || 'default').trim() || 'default';
     const permissions = getPermissions(req.user);
-    const rows = filterAuditFocus(queryVisibleAuditRows({ environmentId, action, user, ip, success, from, to }, permissions), focus);
+    const rows = filterAuditFocus(queryVisibleAuditRows({ environmentId, action, user, ip, success, from, to, q }, permissions), focus);
     const allVisibleRows = filterAuditFocus(queryVisibleAuditRows({ environmentId }, permissions), focus);
     res.json({
       actions: [...new Set(allVisibleRows.map(row => row.action).filter(Boolean))].sort(),
@@ -534,5 +658,7 @@ router.get('/status', (req, res) => {
   const version = installed ? ansibleRunner.getVersion() : null;
   res.json({ installed, version });
 });
+
+router.use('/database-backup', require('./database-backup'));
 
 module.exports = router;

@@ -1,15 +1,23 @@
+import { verifiedOsCheck } from './os-check-result';
+import { imageCheckSummary } from './image-check-summary';
+import { newestNotesRevision } from "./notes-revision";
+import { receiveActionEvent, bindActionHistory, type TrackedAction } from './action-events';
+import { customTaskDraft, customTaskDirty } from './custom-task-draft';
+interface UpdateCatalog { updates: Record<string, unknown>[]; source: string; updated_at: string | null; cached: boolean; stale: boolean; stale_after_seconds: number }
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { api, apiFetch, ApiError } from "@/lib/api";
+import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
+import { type HistoryFilters } from "@/lib/history-filter";
+import { actionLabel } from "@/lib/history-labels";
 import { ws } from "@/lib/ws";
 import { hasCap, useProfile, useSettings } from "@/lib/queries";
 import { useUi } from "@/lib/store";
 import { showToast } from "@/lib/toast";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
-import type { OutputLine, RunStatus } from "@/components/ui/action-run-dialog";
 import type {
   AgentStatus,
   ContainerRow,
@@ -19,6 +27,7 @@ import type {
   ManagedDeploymentResponse,
   ServerDetail,
   ServerInfo,
+  ServerInfoHistoryPoint,
 } from "./server-detail-model";
 import { parseArrayValue } from "./server-detail-model";
 
@@ -28,6 +37,8 @@ export function useServerDetailController() {
   const params = useParams({ strict: false }) as { id?: string };
   const id = params.id ?? "";
   const navigate = useNavigate();
+  const updateCheckView = useRef({ host: id });
+  if (updateCheckView.current.host !== id) updateCheckView.current = { host: id };
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [confirmRunUpdate, setConfirmRunUpdate] = useState(false);
@@ -46,12 +57,8 @@ export function useServerDetailController() {
   const [confirmRestartContainer, setConfirmRestartContainer] = useState<
     string | null
   >(null);
-  const [actionRun, setActionRun] = useState<{
-    title: string;
-    status: RunStatus;
-    lines: OutputLine[];
-    historyId?: string;
-  } | null>(null);
+  const [actionRun, setActionRun] = useState<TrackedAction | null>(null);
+  const actionSequence = useRef(0);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
   const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
@@ -61,12 +68,12 @@ export function useServerDetailController() {
   // reducing requests, this keeps a stale browser URL from producing a wall
   // of 404s while the normal not-found state is rendered.
   const serverKnown = Boolean(qc.getQueryData(["server", id]));
-  const openTofuAvailable = hasCap(profile, "canViewDeployments") || hasCap(profile, "canManageDeployments");
-  const { data: deploymentData } = useQuery<ManagedDeploymentResponse>({
+  const canViewManagementRelationships = hasCap(profile, "canViewServers");
+  const { data: deploymentData, isPending: deploymentContextLoading, isError: deploymentContextFailed, refetch: refetchDeploymentContext } = useQuery<ManagedDeploymentResponse>({
     queryKey: ["server", id, "deployment-context"],
     queryFn: () =>
       apiFetch(`/opentofu/managed-servers/${encodeURIComponent(id)}`),
-    enabled: Boolean(id && serverKnown && openTofuAvailable),
+    enabled: Boolean(id && serverKnown && canViewManagementRelationships),
     staleTime: 30_000,
   });
   const managedDeployments = Array.isArray(deploymentData?.resources)
@@ -77,55 +84,16 @@ export function useServerDetailController() {
   );
   // ── Action run helpers ───────────────────────────────────────
   const startActionRun = useCallback((title: string, historyId?: string) => {
-    setActionRun({ title, status: "running", lines: [], historyId });
-  }, []);
-  
-  // WS listener for action output/completion
+    const requestId = ++actionSequence.current;
+    setActionRun({ title, status: "running", lines: [], historyId, serverId: id, requestId });
+    return requestId;
+  }, [id]);
+
   useEffect(() => {
     ws.connect();
-    const unsub = ws.subscribe((raw) => {
-      const data = raw as Record<string, unknown>;
-      setActionRun((prev) => {
-        if (!prev || prev.status !== "running") return prev;
-        if (prev.historyId && data.historyId !== prev.historyId) return prev;
-  
-        if (data.type === "update_output") {
-          const text = String(data.data ?? "");
-          const lines = text.split("\n").filter((l) => l !== "");
-          return {
-            ...prev,
-            lines: [
-              ...prev.lines,
-              ...lines.map((l) => ({
-                text: l,
-                cls: data.stream === "stderr" ? "text-amber-400" : undefined,
-              })),
-            ],
-          };
-        }
-        if (data.type === "update_complete") {
-          const success = !!data.success;
-          return { ...prev, status: success ? "success" : "failed" };
-        }
-        if (data.type === "update_error") {
-          return {
-            ...prev,
-            status: "failed",
-            lines: [
-              ...prev.lines,
-              {
-                text: String(data.error ?? "Unknown error"),
-                cls: "text-red-400",
-              },
-            ],
-          };
-        }
-        return prev;
-      });
-    });
-    return unsub;
+    return ws.subscribe(raw => setActionRun(prev => receiveActionEvent(prev, raw as Record<string, unknown>)));
   }, []);
-  
+
   // Listen for backend docker inventory refreshes (e.g. after compose up/down/pull)
   // and invalidate the docker query for this server so the UI reflects the new state.
   useEffect(() => {
@@ -197,6 +165,12 @@ export function useServerDetailController() {
     queryFn: () => api.getServerInfo(id) as unknown as Promise<ServerInfo>,
     enabled: !!server,
   });
+  const { data: infoHistory = [] } = useQuery<ServerInfoHistoryPoint[]>({
+    queryKey: ["server", id, "info-history"],
+    queryFn: () => api.getServerInfoHistory(id, 24) as unknown as Promise<ServerInfoHistoryPoint[]>,
+    enabled: Boolean(id && serverKnown),
+    refetchInterval: 60_000,
+  });
   const { data: ipamReservationData } = useQuery<IpamReservation[]>({
     queryKey: ["server", id, "ipam-reservations"],
     queryFn: () =>
@@ -220,23 +194,35 @@ export function useServerDetailController() {
   const { data: rawUpdates } = useQuery({
     queryKey: ["server", id, "updates"],
     queryFn: () =>
-      api.getServerUpdates(id) as unknown as Promise<
-        Record<string, unknown>[] | { updates: Record<string, unknown>[] }
-      >,
+      apiFetch<UpdateCatalog>(`/servers/${encodeURIComponent(id)}/updates?include_meta=1`),
     enabled: !!server && hasCap(profile, "canViewUpdates"),
     staleTime: 60_000,
   });
-  const { data: history } = useQuery({
-    queryKey: ["server", id, "history"],
-    queryFn: () => api.getServerHistory(id) as unknown as Promise<HistoryRow[]>,
+  const HIST_PAGE_SIZE = 25;
+  const [histPage, setHistPage] = useState(1);
+  const [historyFilters, setHistoryFilters] = useState<HistoryFilters>({ query: '', status: '', from: '', to: '' });
+  useEffect(() => setHistPage(1), [historyFilters, id]);
+  const historyParams = new URLSearchParams({page:String(histPage),page_size:String(HIST_PAGE_SIZE),action:historyFilters.action || '',status:historyFilters.status,search:historyFilters.query,from:historyFilters.from,to:historyFilters.to});
+  const { data: historyResponse, isLoading: historyLoading, isFetching: historyFetching, isError: historyFailed, refetch: refetchHistory } = useQuery({
+    queryKey: ["server", id, "history", histPage, historyFilters],
+    queryFn: () => apiFetch<{items:HistoryRow[];actions:string[];total_unfiltered:number;pagination:{page:number;total:number;total_pages:number}}>(`/servers/${encodeURIComponent(id)}/history?${historyParams}`),
+    refetchInterval: query => query.state.data?.items?.some(run => ["running", "pending", "queued", "cancelling"].includes(run.status || "")) ? 3000 : false,
     enabled: !!server && hasCap(profile, "canViewServerHistory"),
   });
-  const { data: notesData } = useQuery({
+  const history = historyResponse?.items || [];
+  const historyCount = historyResponse?.total_unfiltered || 0;
+  const historyMatchCount = historyResponse?.pagination.total || 0;
+  const historyActions = historyResponse?.actions || [];
+  const histItems = history;
+  const histTotal = historyResponse?.pagination.total_pages || 1;
+  const histSafe = historyResponse?.pagination.page || histPage;
+  const histPage_ = history;
+  const { data: notesData, isError: notesFailed, refetch: refetchNotes } = useQuery({
     queryKey: ["server", id, "notes"],
     queryFn: () => api.getServerNotes(id),
     enabled: !!server && hasCap(profile, "canViewNotes"),
   });
-  const { data: customTasks } = useQuery({
+  const { data: customTasks, isPending: customTasksLoading, isError: customTasksFailed, refetch: refetchCustomTasks } = useQuery({
     queryKey: ["server", id, "customTasks"],
     queryFn: () =>
       api.getCustomUpdateTasks(id) as unknown as Promise<CustomTask[]>,
@@ -252,6 +238,8 @@ export function useServerDetailController() {
     staleTime: 30_000,
   });
   // ── Image update cache ──────────────────────────────────────
+  const [imageCatalogRevision, setImageCatalogRevision] = useState(0);
+  const [imageCatalog, setImageCatalog] = useState<{ updated_at?: string | null; source?: string; stale?: boolean } | null>(null);
   const [imageUpdates, setImageUpdates] = useState<Record<string, string>>({});
   useEffect(() => {
     let cancelled = false;
@@ -259,7 +247,8 @@ export function useServerDetailController() {
     // depending on the resolved host ID (not only the URL ID), the persisted
     // image-update cache is loaded once the host is actually available.
     setImageUpdates({});
-    if (!server?.id || !hasCap(profile, "canViewDocker"))
+    setImageCatalog(null);
+    if (!server?.id || !hasCap(profile, "canViewDocker") || !hasCap(profile, "canViewUpdates"))
       return () => {
         cancelled = true;
       };
@@ -269,6 +258,7 @@ export function useServerDetailController() {
       .then((r: unknown) => {
         if (cancelled) return;
         const res = r as {
+          updated_at?: string | null; source?: string; stale?: boolean;
           results?: {
             container_name?: string;
             image: string;
@@ -281,6 +271,7 @@ export function useServerDetailController() {
           if (result.container_name) m[result.container_name] = result.status;
         });
         setImageUpdates(m);
+        setImageCatalog(res);
       })
       .catch(() => {
         // A failed cache read must not reuse results from a previously viewed
@@ -290,7 +281,7 @@ export function useServerDetailController() {
     return () => {
       cancelled = true;
     };
-  }, [id, profile, server?.id]);
+  }, [id, profile, server?.id, imageCatalogRevision]);
   
   // ── Notes state ─────────────────────────────────────────────
   const [notes, setNotes] = useState("");
@@ -299,38 +290,66 @@ export function useServerDetailController() {
     if (!notes.trim()) return "";
     return DOMPurify.sanitize(marked.parse(notes, { async: false }) as string);
   }, [notes]);
-  const notesTimer = useRef<ReturnType<typeof setTimeout>>();
+  const [notesBase, setNotesBase] = useState<(Awaited<ReturnType<typeof api.getServerNotes>> & { host: string }) | null>(null);
+  const notesDirty = Boolean(notesBase?.host === id && notes !== notesBase.notes);
+
   useEffect(() => {
-    if (notesData?.notes !== undefined) setNotes(notesData.notes);
-  }, [notesData?.notes]);
+    if (notesData && (!notesBase || notesBase.host !== id)) {
+      setNotes(notesData.notes);
+      setNotesBase({ ...notesData, host: id });
+    }
+  }, [id, notesData, notesBase]);
+  const notesViewRef = useRef({ host: id });
+  if (notesViewRef.current.host !== id) notesViewRef.current = { host: id };
   const saveNotesMut = useMutation({
-    mutationFn: (text: string) => api.saveServerNotes(id, text),
-    onSuccess: () => showToast(t("det.notesSaved"), "success"),
-    onError: () => showToast(t("det.notesError"), "error"),
-  });
-  const autoSaveNotes = useCallback(
-    (text: string) => {
-      clearTimeout(notesTimer.current);
-      notesTimer.current = setTimeout(() => saveNotesMut.mutate(text), 800);
+    mutationFn: async (text: string) => {
+      const view = notesViewRef.current;
+      const host = view.host;
+      const result = await api.saveServerNotes(host, text, notesBase?.revision ?? -1);
+      return { host, view, result };
     },
-    [saveNotesMut],
-  );
-  
+    onSuccess: ({ host, view, result }) => {
+      qc.setQueryData<typeof result>(['server', host, 'notes'], current => newestNotesRevision(current, result));
+      qc.invalidateQueries({ queryKey: ['server', host, 'notes-history'] });
+      if (notesViewRef.current !== view) return;
+      setNotesBase({ ...result, host });
+      showToast(t('det.notesSaved'), 'success');
+    },
+    onMutate: () => notesViewRef.current,
+    onError: (error: Error, _variables, view) => { if (notesViewRef.current === view) showToast(error.message, 'error'); },
+  });
+  const reloadNotesMut = useMutation({
+    mutationFn: async () => {
+      const view = notesViewRef.current;
+      const host = view.host;
+      return { host, view, result: await api.getServerNotes(host) };
+    },
+    onSuccess: ({ host, view, result }) => {
+      qc.setQueryData<typeof result>(['server', host, 'notes'], current => newestNotesRevision(current, result));
+      if (notesViewRef.current !== view) return;
+      setNotes(result.notes);
+      setNotesBase({ ...result, host });
+      saveNotesMut.reset();
+    },
+    onMutate: () => notesViewRef.current,
+    onError: (error: Error, _variables, view) => { if (notesViewRef.current === view) showToast(error.message, 'error'); },
+  });
+
   // ── Mutations ───────────────────────────────────────────────
   const runUpdateMut = useMutation({
     mutationFn: () =>
       api.runUpdate(id) as unknown as Promise<{ historyId: string }>,
     onMutate: () =>
       startActionRun(`${t("det.updates")} · ${server?.name || ""}`),
-    onSuccess: (data) => {
+    onSuccess: (data, _variables, requestId) => {
       setActionRun((prev) =>
-        prev ? { ...prev, historyId: data.historyId } : prev,
+        bindActionHistory(prev, requestId, data.historyId),
       );
       void qc.invalidateQueries({ queryKey: ["server", id] });
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _variables, requestId) => {
       setActionRun((prev) =>
-        prev
+        prev && prev.requestId === requestId
           ? {
               ...prev,
               status: "failed",
@@ -352,15 +371,15 @@ export function useServerDetailController() {
       api.runReboot(id) as unknown as Promise<{ historyId: string }>,
     onMutate: () =>
       startActionRun(`${t("det.reboot")} · ${server?.name || ""}`),
-    onSuccess: (data) => {
+    onSuccess: (data, _variables, requestId) => {
       setActionRun((prev) =>
-        prev ? { ...prev, historyId: data.historyId } : prev,
+        bindActionHistory(prev, requestId, data.historyId),
       );
       showToast(t("det.rebootStarted"), "success");
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _variables, requestId) => {
       setActionRun((prev) =>
-        prev
+        prev && prev.requestId === requestId
           ? {
               ...prev,
               status: "failed",
@@ -429,14 +448,14 @@ export function useServerDetailController() {
         historyId: string;
       }>,
     onMutate: (name) => startActionRun(`${t("det.output")} · ${name}`),
-    onSuccess: (data) => {
+    onSuccess: (data, _variables, requestId) => {
       setActionRun((prev) =>
-        prev ? { ...prev, historyId: data.historyId } : prev,
+        bindActionHistory(prev, requestId, data.historyId),
       );
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _variables, requestId) => {
       setActionRun((prev) =>
-        prev
+        prev && prev.requestId === requestId
           ? {
               ...prev,
               status: "failed",
@@ -489,33 +508,22 @@ export function useServerDetailController() {
     open: boolean;
     task: CustomTask | null;
   }>({ open: false, task: null });
-  const [taskForm, setTaskForm] = useState({
-    name: "",
-    type: "script",
-    github_repo: "",
-    check_command: "",
-    update_command: "",
-    trigger_output: "",
-    latest_command: "",
-  });
-  
+  const [taskForm, setTaskForm] = useState(() => customTaskDraft());
+  const taskEnvironment = useUi(state => state.environmentId);
+  const taskContext = useRef<{ dialog: typeof taskDialog | null; host: string; environment: string }>({ dialog: null, host: id, environment: taskEnvironment });
   useEffect(() => {
-    if (taskDialog.open) {
-      const t = taskDialog.task;
-      setTaskForm({
-        name: t?.name || "",
-        type: t?.type || "script",
-        github_repo: t?.github_repo || "",
-        check_command: t?.check_command || "",
-        update_command: t?.update_command || "",
-        trigger_output: t?.trigger_output || "",
-        latest_command: t?.latest_command || "",
-      });
+    if (taskDialog.open && taskContext.current.dialog !== taskDialog) {
+      taskContext.current = { dialog: taskDialog, host: id, environment: taskEnvironment };
+      setTaskForm(customTaskDraft(taskDialog.task));
     }
-  }, [taskDialog]);
-  
+  }, [taskDialog, id, taskEnvironment]);
+  const taskDirty = taskDialog.open && customTaskDirty(taskForm, taskDialog.task);
+  const taskContextChanged = taskDialog.open && (taskContext.current.host !== id || taskContext.current.environment !== taskEnvironment);
+  useUnsavedChanges(notesDirty || taskDirty);
+
   const saveTaskMut = useMutation({
     mutationFn: async () => {
+      if (taskContextChanged) throw new Error('Host or environment changed. Return to the original context or reopen this form.');
       const data = {
         ...taskForm,
         github_repo: taskForm.github_repo || null,
@@ -548,7 +556,7 @@ export function useServerDetailController() {
   
   const checkTaskMut = useMutation({
     mutationFn: (taskId: string) => api.checkCustomUpdateTask(id, taskId),
-    onSuccess: () =>
+    onSettled: () =>
       void qc.invalidateQueries({ queryKey: ["server", id, "customTasks"] }),
     onError: (e: Error) =>
       showToast(t("common.errorPrefix", { msg: e.message }), "error"),
@@ -563,18 +571,18 @@ export function useServerDetailController() {
       const task = (Array.isArray(customTasks) ? customTasks : []).find(
         (t2) => t2.id === taskId,
       );
-      startActionRun(
+      return startActionRun(
         `${t("det.output")} · ${task?.name || t("det.customUpdates")}`,
       );
     },
-    onSuccess: (data) => {
+    onSuccess: (data, _variables, requestId) => {
       setActionRun((prev) =>
-        prev ? { ...prev, historyId: data.historyId } : prev,
+        bindActionHistory(prev, requestId, data.historyId),
       );
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _variables, requestId) => {
       setActionRun((prev) =>
-        prev
+        prev && prev.requestId === requestId
           ? {
               ...prev,
               status: "failed",
@@ -594,43 +602,46 @@ export function useServerDetailController() {
   
   // ── Check image updates ─────────────────────────────────────
   const checkImageMut = useMutation({
+    onMutate: () => updateCheckView.current,
     mutationFn: () =>
       api.checkImageUpdates(id) as unknown as Promise<
         { container_name?: string; image: string; status: string }[]
       >,
-    onSuccess: (results) => {
+    onSuccess: (results, _variables, origin) => {
+      if (!origin) return;
+      void qc.invalidateQueries({ queryKey: ["server", origin.host] });
+      if (updateCheckView.current !== origin) return;
       const m: Record<string, string> = {};
       results.forEach((r) => {
         m[r.image] = r.status;
         if (r.container_name) m[r.container_name] = r.status;
       });
       setImageUpdates(m);
-      const available = results.filter(
-        (r) => r.status === "update_available",
-      ).length;
-      showToast(
-        t("det.imageUpdatesChecked", { checked: results.length, available }),
-        available > 0 ? "warning" : "success",
-      );
-      void qc.invalidateQueries({ queryKey: ["server", id, "docker"] });
+      setImageCatalog(null);
+      setImageCatalogRevision(value => value + 1);
+      const summary = imageCheckSummary(results);
+      showToast(summary.message, { kind: summary.kind, description: summary.description });
     },
-    onError: (e: Error) =>
+    onError: (e: Error, _variables, origin) => {
+      if (updateCheckView.current !== origin) return;
       showToast(t("det.imageUpdatesCheckFailed"), {
         kind: "error",
         description: e.message,
-      }),
+      });
+    },
   });
   
   // A manual package check deliberately bypasses the stale-while-revalidate
   // cache. The status panel below stays visible until this exact request has
   // either returned fresh data or reported an error.
   const checkSystemUpdatesMut = useMutation({
+    onMutate: () => updateCheckView.current,
     mutationFn: () =>
-      api.getServerUpdates(id, true) as unknown as Promise<
-        Record<string, unknown>[] | { updates: Record<string, unknown>[] }
-      >,
-    onSuccess: (results) => {
-      qc.setQueryData(["server", id, "updates"], results);
+      apiFetch<UpdateCatalog>(`/servers/${encodeURIComponent(id)}/updates?include_meta=1&force=1`).then(verifiedOsCheck),
+    onSuccess: (results, _variables, origin) => {
+      if (!origin) return;
+      qc.setQueryData(["server", origin.host, "updates"], results);
+      if (updateCheckView.current !== origin) return;
       const nested = !Array.isArray(results) ? results.updates : [];
       const rows = Array.isArray(results)
         ? results
@@ -643,29 +654,40 @@ export function useServerDetailController() {
         available > 0 ? "warning" : "success",
       );
     },
-    onError: (e: Error) =>
+    onError: (e: Error, _variables, origin) => {
+      if (updateCheckView.current !== origin) return;
       showToast(t("det.systemUpdatesCheckFailed"), {
         kind: "error",
         description: e.message,
-      }),
+      });
+    },
   });
   
+  // Mutation observers belong to the visible host; resetting does not cancel
+  // the remote check or its origin-scoped cache update.
+  const resetImageCheck = checkImageMut.reset;
+  const resetSystemCheck = checkSystemUpdatesMut.reset;
+  useEffect(() => {
+    resetImageCheck();
+    resetSystemCheck();
+  }, [id, resetImageCheck, resetSystemCheck]);
+
   // ── Compose actions ─────────────────────────────────────────
   const composeActionMut = useMutation({
     mutationFn: ({ dir, action }: { dir: string; action: string }) =>
       api.composeAction(id, dir, action) as unknown as Promise<{
         historyId: string;
       }>,
-    onMutate: ({ action }) =>
-      startActionRun(`docker compose ${action} · ${server?.name || ""}`),
-    onSuccess: (data) => {
+    onMutate: ({ action, dir }) =>
+      startActionRun(`${action === "up" ? "Start stack / apply changes" : action === "down" ? "Stop and remove stack containers" : action === "pull" ? "Pull stack images" : action} · ${server?.name || ""} · ${dir}`),
+    onSuccess: (data, _variables, requestId) => {
       setActionRun((prev) =>
-        prev ? { ...prev, historyId: data.historyId } : prev,
+        bindActionHistory(prev, requestId, data.historyId),
       );
     },
-    onError: (e: Error) => {
+    onError: (e: Error, _variables, requestId) => {
       setActionRun((prev) =>
-        prev
+        prev && prev.requestId === requestId
           ? {
               ...prev,
               status: "failed",
@@ -684,14 +706,28 @@ export function useServerDetailController() {
   });
   
   // ── Compose editor dialog ───────────────────────────────────
-  const [composeDialog, setComposeDialog] = useState<{
-    open: boolean;
-    mode: "edit" | "add";
-    dir: string;
-    content: string;
-    loading: boolean;
-  }>({ open: false, mode: "add", dir: "", content: "", loading: false });
-  
+  type ComposeDraft = { open: boolean; mode: "edit" | "add"; dir: string; content: string; loading: boolean; loadError?: string };
+  const [composeDrafts, setComposeDrafts] = useState<Record<string, ComposeDraft>>({});
+  const emptyComposeDraft = useMemo<ComposeDraft>(() => ({ open: false, mode: "add", dir: "", content: "", loading: false }), [id]);
+  const composeDialog = composeDrafts[id] || emptyComposeDraft;
+  const setComposeDialog = useCallback((action: ComposeDraft | ((previous: ComposeDraft) => ComposeDraft)) => {
+    setComposeDrafts(previous => {
+      const current = previous[id] || emptyComposeDraft;
+      const next = typeof action === "function" ? action(current) : action;
+      return next === current ? previous : { ...previous, [id]: next };
+    });
+  }, [id, emptyComposeDraft]);
+  useEffect(() => () => {
+    // An abandoned file read has no editable content to preserve. Its late
+    // response is rejected by the view guard; discard the pending placeholder.
+    setComposeDrafts(previous => {
+      if (!previous[id]?.loading) return previous;
+      const next = { ...previous };
+      delete next[id];
+      return next;
+    });
+  }, [id]);
+
   const [confirmDeleteStack, setConfirmDeleteStack] = useState<{
     proj: string;
     dir: string;
@@ -709,50 +745,52 @@ export function useServerDetailController() {
   
   const openEditCompose = useCallback(
     async (dir: string) => {
-      setComposeDialog({
-        open: true,
-        mode: "edit",
-        dir,
-        content: "",
-        loading: true,
-      });
+      const origin = updateCheckView.current;
+      const draft = { open: true, mode: "edit" as const, dir, content: "", loading: true };
+      setComposeDialog(draft);
       try {
-        const r = (await api.getDockerCompose(id, dir)) as unknown as {
-          content: string;
-        };
-        setComposeDialog((prev) => ({
-          ...prev,
-          content: r.content || "",
-          loading: false,
-        }));
+        const r = (await api.getDockerCompose(id, dir)) as unknown as { content: string };
+        if (!r || typeof r.content !== "string") throw new Error("Compose response did not contain file content.");
+        if (updateCheckView.current !== origin) return;
+        setComposeDialog(previous => previous === draft ? { ...previous, content: r.content || "", loading: false } : previous);
       } catch (e) {
-        showToast(
-          t("common.errorPrefix", { msg: (e as Error).message }),
-          "error",
-        );
-        setComposeDialog((prev) => ({ ...prev, loading: false }));
+        if (updateCheckView.current !== origin) return;
+        showToast(t("common.errorPrefix", { msg: (e as Error).message }), "error");
+        setComposeDialog(previous => previous === draft ? { ...previous, loading: false, loadError: (e as Error).message || "Compose file could not be loaded." } : previous);
       }
     },
-    [id, t],
+    [id, t, setComposeDialog],
   );
-  
+
   const saveComposeMut = useMutation({
-    mutationFn: () =>
-      api.writeDockerCompose(id, composeDialog.dir, composeDialog.content),
-    onSuccess: () => {
-      showToast(t("det.composeSaved"), "success");
-      setComposeDialog((prev) => ({ ...prev, open: false }));
-      void qc.invalidateQueries({ queryKey: ["server", id, "docker"] });
+    onMutate: () => ({ view: updateCheckView.current, draft: composeDialog }),
+    mutationFn: () => {
+      if (composeDialog.loading || composeDialog.loadError) throw new Error("Load the Compose file successfully before saving.");
+      return api.writeDockerCompose(id, composeDialog.dir, composeDialog.content);
     },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
+    onSuccess: (_result, _variables, origin) => {
+      if (!origin) return;
+      void qc.invalidateQueries({ queryKey: ["server", origin.view.host, "docker"] });
+      if (updateCheckView.current !== origin.view) return;
+      showToast(t("det.composeSaved"), "success");
+      setComposeDialog(previous => previous === origin.draft ? { ...previous, open: false } : previous);
+    },
+    onError: (e: Error, _variables, origin) => {
+      if (updateCheckView.current !== origin?.view) return;
+      showToast(t("common.errorPrefix", { msg: e.message }), "error");
+    },
   });
-  
+  const resetComposeSave = saveComposeMut.reset;
+  useEffect(() => { resetComposeSave(); }, [id, resetComposeSave]);
+
   // ── Latency ping ────────────────────────────────────────────
   const [latencyMs, setLatencyMs] = useState<number | null>(null);
+  const [latencyCheckedAt, setLatencyCheckedAt] = useState<string | null>(null);
   useEffect(() => {
     if (!id) return;
     let cancelled = false;
+    setLatencyMs(null);
+    setLatencyCheckedAt(null);
     (async () => {
       const times: number[] = [];
       for (let i = 0; i < 3; i++) {
@@ -768,6 +806,7 @@ export function useServerDetailController() {
         setLatencyMs(
           Math.round(times.reduce((a, b) => a + b, 0) / times.length),
         );
+        setLatencyCheckedAt(new Date().toISOString());
       }
     })();
     return () => {
@@ -851,17 +890,6 @@ export function useServerDetailController() {
     agentRotateMut.isPending ||
     agentRemoveMut.isPending;
   
-  // ── History pagination ──────────────────────────────────────
-  const HIST_PAGE_SIZE = 25;
-  const [histPage, setHistPage] = useState(1);
-  const histItems = Array.isArray(history) ? history : [];
-  const histTotal = Math.max(1, Math.ceil(histItems.length / HIST_PAGE_SIZE));
-  const histSafe = Math.min(histPage, histTotal);
-  const histPage_ = histItems.slice(
-    (histSafe - 1) * HIST_PAGE_SIZE,
-    histSafe * HIST_PAGE_SIZE,
-  );
-  
   // ── Derived ─────────────────────────────────────────────────
   const ramPct = info?.ram_total_mb
     ? Math.round(((info.ram_used_mb ?? 0) / info.ram_total_mb) * 100)
@@ -880,7 +908,7 @@ export function useServerDetailController() {
   const updatesList = useMemo(() => {
     if (!rawUpdates) return [];
     const nested = !Array.isArray(rawUpdates)
-      ? (rawUpdates as Record<string, unknown>).updates
+      ? rawUpdates.updates
       : [];
     const arr = Array.isArray(rawUpdates)
       ? rawUpdates
@@ -889,6 +917,7 @@ export function useServerDetailController() {
         : [];
     return arr.filter((u: Record<string, unknown>) => !u.phased) as {
       package: string;
+      current_version?: string | null;
       version?: string;
       phased?: boolean;
       _cached?: boolean;
@@ -897,7 +926,7 @@ export function useServerDetailController() {
   const phasedList = useMemo(() => {
     if (!rawUpdates) return [];
     const nested = !Array.isArray(rawUpdates)
-      ? (rawUpdates as Record<string, unknown>).updates
+      ? rawUpdates.updates
       : [];
     const arr = Array.isArray(rawUpdates)
       ? rawUpdates
@@ -906,6 +935,7 @@ export function useServerDetailController() {
         : [];
     return arr.filter((u: Record<string, unknown>) => u.phased) as {
       package: string;
+      current_version?: string | null;
       version?: string;
     }[];
   }, [rawUpdates]);
@@ -969,9 +999,12 @@ export function useServerDetailController() {
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
+    deploymentContextLoading,
+    deploymentContextFailed,
+    refetchDeploymentContext,
     managedProxmoxDeployment,
     startActionRun,
     rawServer,
@@ -989,20 +1022,28 @@ export function useServerDetailController() {
     rawUpdates,
     history,
     notesData,
+    notesBaseline: notesBase?.host === id ? notesBase : null,
+    notesFailed,
+    refetchNotes,
+    notesReady: notesBase?.host === id && Boolean(notesData),
+    notesDirty,
+    reloadNotesMut,
     customTasks,
+    customTasksLoading,
+    customTasksFailed,
+    refetchCustomTasks,
     customTaskList,
     agentStatus,
     refetchAgent,
     imageUpdates,
     setImageUpdates,
+    imageCatalog,
     notes,
     setNotes,
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -1025,6 +1066,8 @@ export function useServerDetailController() {
     taskDialog,
     setTaskDialog,
     taskForm,
+    taskDirty,
+    taskContextChanged,
     setTaskForm,
     saveTaskMut,
     deleteTaskMut,
@@ -1042,6 +1085,8 @@ export function useServerDetailController() {
     saveComposeMut,
     latencyMs,
     setLatencyMs,
+    latencyCheckedAt,
+    infoHistory,
     agentUrl,
     setAgentUrl,
     agentCa,
@@ -1056,6 +1101,16 @@ export function useServerDetailController() {
     histPage,
     setHistPage,
     histItems,
+    historyFilters,
+    historyActions,
+    setHistoryFilters,
+    historyCount,
+    historyMatchCount,
+    historyLoading,
+    historyFetching,
+    historyRows: Array.isArray(history) ? history : [],
+    historyFailed,
+    refetchHistory,
     histTotal,
     histSafe,
     histPage_,

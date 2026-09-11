@@ -1,0 +1,210 @@
+- banner:
+  - generic: SHIPYARD
+  - button:
+  - button:
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button:
+    - text: Default environment
+  - button:
+  - button:
+  - button:
+- complementary:
+  - button [pressed]:
+    - text: Operations
+  - button:
+    - text: Infrastructure
+  - navigation:
+    - link:
+      - /url: /
+      - generic: Dashboard
+    - link:
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link:
+      - /url: /servers
+      - generic: Managed Hosts
+    - link:
+      - /url: /deployments
+      - generic: Managed VMs
+    - link:
+      - /url: /playbooks
+      - generic: Playbooks
+  - link:
+    - /url: /settings
+    - generic: Administration
+  - link:
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button:
+- main:
+  - heading [level=1]: Playbooks
+  - paragraph: Reusable Ansible workflows for configuration and repeatable host automation
+  - generic: Git repository not configured
+  - button:
+  - button:
+  - button:
+    - text: Git settings
+  - button:
+    - text: New Playbook
+  - tablist:
+    - tab:
+      - text: Playbooks
+    - tab:
+      - text: Runs
+    - tab:
+      - text: Variables & Secrets
+    - tab [selected]:
+      - text: Schedules
+  - tabpanel:
+    - text: Schedules
+    - button:
+      - text: New Schedule
+    - table:
+      - rowgroup:
+        - row:
+          - columnheader:
+            - checkbox
+          - columnheader: Workflow
+          - columnheader: Playbook
+          - columnheader: Targets
+          - columnheader: Schedule
+          - columnheader: Last run
+          - columnheader: Actions
+      - rowgroup:
+        - row:
+          - cell:
+            - checkbox
+          - cell:
+            - generic: Weekly Updates
+            - switch
+          - cell: update.yml
+          - cell:
+            - generic: All hosts except pve001
+          - cell:
+            - text: Daily, 03:00
+            - generic: Next 10 Sept 2026, 03:00 · Europe/Zurich
+          - cell:
+            - generic: success
+            - generic: 9 Sept 2026, 01:02
+          - cell:
+            - button:
+- dialog "New Schedule":
+  - heading "New Schedule" [level=2]
+  - text: Name
+  - textbox "Name" [active]:
+    - /placeholder: e.g. Weekly Updates
+  - text: Playbook
+  - combobox "Playbook":
+    - option "— Select Playbook —" [selected]
+    - option "Check Disk Usage (check-disk.yml)"
+    - option "Cleanup APT Cache (cleanup-apt.yml)"
+    - option "Cleanup Docker Resources (cleanup-docker.yml)"
+    - option "Cleanup Old Logs (cleanup-logs.yml)"
+    - option "Switch to DHCP (Netplan) (enable-dhcp.yml)"
+    - option "Firewall Setup (UFW) (firewall-setup.yml)"
+    - option "Firewall Status Report (firewall-status.yml)"
+    - option "Install Docker Engine (install-docker.yml)"
+    - option "Network Info Report (network-info.yml)"
+    - option "Set Hostname (set-hostname.yml)"
+    - option "Configure Static IP (Netplan) (set-static-ip.yml)"
+    - option "Timezone Sync (timezone-sync.yml)"
+    - option "System Update (update.yml)"
+  - text: Target
+  - paragraph: When "All hosts" is disabled, only checked hosts are targeted.
+  - checkbox "All hosts"
+  - text: All hosts
+  - checkbox "hr01-ctl-fleet01"
+  - generic: hr01-ctl-fleet01
+  - checkbox "hr01-edge-newt-admin01"
+  - generic: hr01-edge-newt-admin01
+  - checkbox "hr01-edge-newt-apps01"
+  - generic: hr01-edge-newt-apps01
+  - checkbox "hr01-edge-newt-game01"
+  - generic: hr01-edge-newt-game01
+  - checkbox "hr01-edge-newt-media01"
+  - generic: hr01-edge-newt-media01
+  - checkbox "hr01-ext-cloud01"
+  - generic: hr01-ext-cloud01
+  - checkbox "hr01-ext-immich01"
+  - generic: hr01-ext-immich01
+  - checkbox "hr01-ext-unif01"
+  - generic: hr01-ext-unif01
+  - checkbox "hr01-game-minecraft01"
+  - generic: hr01-game-minecraft01
+  - checkbox "hr01-media-hms"
+  - generic: hr01-media-hms
+  - checkbox "hr01-media-plex"
+  - generic: hr01-media-plex
+  - checkbox "hr01-ops-jump01"
+  - generic: hr01-ops-jump01
+  - checkbox "nbg1-dmz-Pangolin"
+  - generic: nbg1-dmz-Pangolin
+  - checkbox "pve001"
+  - generic: pve001
+  - checkbox "localhost"
+  - generic: localhost
+  - generic: Extra variables (optional JSON)
+  - textbox "Extra variables (optional JSON)": "{}"
+  - paragraph: Stored encrypted with the schedule. Environment variables and secrets are merged automatically.
+  - generic: Dry run
+  - text: Use check mode and show diffs
+  - switch "Dry run"
+  - checkbox
+  - text: Parallel hosts
+  - spinbutton "Parallel hosts": "5"
+  - paragraph: Set to 1 for serial execution.
+  - generic: Custom cron expression
+  - text: Use ranges, lists and steps for schedules not covered by presets.
+  - switch "Custom cron expression"
+  - checkbox
+  - text: Interval
+  - combobox:
+    - option "Daily" [selected]
+    - option "Weekly"
+    - option "Monthly"
+    - option "Every 6 hours"
+    - option "Every 12 hours"
+  - text: Time
+  - combobox:
+    - option "00"
+    - option "01"
+    - option "02"
+    - option "03" [selected]
+    - option "04"
+    - option "05"
+    - option "06"
+    - option "07"
+    - option "08"
+    - option "09"
+    - option "10"
+    - option "11"
+    - option "12"
+    - option "13"
+    - option "14"
+    - option "15"
+    - option "16"
+    - option "17"
+    - option "18"
+    - option "19"
+    - option "20"
+    - option "21"
+    - option "22"
+    - option "23"
+  - generic: ":"
+  - combobox:
+    - option "00" [selected]
+    - option "05"
+    - option "10"
+    - option "15"
+    - option "20"
+    - option "25"
+    - option "30"
+    - option "35"
+    - option "40"
+    - option "45"
+    - option "50"
+    - option "55"
+  - button "Create"
+  - button "Close dialog":
+    - generic: Close

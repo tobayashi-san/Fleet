@@ -1,0 +1,5 @@
+<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
+import React from 'react';import{createRoot}from'react-dom/client';import i18n from '/src/lib/i18n.ts';import{Tabs}from'/src/components/ui/tabs.tsx';import{ServerUpdatesTab}from'/src/features/server-detail/ServerUpdatesTab.tsx';import'/src/index.css';
+const base={type:'script',last_checked_at:'2026-09-09 18:00:00',stale:true,source:'Configured installed and desired version commands',current_version:'1.0',last_version:'1.0'};
+const controller={t:(k,o)=>i18n.t(k,o),profile:{role:'reader',permissions:{canRunCustomUpdates:true}},customTasksLoading:true,customTaskList:[{...base,id:'old',name:'Old successful check',has_update:false},{...base,id:'pending',name:'Known pending update',has_update:true,last_version:'2.0'}]};
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24,maxWidth:1100}},React.createElement(Tabs,{value:'updates'},React.createElement(ServerUpdatesTab,{controller}))));</script></html>

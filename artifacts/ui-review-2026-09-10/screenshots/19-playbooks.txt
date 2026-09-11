@@ -1,0 +1,118 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks" [active]:
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Playbooks" [level=1]
+  - paragraph: Reusable Ansible workflows for configuration and repeatable host automation
+  - generic: Git repository not configured
+  - button "Pull from remote":
+  - button "Push to remote":
+  - button "Git settings":
+    - text: Git settings
+  - button "New Playbook":
+    - text: New Playbook
+  - tablist:
+    - tab "Playbooks" [selected]:
+      - text: Playbooks
+    - tab "Runs":
+      - text: Runs
+    - tab "Variables & Secrets":
+      - text: Variables & Secrets
+    - tab "Schedules":
+      - text: Schedules
+  - tabpanel "Playbooks":
+    - generic: Playbook inventory
+    - generic: "19"
+    - paragraph: Select a playbook to inspect or edit it.
+    - generic: Search playbooks
+    - textbox "Search playbooks":
+      - /placeholder: Search…
+    - button "Install 1":
+      - generic: Install
+      - generic: "1"
+    - generic "install-docker.yml": Install Docker Engine
+    - button "Run install-docker.yml":
+    - button "Maintenance 5":
+      - generic: Maintenance
+      - generic: "5"
+    - generic "check-disk.yml": Check Disk Usage
+    - button "Run check-disk.yml":
+    - generic "cleanup-apt.yml": Cleanup APT Cache
+    - button "Run cleanup-apt.yml":
+    - generic "cleanup-docker.yml": Cleanup Docker Resources
+    - button "Run cleanup-docker.yml":
+    - generic "cleanup-logs.yml": Cleanup Old Logs
+    - button "Run cleanup-logs.yml":
+    - generic "update.yml": System Update
+    - button "Run update.yml":
+    - button "Network 4":
+      - generic: Network
+      - generic: "4"
+    - generic "enable-dhcp.yml": Switch to DHCP (Netplan)
+    - button "Run enable-dhcp.yml":
+    - generic "network-info.yml": Network Info Report
+    - button "Run network-info.yml":
+    - generic "set-hostname.yml": Set Hostname
+    - button "Run set-hostname.yml":
+    - generic "set-static-ip.yml": Configure Static IP (Netplan)
+    - button "Run set-static-ip.yml":
+    - button "Security 2":
+      - generic: Security
+      - generic: "2"
+    - generic "firewall-setup.yml": Firewall Setup (UFW)
+    - button "Run firewall-setup.yml":
+    - generic "firewall-status.yml": Firewall Status Report
+    - button "Run firewall-status.yml":
+    - button "System 1":
+      - generic: System
+      - generic: "1"
+    - generic "timezone-sync.yml": Timezone Sync
+    - button "Run timezone-sync.yml":
+    - button "Internal (System) 6":
+      - generic: Internal (System)
+      - generic: "6"
+    - generic "check-image-updates.yml": Check Image Updates
+    - generic "gather-docker.yml": Gather Containers
+    - generic "system/agent/agent-configure.yml": Shipyard Agent reconfigure
+    - generic "system/agent/agent-deploy.yml": Shipyard Agent deployment
+    - generic "system/agent/agent-remove.yml": Shipyard Agent removal
+    - generic "system/agent/agent-update.yml": Shipyard Agent update
+    - heading "Select a playbook" [level=3]
+    - paragraph: Select an item on the left to inspect it. Use New playbook in the page header to create one.

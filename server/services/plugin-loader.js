@@ -1,6 +1,7 @@
+const {pluginCompatibility}=require('../utils/plugin-compatibility');
 const fs   = require('fs');
 const path = require('path');
-const crypto = require('crypto');
+const {pluginDigest,scheme:digestScheme}=require('../utils/plugin-digest');
 const log  = require('../utils/logger').child('plugins');
 
 const PLUGINS_DIR  = process.env.PLUGINS_DIR || '/app/plugins';
@@ -71,29 +72,9 @@ function trustedPluginDigests() {
   return trusted;
 }
 
-function pluginDigest(pluginDir) {
-  const files = [];
-  const visit = (dir, relative = '') => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === 'node_modules' || entry.name === '.bundle-version') continue;
-      const rel = path.posix.join(relative, entry.name);
-      const full = path.join(dir, entry.name);
-      if (entry.isDirectory()) visit(full, rel);
-      else if (entry.isFile()) files.push([rel, full]);
-    }
-  };
-  visit(pluginDir);
-  files.sort(([a], [b]) => a.localeCompare(b));
-  const hash = crypto.createHash('sha256');
-  for (const [relative, full] of files) {
-    hash.update(relative).update('\0').update(fs.readFileSync(full)).update('\0');
-  }
-  return hash.digest('hex');
-}
-
 function pluginTrust(id, digest) {
   const expected = trustedPluginDigests().get(id);
-  return { digest, trusted: Boolean(expected && expected === digest), policy: TRUST_POLICY };
+  return { digest, scheme:digestScheme, scope:'All regular package files, including dependencies', trusted: Boolean(expected && expected === digest), policy: TRUST_POLICY };
 }
 
 // ── DB helpers ──────────────────────────────────────────────────────────────
@@ -102,8 +83,20 @@ function _db()          { return require('../db'); }
 function isEnabled(id)  { if (!PLUGIN_ID_RE.test(id)) return false; return _db().settings.get(`plugin_${id}_enabled`) === '1'; }
 
 function setEnabled(id, enabled) {
-  if (!_loaded.has(id)) throw new Error(`Plugin '${id}' is not loaded`);
+  if (!_loaded.has(id) || (enabled && _failed.has(id))) throw new Error(`Plugin '${id}' is not loaded`);
   _db().settings.set(`plugin_${id}_enabled`, enabled ? '1' : '0');
+}
+
+function validateEnableReview(id,review) {
+  const loaded=_loaded.get(id);
+  if(!loaded || _failed.has(id))throw Object.assign(new Error(`Plugin '${id}' is not loaded`),{status:404});
+  const fail=(message,status)=>{throw Object.assign(new Error(message),{status,field:'plugin_review'});};
+  if(!review || typeof review.digest!=='string' || typeof review.scheme!=='string')fail('Reload plugin inventory and review this package before enabling access.',428);
+  if(review.scheme!==digestScheme || review.digest!==loaded.trust.digest)fail('The loaded package changed. Reload inventory and review it again.',409);
+  const current=pluginDigest(path.join(PLUGINS_DIR,id));
+  if(current!==loaded.trust.digest)fail('Package files changed since loading. Reload and review the package before enabling access.',409);
+  if(TRUST_POLICY==='enforce' && !pluginTrust(id,current).trusted)fail('The package no longer matches the configured approval allowlist.',409);
+  return loaded.trust;
 }
 
 // ── Manifest ────────────────────────────────────────────────────────────────
@@ -114,10 +107,33 @@ function _readManifest(pluginDir) {
   let m;
   try { m = JSON.parse(fs.readFileSync(manifestPath, 'utf8')); }
   catch (e) { throw new Error(`manifest.json parse error: ${e.message}`); }
-  if (!m.id || !PLUGIN_ID_RE.test(m.id)) throw new Error('manifest.id is missing or invalid (must be lowercase a-z, 0-9, - or _)');
+  if (!m || typeof m!=='object' || Array.isArray(m))throw new Error('manifest.json must contain an object');
+  if (typeof m.id!=='string' || !m.id || m.id.length>100 || !PLUGIN_ID_RE.test(m.id)) throw new Error('manifest.id is missing or invalid (must be lowercase a-z, 0-9, - or _)');
   if (m.id !== path.basename(pluginDir))  throw new Error(`manifest.id "${m.id}" must match the directory name "${path.basename(pluginDir)}"`);
-  if (!m.name) throw new Error('manifest.name is required');
+  if (typeof m.name!=='string' || !m.name.trim() || m.name.length>200) throw new Error('manifest.name must be nonempty text of at most 200 characters');
+  for(const [field,max] of [['version',100],['description',4000],['author',200]]) {
+    if(m[field]!==undefined && (typeof m[field]!=='string' || m[field].length>max))throw new Error(`manifest.${field} must be text of at most ${max} characters`);
+  }
+  if(m.sidebar!==undefined) {
+    if(!m.sidebar || typeof m.sidebar!=='object' || Array.isArray(m.sidebar))throw new Error('manifest.sidebar must be an object');
+    for(const field of ['label','icon'])if(m.sidebar[field]!==undefined && (typeof m.sidebar[field]!=='string' || m.sidebar[field].length>200))throw new Error(`manifest.sidebar.${field} must be text of at most 200 characters`);
+  }
   return m;
+}
+
+// Evict all CommonJS modules owned by this package, not only index.js.
+// Canonical paths handle a configured plugins root reached through a symlink.
+function clearPluginModules(pluginDir) {
+  const root=fs.realpathSync(pluginDir);
+  const prefix=root+path.sep;
+  const removed=new Set();
+  for(const [filename,module] of Object.entries(require.cache)) {
+    if(filename.startsWith(prefix)) { removed.add(module);delete require.cache[filename]; }
+  }
+  // Long-lived server modules must not retain old package module trees.
+  for(const module of Object.values(require.cache)) {
+    if(module?.children)module.children=module.children.filter(child=>!removed.has(child));
+  }
 }
 
 // ── Loader ──────────────────────────────────────────────────────────────────
@@ -125,6 +141,9 @@ function _readManifest(pluginDir) {
 function _loadOne(pluginDir) {
   const manifest = _readManifest(pluginDir);
   const { id }   = manifest;
+  const compatibility=pluginCompatibility(manifest);
+  if(compatibility.status==='invalid')throw new Error(compatibility.error);
+  if(compatibility.status==='incompatible')throw new Error('Runtime requirements not met: '+compatibility.requirements.filter(item=>!item.matches).map(item=>`${item.name} ${item.current} does not satisfy ${item.range}`).join('; '));
   const trust = pluginTrust(id, pluginDigest(pluginDir));
   if (TRUST_POLICY === 'enforce' && !trust.trusted) {
     throw new Error(`Plugin '${id}' is not trusted by SHIPYARD_TRUSTED_PLUGIN_SHA256`);
@@ -141,16 +160,15 @@ function _loadOne(pluginDir) {
   pluginRouter.use(authMiddleware);
 
   const indexPath = path.join(pluginDir, 'index.js');
+  clearPluginModules(pluginDir);
   if (fs.existsSync(indexPath)) {
-    // Clear from require cache so repeated reload() calls work
-    delete require.cache[require.resolve(indexPath)];
     const mod = require(indexPath);
     if (typeof mod.register === 'function') {
       mod.register({ ..._helpers, router: pluginRouter, pluginId: id, pluginDir });
     }
   }
 
-  _loaded.set(id, { manifest, router: pluginRouter, trust });
+  _loaded.set(id, { manifest, router: pluginRouter, trust, compatibility });
   return manifest;
 }
 
@@ -211,8 +229,16 @@ function list() {
   const result = [];
   const seen   = new Set();
 
-  for (const [id, { manifest, trust }] of _loaded) {
-    result.push({ ...manifest, enabled: isEnabled(id), loaded: true, trust });
+  for (const [id, { manifest, trust, compatibility }] of _loaded) {
+    let packageStatus;
+    try {
+      const installed = _readManifest(path.join(PLUGINS_DIR, id));
+      const installedVersion = installed.version || null, loadedVersion = manifest.version || null;
+      packageStatus = {installedVersion, loadedVersion, state: !installedVersion || !loadedVersion ? 'version-unavailable' : installedVersion !== loadedVersion ? 'reload-required' : 'same-version', checkedAt: Date.now(), rollback: 'manual'};
+    } catch {
+      packageStatus = {installedVersion: null, loadedVersion: manifest.version || null, state: 'unreadable', checkedAt: Date.now(), rollback: 'manual'};
+    }
+    result.push({ ...manifest, packageStatus, enabled: !_failed.has(id) && isEnabled(id), loaded: !_failed.has(id), hasUi:!!getUiRoot(id), trust, compatibility, ...(_failed.has(id) ? {error:_failed.get(id)} : {}) });
     seen.add(id);
   }
 
@@ -224,9 +250,9 @@ function list() {
       const loadError = _failed.get(entry.name) || null;
       try {
         const manifest = _readManifest(pluginDir);
-        result.push({ ...manifest, enabled: false, loaded: false, error: loadError || 'Plugin not loaded' });
+        result.push({ ...manifest, enabled: false, loaded: false, hasUi:false, compatibility: pluginCompatibility(manifest), error: loadError || 'Plugin not loaded' });
       } catch (e) {
-        result.push({ id: entry.name, name: entry.name, enabled: false, loaded: false, error: loadError || e.message });
+        result.push({ id: entry.name, name: entry.name, enabled: false, loaded: false, hasUi:false, error: loadError || e.message });
       }
     }
   }
@@ -238,7 +264,7 @@ function list() {
  * Returns the Express router for a plugin (only if the plugin is enabled).
  */
 function getRouter(id) {
-  if (!isEnabled(id)) return null;
+  if (!isEnabled(id) || _failed.has(id)) return null;
   return _loaded.get(id)?.router || null;
 }
 
@@ -246,13 +272,13 @@ function getRouter(id) {
  * Returns the safe root directory for a plugin's ui.js, or null if not found.
  */
 function getUiRoot(id) {
-  if (!PLUGIN_ID_RE.test(id)) return null;
+  if (!PLUGIN_ID_RE.test(id) || !_loaded.has(id) || _failed.has(id)) return null;
   const pluginsRoot = path.resolve(PLUGINS_DIR);
   const pluginDir = path.resolve(pluginsRoot, id);
   if (!pluginDir.startsWith(`${pluginsRoot}${path.sep}`)) return null;
   const uiPath = path.join(pluginDir, 'ui.js');
   try {
-    if (!fs.statSync(uiPath).isFile()) return null;
+    if (!fs.lstatSync(pluginDir).isDirectory() || !fs.lstatSync(uiPath).isFile()) return null;
   } catch {
     return null;
   }
@@ -287,7 +313,12 @@ function getUiAsset(id, requestPath) {
   const filePath = path.resolve(uiRoot, ...parts);
   if (!filePath.startsWith(`${uiRoot}${path.sep}`)) return null;
   try {
-    if (!fs.statSync(filePath).isFile()) return null;
+    let current=uiRoot;
+    for(let index=0;index<parts.length;index++){
+      current=path.join(current,parts[index]);
+      const info=fs.lstatSync(current);
+      if(index===parts.length-1 ? !info.isFile() : !info.isDirectory())return null;
+    }
   } catch {
     return null;
   }
@@ -301,6 +332,7 @@ module.exports = {
   list,
   isEnabled,
   setEnabled,
+  validateEnableReview,
   getRouter,
   getUiRoot,
   getUiAsset,

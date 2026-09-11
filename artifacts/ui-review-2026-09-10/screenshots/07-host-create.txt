@@ -1,0 +1,333 @@
+- banner:
+  - generic: SHIPYARD
+  - button:
+  - button:
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button:
+    - text: Default environment
+  - button:
+  - button:
+  - button:
+- complementary:
+  - button [pressed]:
+    - text: Operations
+  - button:
+    - text: Infrastructure
+  - navigation:
+    - link:
+      - /url: /
+      - generic: Dashboard
+    - link:
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link:
+      - /url: /servers
+      - generic: Managed Hosts
+    - link:
+      - /url: /deployments
+      - generic: Managed VMs
+    - link:
+      - /url: /playbooks
+      - generic: Playbooks
+  - link:
+    - /url: /settings
+    - generic: Administration
+  - link:
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button:
+- main:
+  - heading [level=1]: Managed Hosts
+  - paragraph: "Day-2 operations for hosts: health, updates, Docker, tasks, and access. Platform inventory is under Infrastructure · 14 hosts · 14 online · 0 offline"
+  - button [expanded]:
+    - text: Add host
+  - textbox:
+    - /placeholder: Search hosts…
+  - generic: /
+  - button:
+    - text: Filters
+  - button:
+  - table:
+    - caption: Host inventory
+    - rowgroup:
+      - row:
+        - columnheader:
+          - checkbox
+        - columnheader: Name
+        - columnheader: IP Address
+        - columnheader: Status
+        - columnheader: Tags
+        - columnheader: Actions
+    - rowgroup:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/c7825652-1861-47af-afac-335ee94438d5
+            - text: hr01-ctl-fleet01
+        - cell:
+          - generic: 10.77.25.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/27e22f7e-ac65-407b-b185-a441195e62ae
+            - text: hr01-edge-newt-admin01
+        - cell:
+          - generic: 10.77.80.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/061f3b82-feb1-46b0-854b-9cb4a62a045f
+            - text: hr01-edge-newt-apps01
+        - cell:
+          - generic: 10.77.80.20
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/017e6a7a-f887-4983-ad4f-d8a460ff9b5f
+            - text: hr01-edge-newt-game01
+        - cell:
+          - generic: 10.77.80.40
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/1ee2063c-ae19-4089-b472-fd237551c99f
+            - text: hr01-edge-newt-media01
+        - cell:
+          - generic: 10.77.80.30
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/bef19482-5a03-456e-b929-44fbce9d6926
+            - text: hr01-ext-cloud01
+        - cell:
+          - generic: 10.77.30.30
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: lxc
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/0d02c8f6-cbb3-4f60-a47e-74cb010b5cfb
+            - text: hr01-ext-immich01
+        - cell:
+          - generic: 10.77.30.20
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: lxc
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/5c4c25ea-2031-4fa0-99f0-d8eef0ae0157
+            - text: hr01-ext-unif01
+        - cell:
+          - generic: 10.77.30.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/b4170bb2-bfcf-495d-9773-524a7984c693
+            - text: hr01-game-minecraft01
+        - cell:
+          - generic: 10.77.50.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/a104c583-8f7e-4b44-90c8-52b5b9f7096d
+            - text: hr01-media-hms
+        - cell:
+          - generic: 10.77.40.20
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/dc9c84f3-f096-4cb1-a349-9d99c25f4b35
+            - text: hr01-media-plex
+        - cell:
+          - generic: 10.77.40.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/89be8bfa-b961-47fd-bad2-4ce981651761
+            - text: hr01-ops-jump01
+        - cell:
+          - generic: 10.77.20.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/42038fdd-4a99-4b83-bff0-4fee7a52e860
+            - text: nbg1-dmz-Pangolin
+        - cell:
+          - generic: 46.225.131.214
+          - generic: Ubuntu
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: —
+        - cell:
+          - button:
+      - row:
+        - cell:
+          - checkbox
+        - cell:
+          - link:
+            - /url: /servers/dfbcda0a-2f44-42e4-9d4a-6611e4873993
+            - text: pve001
+        - cell:
+          - generic: 10.77.10.10
+          - generic: Debian
+        - cell:
+          - generic: Online
+        - cell:
+          - generic: proxmox-node
+          - generic: proxmox:Production
+        - cell:
+          - button:
+- dialog "Add host":
+  - heading "Add host" [level=2]
+  - generic: Basic Information
+  - generic: Host name*
+  - textbox "Host name*" [active]:
+    - /placeholder: e.g. Plex Server
+  - generic: IP Address*
+  - textbox "IP Address*":
+    - /placeholder: 192.168.1.100
+  - text: SSH password (optional)
+  - paragraph: Used only for the connection test and initial key installation. The password is never stored.
+  - textbox "SSH password (optional)"
+  - button "Test" [disabled]:
+    - text: Test
+  - generic "Advanced options Hostname, SSH settings, metadata, links, and storage.":
+    - generic: Advanced options
+    - generic: Hostname, SSH settings, metadata, links, and storage.
+  - option "Default environment" [selected]
+  - button "Cancel"
+  - button "Add"
+  - button "Close dialog":
+    - generic: Close

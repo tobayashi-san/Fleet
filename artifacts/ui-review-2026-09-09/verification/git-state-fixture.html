@@ -1,0 +1,4 @@
+<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
+import React from'react';import{createRoot}from'react-dom/client';import{GitSyncState}from'/src/features/git/GitSyncState.tsx';import'/src/index.css';
+createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:32,maxWidth:800}},React.createElement('h1',null,'Git working copy'),React.createElement(GitSyncState,{comparison:{state:'diverged',ahead:2,behind:3},lastFetchAt:'2026-09-10T05:00:00Z',conflicts:['playbooks/example.yml']})));
+</script></html>

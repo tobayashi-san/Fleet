@@ -1,0 +1,123 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Administration" [level=1]
+  - paragraph: Configure console, access, integrations and system operations
+  - navigation "Administration":
+    - generic: Administration
+    - generic: General
+    - list:
+      - link "Appearance":
+        - /url: /settings/appearance
+    - generic: Access & security
+    - list:
+      - link "SSH":
+        - /url: /settings/ssh
+      - link "User Management":
+        - /url: /settings/users-roles
+    - generic: Integrations
+    - list:
+      - link "Git Integration":
+        - /url: /settings/git
+      - link "Plugins":
+        - /url: /settings/plugins
+      - link "Notifications":
+        - /url: /settings/notifications
+    - generic: System
+    - list:
+      - link "System" [active]:
+        - /url: /settings/system
+      - link "Danger Zone":
+        - /url: /settings/danger
+  - heading "Ansible" [level=3]
+  - generic: Installation
+  - text: Installed
+  - generic: Version
+  - generic: 2.14.18
+  - heading "OpenTofu" [level=3]
+  - paragraph: Install or update the OpenTofu binary used for deployments. The managed binary is stored persistently in Shipyard data.
+  - generic: Installation
+  - text: Installed
+  - generic: Version
+  - generic: 1.12.6
+  - generic: Active binary
+  - generic: Shipyard prefers its managed OpenTofu binary, then checks tofu, opentofu and terraform in PATH.
+  - generic: /app/server/data/bin/tofu
+  - generic: Available version
+  - combobox "Available version":
+    - option "1.12.6" [selected]
+  - button "Reinstall OpenTofu":
+    - text: Reinstall OpenTofu
+  - heading "Schedules" [level=3]
+  - paragraph: Timezone for automatic playbook runs.
+  - generic: Scheduler timezone
+  - generic: IANA timezone, e.g. Europe/Zurich. Changes reload active schedules.
+  - combobox "Scheduler timezone": Europe/Zurich
+  - button "Save":
+    - text: Save
+  - heading "Background Polling (SSH)" [level=3]
+  - paragraph: Shipyard connects via SSH to check for available updates. System information (CPU, RAM, disk) is also fetched via SSH unless an agent is installed — hosts with an agent report this data directly instead.
+  - generic: System Info
+  - generic: Fetch CPU, RAM, disk, uptime
+  - switch "System Info" [checked]
+  - spinbutton "System Info min": "5"
+  - generic: min
+  - generic: OS Updates
+  - generic: Check for available package updates (apt) — nothing is installed
+  - switch "OS Updates" [checked]
+  - spinbutton "OS Updates min": "60"
+  - generic: min
+  - generic: Image Updates
+  - generic: Check Docker/Podman images for new versions — no automatic pull
+  - switch "Image Updates" [checked]
+  - spinbutton "Image Updates min": "360"
+  - generic: min
+  - generic: Custom Updates
+  - generic: Query GitHub releases & run check commands — nothing is executed
+  - switch "Custom Updates" [checked]
+  - spinbutton "Custom Updates min": "360"
+  - generic: min
+  - button "Save":
+    - text: Save
+  - heading "Shipyard Agent" [level=3]
+  - paragraph: The agent collects system information (CPU, RAM, disk, OS) directly on the host — faster and without SSH. For small environments, SSH polling is sufficient.
+  - generic: Enable agent feature
+  - switch "Enable agent feature"

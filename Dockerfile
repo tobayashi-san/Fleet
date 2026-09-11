@@ -14,7 +14,7 @@ RUN cd frontend-next && npm run build
 FROM node:20.19.5-bookworm-slim@sha256:9e70124bd00f47dd023e349cd587132ae61892acc0e47ed641416c3e18f401c3
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      ansible openssh-client openssl gosu curl unzip git build-essential \
+      ansible openssh-client openssl gosu curl unzip git build-essential util-linux \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root user for runtime

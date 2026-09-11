@@ -1,0 +1,114 @@
+- banner:
+  - generic: SHIPYARD
+  - button:
+  - button:
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button:
+    - text: Default environment
+  - button:
+  - button:
+  - button:
+- complementary:
+  - button [pressed]:
+    - text: Operations
+  - button:
+    - text: Infrastructure
+  - navigation:
+    - link:
+      - /url: /
+      - generic: Dashboard
+    - link:
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link:
+      - /url: /servers
+      - generic: Managed Hosts
+    - link:
+      - /url: /deployments
+      - generic: Managed VMs
+    - link:
+      - /url: /playbooks
+      - generic: Playbooks
+  - link:
+    - /url: /settings
+    - generic: Administration
+  - link:
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button:
+- main:
+  - heading [level=1]: Administration
+  - paragraph: Configure console, access, integrations and system operations
+  - navigation:
+    - generic: Administration
+    - generic: General
+    - list:
+      - link:
+        - /url: /settings/appearance
+        - text: Appearance
+    - generic: Access & security
+    - list:
+      - link:
+        - /url: /settings/ssh
+        - text: SSH
+      - link:
+        - /url: /settings/users-roles
+        - text: User Management
+    - generic: Integrations
+    - list:
+      - link:
+        - /url: /settings/git
+        - text: Git Integration
+      - link:
+        - /url: /settings/plugins
+        - text: Plugins
+      - link:
+        - /url: /settings/notifications
+        - text: Notifications
+    - generic: System
+    - list:
+      - link:
+        - /url: /settings/system
+        - text: System
+      - link:
+        - /url: /settings/danger
+        - text: Danger Zone
+  - tablist:
+    - tab [selected]:
+      - text: User Management
+    - tab:
+      - text: Role Management
+  - tabpanel:
+    - heading [level=3]: User Management
+    - generic: 1 users
+    - button:
+      - text: Add User
+    - generic: A
+    - generic: admin
+    - generic: "@admin"
+    - generic: "Last login: 9 Sept 2026, 20:31"
+    - generic: Admin
+    - generic: 2FA off
+    - text: "0"
+    - button:
+- dialog "Add User":
+  - heading "Add User" [level=2]
+  - text: Username
+  - textbox [active]
+  - paragraph: "Login-ID, 3–32 characters: letters, numbers, . _ -"
+  - text: Display Name
+  - textbox
+  - paragraph: Shown in UI
+  - text: Email
+  - textbox
+  - text: Password
+  - textbox "Min 12 characters"
+  - text: Role
+  - combobox:
+    - option "Admin"
+    - option "User" [selected]
+  - button "Cancel"
+  - button "Create"
+  - button "Close dialog":
+    - generic: Close

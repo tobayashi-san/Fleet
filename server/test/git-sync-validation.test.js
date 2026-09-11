@@ -116,3 +116,28 @@ test('Git credentials use exactly one masked storage mode', () => {
   assert.equal(getConfig().authToken, '');
   assert.match(getConfig().sshKey, /BEGIN OPENSSH PRIVATE KEY/);
 });
+
+
+test('credential transport mismatch preserves the configured credentials', () => {
+  const db = require('../db');
+  db.settings.set('git_repo_url', 'https://example.test/team/repo.git');
+  updateCredentials({mode:'https',authToken:'retained-token'});
+  assert.throws(()=>updateCredentials({mode:'ssh',sshKey:'replacement-key'}),/does not match/);
+  assert.equal(getConfig().authToken,'retained-token');assert.equal(getConfig().sshKey,'');
+  db.settings.set('git_repo_url','deploy@example.test:team/repo.git');
+  updateCredentials({mode:'ssh',sshKey:'retained-key'});
+  assert.throws(()=>updateCredentials({mode:'https',authToken:'replacement-token'}),/does not match/);
+  assert.equal(getConfig().sshKey,'retained-key');assert.equal(getConfig().authToken,'');
+});
+
+test('setup rejects invalid credentials before replacing existing configuration', async () => {
+ const {setup} = require('../services/git-sync');
+ const db = require('../db');
+ db.settings.set('git_repo_url','https://original.test/repo');
+ const before = getConfig();
+ for (const credentials of [{authToken:{}},{sshKey:null},{authToken:'x',sshKey:'y'},{sshKey:'wrong-transport'},{authToken:'x'.repeat(8193)}]) {
+  const result = await setup({repoUrl:'https://replacement.test/repo',...credentials});
+  assert.equal(result.success,false);
+  assert.deepEqual(getConfig(),before);
+ }
+});

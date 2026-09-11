@@ -5,10 +5,12 @@ const API_BASE = '/api';
 
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  field?: string;
+  constructor(message: string, status: number, field?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.field = field;
   }
 }
 
@@ -75,6 +77,8 @@ interface RequestOptions extends Omit<RequestInit, 'body'> {
   skipAuth?: boolean;
   /** Override the default timeout; use 0 only for intentional long polling. */
   timeoutMs?: number;
+  /** Explicit target for workflows that select an environment without changing navigation. */
+  environmentId?: string;
 }
 
 export async function apiFetch<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
@@ -86,9 +90,9 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     const tok = getToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
     try {
-      headers['X-Shipyard-Environment'] = localStorage.getItem('shipyard_environment') || 'default';
+      headers['X-Shipyard-Environment'] = options.environmentId || localStorage.getItem('shipyard_environment') || 'default';
     } catch {
-      headers['X-Shipyard-Environment'] = 'default';
+      headers['X-Shipyard-Environment'] = options.environmentId || 'default';
     }
   }
 
@@ -103,8 +107,9 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   const init: RequestInit = { ...options, headers, signal: controller.signal } as RequestInit;
   delete (init as { skipAuth?: boolean }).skipAuth;
   delete (init as { timeoutMs?: number }).timeoutMs;
+  delete (init as { environmentId?: string }).environmentId;
 
-  if (options.body !== undefined && options.body !== null && typeof options.body === 'object' && !(options.body instanceof FormData)) {
+  if (options.body !== undefined && options.body !== null && typeof options.body === 'object' && !(options.body instanceof FormData) && !(options.body instanceof Blob)) {
     init.body = JSON.stringify(options.body);
   } else if (options.body !== undefined) {
     init.body = options.body as BodyInit;
@@ -130,9 +135,15 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
 
   if (!res.ok) {
     let msg = `Request failed: ${res.status}`;
-    try { const j = await res.json(); if (j?.error) msg = j.error; } catch { /* ignore */ }
+    let field: string | undefined;
+    try {
+      const j = await res.json();
+      if (typeof j?.error === 'string') msg = j.error;
+      if (typeof j?.field === 'string' && /^[a-z][a-z0-9_]{0,63}$/.test(j.field)) field = j.field;
+    } catch { /* ignore */ }
+    if (res.status === 403 && field === 'mfa_enrollment_required' && typeof window !== 'undefined' && window.location.pathname !== '/mfa-enrollment') window.location.assign('/mfa-enrollment');
     if (res.status === 403 && msg === 'Permission denied') msg = permissionDeniedMessage(path, options.method || 'GET');
-    throw new ApiError(msg, res.status);
+    throw new ApiError(msg, res.status, field);
   }
 
   if (res.status === 204) return null as T;
@@ -148,12 +159,16 @@ export async function apiFetchArray<T = unknown>(path: string, options: RequestO
 }
 
 /** Download helper for binary endpoints (e.g. server export). */
-export async function apiDownload(path: string, filename: string): Promise<void> {
+export async function apiDownload(path: string, filename: string, options: { body?: Record<string, unknown>; environmentId?: string } = {}): Promise<void> {
   const tok = getToken();
   let environmentId = 'default';
   try { environmentId = localStorage.getItem('shipyard_environment') || 'default'; } catch { /* use default */ }
+  environmentId = options.environmentId || environmentId;
   const res = await fetch(`${API_BASE}${path}`, {
+    method: options.body ? 'POST' : 'GET',
+    body: options.body ? JSON.stringify(options.body) : undefined,
     headers: {
+      ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
       'X-Shipyard-Environment': environmentId,
     },
@@ -202,7 +217,7 @@ export function apiUploadFile(
     }
     request.setRequestHeader('Content-Type', 'application/octet-stream');
     request.upload.onprogress = event => {
-      if (event.lengthComputable && onProgress) onProgress(Math.round((event.loaded / event.total) * 100));
+      if (!settled && event.lengthComputable && event.total > 0 && onProgress) onProgress(Math.min(100, Math.max(0, Math.floor((event.loaded / event.total) * 100))));
     };
     request.onerror = () => finish(() => reject(new ApiError('Upload failed', 0)));
     request.onabort = () => finish(() => reject(new ApiError('Upload canceled', 499)));
@@ -233,10 +248,10 @@ export const api = {
   authSetup:         (username: string, password: string) =>
     apiFetch<{ token: string }>('/auth/setup', { method: 'POST', body: { username, password }, skipAuth: true }),
   authLogin:         (username: string, password: string) =>
-    apiFetch<{ token?: string; tempToken?: string; requires2FA?: boolean; user?: AnyObj }>('/auth/login', { method: 'POST', body: { username, password }, skipAuth: true }),
+    apiFetch<{ token?: string; tempToken?: string; requires2FA?: boolean; requiresMfaEnrollment?: boolean; user?: AnyObj }>('/auth/login', { method: 'POST', body: { username, password }, skipAuth: true }),
   authChangePassword:(currentPassword: string, newPassword: string) =>
     apiFetch('/auth/change', { method: 'POST', body: { currentPassword, newPassword } }),
-  totpStatus:        () => apiFetch<{ enabled: boolean }>('/auth/totp/status'),
+  totpStatus:        () => apiFetch<{ enabled: boolean; required: boolean; policy: string }>('/auth/totp/status'),
   totpSetup:         () => apiFetch<{ otpauthUrl: string; secret: string }>('/auth/totp/setup', { method: 'POST' }),
   totpConfirm:       (code: string) => apiFetch<{ success: boolean; token: string }>('/auth/totp/confirm', { method: 'POST', body: { code } }),
   totpDisable:       (password: string) => apiFetch<{ success: boolean; token: string }>('/auth/totp', { method: 'DELETE', body: { password } }),
@@ -261,10 +276,11 @@ export const api = {
 
   // SSH / System
   getSSHKey:         () => apiFetch<{ publicKey: string }>('/system/key'),
-  exportSSHKey:      (passphrase = '') => apiFetch<{ privateKey: string }>('/system/key/export', { method: 'POST', body: { passphrase } }),
-  importSSHKey:      (privateKey: string, passphrase = '') => apiFetch('/system/key/import', { method: 'POST', body: { privateKey, passphrase } }),
+  exportSSHKey:      (passphrase = '', password = '', code = '') => apiFetch<{ privateKey: string }>('/system/key/export', { method: 'POST', body: { passphrase, password, code } }),
+  previewSSHKeyImport: (privateKey: string, passphrase = '') => apiFetch<{candidate:{fingerprint:string;algorithm:string;publicKey:string};current:{id:string;fingerprint:string;algorithm:string}|null}>('/system/key/import-preview', {method:'POST',body:{privateKey,passphrase}}),
+  importSSHKey: (privateKey: string, passphrase: string, review:{expectedKeyId:string|null;expectedFingerprint:string}) => apiFetch('/system/key/import', {method:'POST',body:{privateKey,passphrase,...review}}),
   generateSSHKey:    (name?: string) => apiFetch('/system/generate', { method: 'POST', body: { name } }),
-  deploySSHKey:      (data: AnyObj) => apiFetch('/system/deploy', { method: 'POST', body: data }),
+  deploySSHKey:      (data: AnyObj) => apiFetch('/system/deploy', { method: 'POST', body: data, environmentId: typeof data.environment_id === 'string' ? data.environment_id : undefined }),
   deploySSHKeyAll:   (data: AnyObj) => apiFetch('/system/deploy-all', { method: 'POST', body: data }),
   getSSHKeyAssignments: (environmentId = 'default') => apiFetch(`/system/key-assignments?environment_id=${encodeURIComponent(environmentId)}`),
   getSSHKeyAssignmentTargets: (environmentId = 'default') => apiFetch(`/system/key-assignment-targets?environment_id=${encodeURIComponent(environmentId)}`),
@@ -291,7 +307,7 @@ export const api = {
   exportAuditLog:    (params: Record<string, string | number | undefined> = {}) => {
     const q = new URLSearchParams();
     for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') q.set(k, String(v));
-    return apiDownload(`/system/audit/export?${q}`, 'fleet-audit-log.csv');
+    return apiDownload(`/system/audit/export?${q}`, 'fleet-audit-log.csv', { environmentId: typeof params.environment_id === 'string' ? params.environment_id : undefined });
   },
   getPollingConfig:  () => apiFetch<AnyObj>('/system/polling-config'),
   savePollingConfig: (data: AnyObj) => apiFetch('/system/polling-config', { method: 'PUT', body: data }),
@@ -301,8 +317,9 @@ export const api = {
 
   // Playbooks
   getPlaybooks:      () => apiFetchArray<AnyObj>('/playbooks'),
-  getPlaybook:       (filename: string) => apiFetch<{ content: string }>(`/playbooks/${encodeURIComponent(filename)}`),
-  savePlaybook:      (filename: string, content: string) => apiFetch('/playbooks', { method: 'POST', body: { filename, content } }),
+  getPlaybook:       (filename: string) => apiFetch<{ content: string; revision: string; status: 'draft' | 'approved'; author?: string | null; modifiedAt?: string; approvedBy?: string | null; approvedAt?: string | null }>(`/playbooks/${encodeURIComponent(filename)}`),
+  savePlaybook:      (filename: string, content: string, revision: string | null) => apiFetch('/playbooks', { method: 'POST', body: { filename, content, revision } }),
+  approvePlaybook:   (filename: string, revision: string) => apiFetch(`/playbooks/${encodeURIComponent(filename)}/approve`, { method: 'POST', body: { revision } }),
   deletePlaybook:    (filename: string) => apiFetch(`/playbooks/${encodeURIComponent(filename)}`, { method: 'DELETE' }),
   getPlaybookHistory:(filename: string) => apiFetchArray<AnyObj>(`/playbooks/${encodeURIComponent(filename)}/history`),
   getPlaybookVersion:(filename: string, version: string | number) => apiFetch(`/playbooks/${encodeURIComponent(filename)}/history/${version}`),
@@ -311,12 +328,14 @@ export const api = {
   // Ansible / actions
   runUpdate:         (serverId: string | number) => apiFetch(`/servers/${serverId}/update`, { method: 'POST' }),
   runUpdateAll:      () => apiFetch('/servers/update-all', { method: 'POST' }),
+  runSelectedUpdates: (serverIds: string[], environmentId: string) => apiFetch('/servers/update-all', { method: 'POST', body: {server_ids:serverIds}, environmentId }),
   runReboot:         (serverId: string | number) => apiFetch(`/servers/${serverId}/reboot`, { method: 'POST' }),
   runPlaybook:       (playbook: string, targets: unknown, extraVars?: AnyObj, options: AnyObj = {}) =>
-    apiFetch('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars, ...options } }),
+    apiFetch('/ansible/run', { method: 'POST', body: { playbook, targets, extraVars, ...options }, environmentId: typeof options.environment_id === 'string' ? options.environment_id : undefined }),
   previewPlaybookTargets: (targets: unknown, environmentId: string) =>
     apiFetch<{ environment_id: string; count: number; targets: string[] }>('/ansible/preview-targets', { method: 'POST', body: { targets, environment_id: environmentId } }),
-  cancelPlaybookRun: (id: string | number) => apiFetch(`/ansible/runs/${id}/cancel`, { method: 'POST' }),
+  getPlaybookRunStatus: (id: string | number, environmentId?: string) => apiFetch<AnyObj>(`/ansible/runs/${id}/status`, { environmentId }),
+  cancelPlaybookRun: (id: string | number, environmentId?: string) => apiFetch(`/ansible/runs/${id}/cancel`, { method: 'POST', environmentId }),
   runAdhoc:          (targets: unknown, module: string, args: string) =>
     apiFetch('/adhoc/run', { method: 'POST', body: { targets, module, args } }),
 
@@ -332,7 +351,7 @@ export const api = {
     if (environmentId) q.set('environment_id', environmentId);
     return apiFetchArray<AnyObj>(`/schedule-history?${q}`);
   },
-  getScheduleHistoryEntry: (id: string | number) => apiFetch<AnyObj>(`/schedule-history/${id}`),
+  getScheduleHistoryEntry: (id: string | number, environmentId?: string) => apiFetch<AnyObj>(`/schedule-history/${id}`, { environmentId }),
 
   // Ansible vars
   getAnsibleVars:    (environmentId?: string) => apiFetchArray<AnyObj>(`/ansible-vars${environmentId ? `?environment_id=${encodeURIComponent(environmentId)}` : ''}`),
@@ -345,6 +364,7 @@ export const api = {
   saveGitConfig:     (data: AnyObj) => apiFetch('/playbooks-git/config', { method: 'PUT', body: data }),
   saveGitSettings:   (data: AnyObj) => apiFetch('/playbooks-git/settings', { method: 'POST', body: data }),
   gitDisconnect:     () => apiFetch('/playbooks-git/disconnect', { method: 'POST' }),
+  testGitConnection: (data: AnyObj) => apiFetch<{ reachable: boolean; branches: string[]; defaultBranch: string | null; branchExists: boolean; checkedAt: string }>('/playbooks-git/test', { method: 'POST', body: data }),
   gitSetup:          (data: AnyObj) => apiFetch('/playbooks-git/setup', { method: 'POST', body: data }),
   getGitStatus:      () => apiFetch<AnyObj>('/playbooks-git/status'),
   getGitLog:         (page?: number, limit?: number) =>
@@ -357,9 +377,9 @@ export const api = {
 
   // Plugins
   getPlugins:        () => apiFetchArray<AnyObj>('/plugins'),
-  enablePlugin:      (id: string) => apiFetch(`/plugins/${id}/enable`, { method: 'POST' }),
+  enablePlugin:      (id: string, review: {digest:string;scheme:string}) => apiFetch(`/plugins/${id}/enable`, { method: 'POST', body: review }),
   disablePlugin:     (id: string) => apiFetch(`/plugins/${id}/disable`, { method: 'POST' }),
-  reloadPlugins:     () => apiFetch('/plugins/reload', { method: 'POST' }),
+  reloadPlugins:     () => apiFetch<{success:boolean;summary:{loaded:number;failed:{id:string;error:string}[];checkedAt:number}}>('/plugins/reload', { method: 'POST' }),
 
   // Agent (v1)
   getAgentStatus:    (serverId: string | number) => apiFetch<AnyObj>(`/v1/servers/${serverId}/agent/status`),
@@ -375,11 +395,11 @@ export const api = {
     apiFetch('/v1/agent-manifest', { method: 'PUT', body: { content, changelog } }),
 
   // Reset / danger
-  resetServers:      () => apiFetch('/reset/servers',   { method: 'DELETE' }),
-  resetSchedules:    () => apiFetch('/reset/schedules', { method: 'DELETE' }),
-  resetPlaybooks:    () => apiFetch('/reset/playbooks', { method: 'DELETE' }),
-  resetAuth:         () => apiFetch('/reset/auth',      { method: 'DELETE' }),
-  resetAll:          () => apiFetch('/reset/all',       { method: 'DELETE' }),
+  resetServers: (confirmation: string, environmentId: string, credentials: { password: string; code?: string }) => apiFetch('/reset/servers', { method: 'DELETE', environmentId, body: { ...credentials, confirmation, scope: environmentId } }),
+  resetSchedules: (confirmation: string, environmentId: string, credentials: { password: string; code?: string }) => apiFetch('/reset/schedules', { method: 'DELETE', environmentId, body: { ...credentials, confirmation, scope: environmentId } }),
+  resetPlaybooks: (confirmation: string, credentials: { password: string; code?: string }) => apiFetch('/reset/playbooks', { method: 'DELETE', body: { ...credentials, confirmation, scope: 'all-environments' } }),
+  resetAuth: (confirmation: string, credentials: { password: string; code?: string }) => apiFetch('/reset/auth', { method: 'DELETE', body: { ...credentials, confirmation, scope: 'all-environments' } }),
+  resetAll: (confirmation: string, credentials: { password: string; code?: string }) => apiFetch('/reset/all', { method: 'DELETE', body: { ...credentials, confirmation, scope: 'all-environments' } }),
 
   // Users / Roles
   getUsers:          () => apiFetch<AnyObj[]>('/users'),
@@ -394,7 +414,7 @@ export const api = {
   getRoles:          () => apiFetch<AnyObj[]>('/roles'),
   createRole:        (data: AnyObj) => apiFetch('/roles', { method: 'POST', body: data }),
   updateRole:        (id: string | number, data: AnyObj) => apiFetch(`/roles/${id}`, { method: 'PUT', body: data }),
-  deleteRole:        (id: string | number) => apiFetch(`/roles/${id}`, { method: 'DELETE' }),
+  deleteRole:        (id: string | number, revision: string) => apiFetch(`/roles/${id}`, { method: 'DELETE', body: {revision} }),
 };
 
 export type Api = typeof api;

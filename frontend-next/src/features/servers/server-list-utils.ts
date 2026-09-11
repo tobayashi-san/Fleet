@@ -1,3 +1,5 @@
+import { parseApiDate } from '@/lib/utils';
+
 export interface ServerRow {
   id: string;
   name: string;
@@ -5,6 +7,7 @@ export interface ServerRow {
   hostname?: string;
   ssh_user?: string;
   ssh_port?: number;
+  owner?: string;
   status?: 'online' | 'offline' | string;
   group_id?: string | null;
   group_name?: string;
@@ -13,6 +16,7 @@ export interface ServerRow {
   links?: { name: string; url: string }[];
   storage_mounts?: { name: string; path: string }[];
   last_seen?: string;
+  attention?: { requiresAttention: boolean; severity: string; reasons: Array<{ code: string; count: number; value?: number }> };
   [k: string]: unknown;
 }
 
@@ -91,8 +95,8 @@ export function getDescendantIds(groups: ServerGroup[], id: string): Set<string>
 }
 
 export function formatRelativeTime(dateStr: string, translate: (key: string) => string): string {
-  const utc = dateStr && !dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
-  const diff = Math.floor((Date.now() - new Date(utc).getTime()) / 1000);
+  const diff = Math.floor((Date.now() - parseApiDate(dateStr).getTime()) / 1000);
+  if (!Number.isFinite(diff)) return '—';
   if (diff < 60) return translate('dash.justNow');
   if (diff < 3600) return `${Math.floor(diff / 60)}m`;
   if (diff < 86400) return `${Math.floor(diff / 3600)}h`;
@@ -119,7 +123,23 @@ export function parseCsvServers(text: string): Record<string, unknown>[] {
     server.services = parseArray<string>(server.services);
     server.links = parseArray<{ name: string; url: string }>(server.links);
     server.storage_mounts = parseArray<{ name: string; path: string }>(server.storage_mounts);
-    server.ssh_port = parseInt(String(server.ssh_port)) || 22;
+    const port = String(server.ssh_port ?? '').trim();
+    server.ssh_port = !port ? 22 : /^\d+$/.test(port) ? Number(port) : port;
     return server;
   }).filter(server => server.name && server.ip_address);
+}
+
+export function inventoryAttentionReason(reason: { code: string; count: number; value?: number }): string {
+  switch (reason.code) {
+    case 'custom_check_failed': return `${reason.count} failed custom ${reason.count === 1 ? 'check' : 'checks'}`;
+    case 'offline': return 'Host unreachable';
+    case 'reboot_required': return 'Reboot required';
+    case 'failed_operations': return `${reason.count} failed of the last four operations`;
+    case 'active_alerts': return `${reason.count} active ${reason.count === 1 ? 'alert' : 'alerts'}`;
+    case 'cpu_capacity': return `CPU usage${reason.value == null ? ' high' : ` ${reason.value}%`}`;
+    case 'ram_capacity': return `Memory usage${reason.value == null ? ' high' : ` ${reason.value}%`}`;
+    case 'disk_capacity': return `Disk usage${reason.value == null ? ' high' : ` ${reason.value}%`}`;
+    case 'storage_capacity': return `${reason.count} storage ${reason.count === 1 ? 'mount' : 'mounts'} near capacity`;
+    default: return reason.code.replace(/[_-]+/g, ' ');
+  }
 }

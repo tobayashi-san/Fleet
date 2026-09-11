@@ -1,3 +1,6 @@
+import { commandSearch } from '@/lib/command-search';
+import { infrastructureSearchItems } from '@/lib/infrastructure-search';
+import { commandModifier } from '@/lib/keyboard';
 import { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Command } from 'cmdk';
@@ -11,7 +14,7 @@ import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api, apiFetch } from '@/lib/api';
 import { canAccessDeployments, canAccessNetworks, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
 import { useUi } from '@/lib/store';
-import { setToken } from '@/lib/auth';
+import { useSignOut } from '@/lib/sign-out';
 import { asArray, cn } from '@/lib/utils';
 
 interface ServerListItem { id: string; name: string; ip_address?: string; status?: string }
@@ -21,6 +24,7 @@ interface IpamSearchResponse { items?: IpamSearchResult[] }
 
 export function CommandPalette() {
   const { t } = useTranslation();
+  const signOut = useSignOut();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
   const { data: plugins = [] } = usePlugins();
@@ -42,7 +46,7 @@ export function CommandPalette() {
       }
       if (e.key === '?' && !e.metaKey && !e.ctrlKey && !e.altKey) {
         const tag = (e.target as HTMLElement)?.tagName;
-        if (tag !== 'INPUT' && tag !== 'TEXTAREA') {
+        if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(e.target as HTMLElement)?.isContentEditable) {
           e.preventDefault();
           setShowHelp(s => !s);
         }
@@ -66,6 +70,7 @@ export function CommandPalette() {
         else if (e.key === 'p' && hasCap(profile, 'canViewPlaybooks')) navigate({ to: '/playbooks' });
         else if (e.key === 'n' && networksAvailable) navigate({ to: '/networks' });
         else if (e.key === 'e' && openTofuAvailable) navigate({ to: '/deployments' });
+        else if (e.key === 'i' && hasCap(profile, 'canViewInfrastructure')) navigate({ to: '/infrastructure' });
         else if (e.key === 'o' && canViewOperations) navigate({ to: '/operations' });
         else if (e.key === ',' && profile?.role === 'admin') navigate({ to: '/settings' });
         prefix = false;
@@ -78,7 +83,7 @@ export function CommandPalette() {
       }
     };
     document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    return () => { document.removeEventListener('keydown', onKey); if (timer) clearTimeout(timer); };
   }, [canViewOperations, navigate, networksAvailable, openTofuAvailable, profile]);
 
   // Fetch search data only when open
@@ -103,15 +108,22 @@ export function CommandPalette() {
     staleTime: 15_000,
   });
   const ipamResults = ipamQuery.data;
+  const infrastructureQuery = useQuery({
+    queryKey: ['opentofu', 'infrastructure', environmentId, 'summary'],
+    queryFn: () => apiFetch<{ clusters?: Parameters<typeof infrastructureSearchItems>[0] }>(`/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`),
+    enabled: open && hasCap(profile, 'canViewInfrastructure'),
+    staleTime: 30_000,
+  });
+  const infrastructureItems = hasCap(profile, 'canViewInfrastructure') ? infrastructureSearchItems(asArray(infrastructureQuery.data?.clusters), hasCap(profile, 'canViewServers') ? asArray<ServerListItem>(servers) : []) : [];
   const searchReferencesFailed =
-    serversQuery.isError || playbooksQuery.isError || ipamQuery.isError;
+    serversQuery.isError || playbooksQuery.isError || ipamQuery.isError || infrastructureQuery.isError;
 
   const sidebarPlugins = useMemo(
-    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.sidebar && canSeePlugin(profile, p.id)),
+    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.hasUi !== false && p.sidebar && canSeePlugin(profile, p.id)),
     [plugins, profile]
   );
-  const safeServers = asArray<ServerListItem>(servers);
-  const safePlaybooks = asArray<PlaybookListItem>(playbooks);
+  const safeServers = hasCap(profile, 'canViewServers') ? commandSearch(asArray<ServerListItem>(servers),search,30,item=>item.name,item=>[item.ip_address || '']) : [];
+  const safePlaybooks = hasCap(profile, 'canViewPlaybooks') ? commandSearch(asArray<PlaybookListItem>(playbooks),search,20,item=>item.filename || item.name || item.id) : [];
 
   const close = () => setOpen(false);
   const go = (path: string) => { close(); navigate({ to: path }); };
@@ -152,6 +164,7 @@ export function CommandPalette() {
                         if (serversQuery.isError) void serversQuery.refetch();
                         if (playbooksQuery.isError) void playbooksQuery.refetch();
                         if (ipamQuery.isError) void ipamQuery.refetch();
+                        if (infrastructureQuery.isError) void infrastructureQuery.refetch();
                       }}
                     >
                       Try again
@@ -159,13 +172,13 @@ export function CommandPalette() {
                   </div>
                 )}
                 <Command.Empty className="py-8 text-center text-sm text-muted-foreground">
-                  {t('cmd.empty')}
+                  {serversQuery.isFetching || playbooksQuery.isFetching || ipamQuery.isFetching || infrastructureQuery.isFetching ? 'Searching resources…' : t('cmd.empty')}
                 </Command.Empty>
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label={t('nav.dashboard')} shortcut="g d" onSelect={() => go('/')} />
                   {hasCap(profile, 'canViewServers') && <PaletteItem icon={<Server className="h-4 w-4" />} label={t('nav.servers')} shortcut="g s" onSelect={() => go('/servers')} />}
-                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('deploy.title')} shortcut="g e" onSelect={() => go('/deployments')} />}
+                  {openTofuAvailable && <PaletteItem icon={<Workflow className="h-4 w-4" />} label={t('nav.managedVirtualMachines')} shortcut="g e" onSelect={() => go('/deployments')} />}
                   {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Operations" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}
@@ -173,9 +186,13 @@ export function CommandPalette() {
                   {profile?.role === 'admin' && <PaletteItem icon={<Settings className="h-4 w-4" />} label={t('nav.settings')} shortcut="g ," onSelect={() => go('/settings')} />}
                 </Command.Group>
 
+                {hasCap(profile, 'canViewInfrastructure') && <Command.Group heading="Infrastructure inventory" className="mt-2 text-xs text-muted-foreground">
+                  <PaletteItem icon={<Server className="h-4 w-4" />} label="Infrastructure overview" shortcut="g i" onSelect={() => go('/infrastructure')} />
+                  {infrastructureItems.map(item => <PaletteItem key={item.id} icon={<Server className="h-4 w-4" />} label={item.label} sublabel={item.detail} keywords={item.keywords} onSelect={() => go(item.path)} />)}
+                </Command.Group>}
                 {safeServers.length > 0 && (
                   <Command.Group heading={t('cmd.servers')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {safeServers.slice(0, 30).map(s => (
+                    {safeServers.map(s => (
                       <PaletteItem
                         key={s.id}
                         icon={<span className={cn('h-1.5 w-1.5 rounded-full', s.status === 'online' ? 'bg-emerald-500' : 'bg-muted-foreground/40')} />}
@@ -190,12 +207,12 @@ export function CommandPalette() {
 
                 {safePlaybooks.length > 0 && (
                   <Command.Group heading={t('cmd.playbooks')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {safePlaybooks.slice(0, 20).map(p => (
+                    {safePlaybooks.map(p => (
                       <PaletteItem
                         key={p.id}
                         icon={<FileCode2 className="h-4 w-4" />}
                         label={p.filename || p.name || p.id}
-                        onSelect={() => go(`/playbooks`)}
+                        onSelect={() => go(`/playbooks?file=${encodeURIComponent(p.filename || p.name || p.id)}#tab=templates`)}
                       />
                     ))}
                   </Command.Group>
@@ -233,9 +250,10 @@ export function CommandPalette() {
                   <PaletteItem icon={<Sun className="h-4 w-4" />} label={t('cmd.themeLight')} onSelect={() => { setTheme('light'); close(); }} />
                   <PaletteItem icon={<Moon className="h-4 w-4" />} label={t('cmd.themeDark')} onSelect={() => { setTheme('dark'); close(); }} />
                   <PaletteItem icon={<HelpCircle className="h-4 w-4" />} label={t('cmd.shortcutsHelp')} shortcut="?" onSelect={() => { close(); setShowHelp(true); }} />
-                  <PaletteItem icon={<LogOut className="h-4 w-4" />} label={t('profile.signOut')} onSelect={() => { setToken(null); window.location.reload(); }} />
+                  <PaletteItem icon={<LogOut className="h-4 w-4" />} label={signOut.isPending ? 'Signing out…' : t('profile.signOut')} onSelect={() => { if (!signOut.isPending) signOut.mutate(); }} />
                 </Command.Group>
               </Command.List>
+              {signOut.isError && <p role="alert" className="px-3 py-2 text-sm text-destructive">Sign-out could not be completed. {signOut.error.message} Please retry.</p>}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t px-3 py-2 text-[10.5px] text-muted-foreground">
                 <div className="flex flex-wrap items-center gap-3">
                   <span className="flex items-center gap-1"><span className="kbd">↑</span><span className="kbd">↓</span> {t('cmd.navigate2')}</span>
@@ -284,7 +302,7 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
     {
       heading: t('cmd.shortcutsGeneral'),
       items: [
-        { keys: ['⌘', 'K'], label: t('cmd.openPalette') },
+        { keys: [commandModifier(), 'K'], label: t('cmd.openPalette') },
         { keys: ['?'], label: t('cmd.shortcutsHelp') },
         { keys: ['Esc'], label: t('cmd.closeDialog') },
       ],

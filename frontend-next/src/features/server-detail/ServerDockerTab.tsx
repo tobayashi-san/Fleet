@@ -1,3 +1,6 @@
+import { imageCatalogFreshness } from './image-catalog-freshness';
+import { containerStateTone } from './container-state';
+import { Timestamp } from "@/components/ui/timestamp";
 import {
   lazy,
   Suspense,
@@ -151,7 +154,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
     managedProxmoxDeployment,
@@ -176,15 +179,14 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
     agentStatus,
     refetchAgent,
     imageUpdates,
+    imageCatalog,
     setImageUpdates,
     notes,
     setNotes,
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -251,12 +253,13 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
     activeLogContainer,
     stacks,
   } = controller;
+  const catalogFreshness = imageCatalogFreshness(imageCatalog);
 
   if (!server) return null;
 
   // ── Container row helper ────────────────────────────────────
     function renderContainerRow(c: ContainerRow) {
-      const isUp = c.status?.startsWith("Up");
+      const stateTone = containerStateTone(c.status, c.state);
       const upd =
         imageUpdates[c.container_name] ||
         imageUpdates[c.image] ||
@@ -264,35 +267,32 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
       return (
         <tr key={c.container_name}>
           <td className="px-3 py-2 pl-6">
-            {isUp ? (
-              <LiveDot tone="success" />
-            ) : (
-              <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
-            )}
+            <span className={`inline-block h-2 w-2 rounded-full ${stateTone === "success" ? "bg-success" : stateTone === "warning" ? "bg-warning" : stateTone === "danger" ? "bg-destructive" : "bg-muted-foreground/50"}`} />
           </td>
-          <td className="px-3 py-2 font-mono text-xs">{c.container_name}</td>
+          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs">{c.container_name}</td>
           <td className="px-3 py-2 font-mono text-[11px] text-muted-foreground">
             {c.image}
           </td>
           <td className="px-3 py-2">
-            <span
-              className={`text-xs ${isUp ? "text-emerald-500" : "text-rose-500"}`}
-            >
-              {c.status || c.state}
-            </span>
+            <StatusBadge tone={stateTone}>{c.status || c.state || "Status not reported"}</StatusBadge>
           </td>
-          <td className="px-3 py-2 font-mono text-xs tabular-nums">
-            {c.cpu_percent == null ? "—" : `${c.cpu_percent.toFixed(2)} %`}
+          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs tabular-nums">
+            {c.cpu_percent == null ? <span title="Docker did not return a CPU sample in the latest collection.">No sample</span> : `${c.cpu_percent.toFixed(2)} %`}
           </td>
           <td className="px-3 py-2 text-xs">
-            <span className="font-mono">{c.memory_usage || "—"}</span>
+            <span className="font-mono">{c.memory_usage || <span title="Docker did not return a memory sample in the latest collection.">No sample</span>}</span>
             {c.memory_percent != null && <span className="ml-1 text-muted-foreground">({c.memory_percent.toFixed(1)} %)</span>}
           </td>
-          <td className="px-3 py-2">
+          <td className="min-w-[16rem] max-w-[28rem] px-3 py-2">
             {upd === "update_available" ? (
               <StatusBadge tone="warning">
                 {t("det.imageUpdateAvail")}
               </StatusBadge>
+            ) : (upd === "up_to_date" || upd === "updated") && !catalogFreshness.fresh ? (
+              <span className="text-xs text-muted-foreground">
+                {upd === "up_to_date" ? "Previously up to date" : "Previously updated"}
+                <span className="block text-[11px]">The check is stale or its collection time is unavailable. {hasCap(profile, "canPullDocker") ? "Refresh image checks to verify the current state." : "Ask an authorized operator to refresh image checks."}</span>
+              </span>
             ) : upd === "up_to_date" ? (
               <span className="text-xs text-muted-foreground">
                 ✓ {t("det.imageUpToDate")}
@@ -301,15 +301,15 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
               <StatusBadge tone="success">{t("det.imageUpdated")}</StatusBadge>
             ) : upd === "not_checkable" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageNotCheckable")}
+                {t("det.imageNotCheckable")}<span className="block text-[11px]">No local repository digest to compare. For locally built images, check the build or release source; registry comparison cannot determine freshness.</span>
               </span>
             ) : upd === "unknown" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageCheckFailed")}
+                {t("det.imageCheckFailed")}<span className="block text-[11px]">The registry comparison returned no verified result. Check registry access, authentication and the image tag, then refresh image checks.</span>
               </span>
             ) : (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageNotChecked")}
+                {t("det.imageNotChecked")}<span className="block text-[11px]">{hasCap(profile, "canPullDocker") ? "Run image checks to compare the local image with its registry." : "Ask an authorized operator to run image checks."}</span>
               </span>
             )}
           </td>
@@ -348,6 +348,10 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
         {/* ════ DOCKER ════ */}
         {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
+            {hasCap(profile, "canViewUpdates") && <div className="rounded-md border p-3 text-sm text-muted-foreground" role="status">
+              <p>Image checks: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "No verified collection time available"}</p>
+              <p>{imageCatalog?.source || "Container registry digest comparison over SSH"} · {catalogFreshness.fresh ? "Within check interval" : hasCap(profile, "canPullDocker") ? "Missing or stale check; refresh image checks" : "Missing or stale check; ask an authorized operator to refresh"}. OS packages use a separate catalog.</p>
+            </div>}
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2">
@@ -447,7 +451,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                           <th className="px-3 py-2">{t("common.status")}</th>
                           <th className="px-3 py-2">CPU</th>
                           <th className="px-3 py-2">Memory</th>
-                          <th className="px-3 py-2">{t("det.checkUpdates")}</th>
+                          <th className="px-3 py-2">Update status</th>
                           <th className="px-3 py-2">{t("common.actions")}</th>
                         </tr>
                       </thead>
@@ -455,7 +459,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                         {/* Stacks */}
                         {Object.entries(stacks.map).map(([proj, data]) => {
                           const allDown = data.containers.every(
-                            (c) => !c.status?.startsWith("Up"),
+                            (c) => !/^(up\b|running$)/i.test(c.status || c.state || ""),
                           );
                           return [
                             <tr key={`stack-${proj}`} className="bg-muted/20">
@@ -467,8 +471,8 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                     {data.dir}
                                   </span>
                                   {allDown && (
-                                    <StatusBadge tone="danger">
-                                      {t("common.offline")}
+                                    <StatusBadge tone={data.containers.some(c => containerStateTone(c.status, c.state) === "danger") ? "danger" : data.containers.some(c => containerStateTone(c.status, c.state) === "warning") ? "warning" : "muted"}>
+                                      No running containers reported
                                     </StatusBadge>
                                   )}
                                 </span>
@@ -515,7 +519,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
                                       }
                                       disabled={composeActionMut.isPending}
                                     >
-                                      Start stack
+                                      <span><span className="block">Start / apply changes</span><span className="block max-w-56 text-xs text-muted-foreground">May recreate containers using the saved configuration.</span></span>
                                     </OverflowItem>
                                   )}
                                   {hasCap(

@@ -1,9 +1,11 @@
+const { validHistoryRange, matchesHistoryRange, historyDay } = require('../utils/history-date-range');
+const { executionSummary } = require('../utils/execution-summary');
+const { canAccessWorkflowHistory } = require('../utils/workflow-history-scope');
 const express = require('express');
 const db = require('../db');
+const { operationName, timestamp } = require('../utils/operation-display');
 const {
   can,
-  canAccessPlaybook,
-  canAccessTargets,
   getPermissions,
   filterServers,
 } = require('../utils/permissions');
@@ -17,7 +19,7 @@ const OPERATION_CAPABILITIES = [
 
 function numericTime(value) {
   if (!value) return Number.NaN;
-  const parsed = new Date(value).getTime();
+  const parsed = timestamp(value);
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
@@ -25,7 +27,7 @@ function statusTone(status) {
   const value = String(status || '').toLowerCase();
   if (['success', 'completed', 'successful'].includes(value)) return 'success';
   if (['failed', 'error'].includes(value)) return 'danger';
-  if (['running', 'queued'].includes(value)) return 'info';
+  if (['running', 'queued', 'pending', 'cancelling'].includes(value)) return 'info';
   return 'muted';
 }
 
@@ -61,8 +63,7 @@ function groupSuccessfulSyncRows(rows) {
       visible.push(row);
       continue;
     }
-    const timestamp = numericTime(row.time);
-    const day = Number.isFinite(timestamp) ? new Date(timestamp).toISOString().slice(0, 10) : 'unknown';
+    const day = historyDay(row.time) || 'unknown';
     const key = [row.source, row.name, row.target, day].join('\u0000');
     const entries = grouped.get(key) || [];
     entries.push(row);
@@ -76,6 +77,7 @@ function groupSuccessfulSyncRows(rows) {
       id: `grouped-${latest.id}`,
       name: `${latest.name} · ${entries.length} successful syncs`,
       grouped_count: entries.length,
+      executions: entries.map(entry => ({ id: entry.id, time: entry.time })),
     });
   }
   return visible;
@@ -128,22 +130,26 @@ function permittedRows(req) {
   if (can(permissions, 'canViewServerHistory') || can(permissions, 'canViewUpdates')) {
     const visibleIds = new Set(filterServers(db.servers.getAll(environmentId), permissions).map(server => server.id));
     const hostRows = db.db.prepare(`
-      SELECT history.*, server.name AS server_name
+      SELECT history.*, COALESCE(history.server_name_snapshot, server.name) AS server_name, server.id AS existing_server_id
       FROM update_history history
       LEFT JOIN servers server ON server.id = history.server_id
       WHERE history.environment_id = ?
-    `).all(environmentId).filter(row => visibleIds.has(row.server_id));
+    `).all(environmentId).filter(row => visibleIds.has(row.server_id) || (!row.existing_server_id && (permissions.full || permissions.servers === 'all')));
     rows.push(...hostRows.map(row => ({
       id: `host-${row.id}`,
       source: 'Host',
-      name: row.action || 'Host operation',
+      name: operationName(row.action, 'Host'),
+      action: row.action,
       target: row.server_name || row.server_id,
       initiator: row.triggered_by || 'Shipyard',
       status: row.status || 'unknown',
       statusTone: statusTone(row.status),
+      started_at: row.started_at,
+      completed_at: row.completed_at,
       time: row.completed_at || row.started_at,
-      href: '/servers/$id',
-      params: { id: row.server_id },
+      target_deleted: !row.existing_server_id,
+      href: row.existing_server_id ? '/servers/$id' : null,
+      params: row.existing_server_id ? { id: row.server_id } : undefined,
     })));
   }
 
@@ -161,7 +167,8 @@ function permittedRows(req) {
     rows.push(...deploymentRows.map(row => ({
       id: `deployment-${row.id}`,
       source: 'Deployment',
-      name: row.action || 'OpenTofu run',
+      name: operationName(row.action, 'Deployment'),
+      action: row.action,
       target: row.vm_name || row.workspace_name,
       target_detail: row.vm_name && row.vm_name !== row.workspace_name
         ? row.workspace_name
@@ -169,6 +176,8 @@ function permittedRows(req) {
       initiator: row.started_by || 'OpenTofu',
       status: row.status || 'unknown',
       statusTone: statusTone(row.status),
+      started_at: row.started_at,
+      completed_at: row.completed_at,
       time: row.completed_at || row.started_at,
       href: '/deployments/$id',
       params: { id: row.vm_id || row.workspace_id },
@@ -178,25 +187,25 @@ function permittedRows(req) {
   if (can(permissions, 'canViewSchedules')) {
     const servers = db.servers.getAll(environmentId);
     const workflowRows = db.db.prepare(
-      'SELECT * FROM schedule_history WHERE environment_id = ?',
-    ).all(environmentId).filter(row =>
-      permissions.full || (
-        canAccessPlaybook(permissions, row.playbook) &&
-        (permissions.servers === 'all' || canAccessTargets(permissions, row.targets, servers))
-      ),
-    );
+      `SELECT history.*, schedule.id AS existing_schedule_id FROM schedule_history history LEFT JOIN schedules schedule ON schedule.id = history.schedule_id WHERE history.environment_id = ?`,
+    ).all(environmentId).filter(row => canAccessWorkflowHistory(permissions, row, servers));
     rows.push(...workflowRows.map(row => {
       const target = workflowTargetSummary(row.targets);
       return {
         id: `workflow-${row.id}`,
         source: 'Workflow',
         name: row.schedule_name || row.playbook || 'Scheduled task',
+        playbook: row.playbook,
+        check_mode: Boolean(row.check_mode),
+        schedule_deleted: Boolean(row.schedule_id && !row.existing_schedule_id),
         target: target.label,
         target_detail: target.detail || undefined,
         initiator: row.triggered_by || 'Scheduler',
         status: row.status || 'unknown',
         statusTone: statusTone(row.status),
-        time: row.completed_at || row.started_at,
+        started_at: row.started_at,
+      completed_at: row.completed_at,
+      time: row.completed_at || row.started_at,
         href: '/playbooks',
       };
     }));
@@ -205,13 +214,39 @@ function permittedRows(req) {
   return rows;
 }
 
+// Resolve an exact execution only after applying the same environment/resource scope as the list.
+router.get('/:id/details', (req, res) => {
+  if (!canViewOperations(req)) return res.status(403).json({ error: 'Permission denied' });
+  const id = String(req.params.id).replace(/^grouped-/, '');
+  const row = permittedRows(req).find(item => item.id === id);
+  if (!row) return res.status(404).json({ error: 'Execution not found' });
+  if (row.source === 'Host' && !can(getPermissions(req.user), 'canViewServerHistory')) {
+    return res.status(403).json({ error: 'Host history permission is required to read execution logs.' });
+  }
+  const table = { Host: 'update_history', Workflow: 'schedule_history', Deployment: 'tofu_runs' }[row.source];
+  const executionId = id.slice(id.indexOf('-') + 1);
+  const execution = db.db.prepare(`SELECT output, started_at, completed_at FROM ${table} WHERE id = ?`).get(executionId);
+  if (!execution) return res.status(404).json({ error: 'Execution not found' });
+  const elapsed = timestamp(execution.completed_at) - timestamp(execution.started_at);
+  const output = String(execution.output || '');
+  const limit = 200000;
+  res.json({
+    ...row,
+    execution_id: executionId,
+    duration_seconds: Number.isFinite(elapsed) && elapsed >= 0 ? Math.round(elapsed / 1000) : null,
+    summary: executionSummary(row.status, output),
+    output: output.slice(-limit),
+    output_truncated: output.length > limit,
+  });
+});
+
 router.get('/', (req, res) => {
   if (!canViewOperations(req)) {
     return res.status(403).json({ error: 'Permission denied' });
   }
   const environmentId = req.environmentId || 'default';
   const rows = attachAcknowledgements(
-    groupSuccessfulSyncRows(permittedRows(req)),
+    permittedRows(req),
     environmentId,
   );
 
@@ -221,19 +256,16 @@ router.get('/', (req, res) => {
   const query = String(req.query.q || '').trim().toLowerCase().slice(0, 200);
   const from = String(req.query.from || '').trim();
   const to = String(req.query.to || '').trim();
-  const fromTime = from ? new Date(`${from}T00:00:00`).getTime() : null;
-  const toTime = to ? new Date(`${to}T23:59:59.999`).getTime() : null;
-  const commonFiltered = rows.filter(row => {
+  if (!validHistoryRange(from, to)) return res.status(400).json({ error: 'Invalid history date range' });
+  const commonFiltered = groupSuccessfulSyncRows(rows.filter(row => {
     if (source && row.source !== source) return false;
-    if (query && !`${row.target} ${row.target_detail || ''} ${row.name} ${row.initiator}`.toLowerCase().includes(query)) return false;
-    const time = numericTime(row.time);
-    if (fromTime !== null && (!Number.isFinite(time) || time < fromTime)) return false;
-    if (toTime !== null && (!Number.isFinite(time) || time > toTime)) return false;
+    if (query && !`${row.target} ${row.target_detail || ''} ${row.name} ${row.action || ''} ${row.initiator}`.toLowerCase().includes(query)) return false;
+    if (!matchesHistoryRange(row.time, from, to)) return false;
     return true;
-  });
+  }));
   const counts = {
     all: commonFiltered.length,
-    active: commonFiltered.filter(row => ['running', 'queued'].includes(String(row.status).toLowerCase())).length,
+    active: commonFiltered.filter(row => ['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())).length,
     failed: commonFiltered.filter(isOpenFailure).length,
   };
   const scope = ['active', 'failed'].includes(String(req.query.scope || ''))
@@ -241,13 +273,13 @@ router.get('/', (req, res) => {
     : 'all';
   const filtered = commonFiltered.filter(row =>
     scope === 'active'
-      ? ['running', 'queued'].includes(String(row.status).toLowerCase())
+      ? ['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())
       : scope === 'failed'
         ? isOpenFailure(row)
         : true,
   ).sort((left, right) => {
-    const leftActive = ['running', 'queued'].includes(String(left.status).toLowerCase());
-    const rightActive = ['running', 'queued'].includes(String(right.status).toLowerCase());
+    const leftActive = ['running', 'queued', 'pending', 'cancelling'].includes(String(left.status).toLowerCase());
+    const rightActive = ['running', 'queued', 'pending', 'cancelling'].includes(String(right.status).toLowerCase());
     return Number(rightActive) - Number(leftActive) || numericTime(right.time) - numericTime(left.time);
   });
   const pageSize = Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 10));

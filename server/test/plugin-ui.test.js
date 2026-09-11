@@ -29,6 +29,7 @@ function writePlugin(id, files = {}) {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
     fs.writeFileSync(filePath, content, 'utf8');
   }
+  require('../services/plugin-loader').loadAll({});
 }
 
 after(() => {
@@ -239,4 +240,37 @@ test('plugin API requires role access to the enabled plugin', async () => {
     .set('Authorization', `Bearer ${adminLogin.body.token}`);
   assert.equal(allowed.status, 200);
   assert.deepEqual(allowed.body, { ok: true });
+});
+test('enabled but rejected packages cannot publish their frontend entry or assets',async()=>{
+ writePlugin('blocked_ui',{'ui.js':'export const blocked=true;','assets/app.js':'export const blocked=true;','index.js':"throw new Error('Rejected package');"});
+ db.settings.set('plugin_blocked_ui_enabled','1');const {app}=createApp();
+ assert.equal((await request(app).get('/plugins/blocked_ui/ui.js')).status,404);
+ assert.equal((await request(app).get('/plugins/blocked_ui/assets/app.js')).status,404);
+});
+test('symlink substitutions after load cannot expose private files through frontend paths',async()=>{
+ writePlugin('linked_ui',{'ui.js':'export const ok=true;','assets/app.js':'export const ok=true;','private/secret.js':'PRIVATE_FIXTURE_CONTENT'});
+ db.settings.set('plugin_linked_ui_enabled','1');const {app}=createApp();const dir=path.join(process.env.PLUGINS_DIR,'linked_ui');
+ fs.unlinkSync(path.join(dir,'assets/app.js'));fs.symlinkSync(path.join(dir,'private/secret.js'),path.join(dir,'assets/app.js'));
+ assert.equal((await request(app).get('/plugins/linked_ui/assets/app.js')).status,404);
+ fs.rmSync(path.join(dir,'assets'),{recursive:true});fs.symlinkSync(path.join(dir,'private'),path.join(dir,'assets'));
+ assert.equal((await request(app).get('/plugins/linked_ui/assets/secret.js')).status,404);
+ fs.unlinkSync(path.join(dir,'ui.js'));fs.symlinkSync(path.join(dir,'private/secret.js'),path.join(dir,'ui.js'));
+ assert.equal((await request(app).get('/plugins/linked_ui/ui.js')).status,404);
+});
+test('inventory derives UI availability from the loaded files rather than a manifest claim',()=>{
+ writePlugin('backend_only',{'manifest.json':JSON.stringify({id:'backend_only',name:'Backend only',hasUi:true})});
+ writePlugin('frontend_only',{'manifest.json':JSON.stringify({id:'frontend_only',name:'Frontend only',hasUi:false}),'ui.js':'export function mount(){}'});
+ const list=require('../services/plugin-loader').list();
+ assert.equal(list.find(plugin=>plugin.id==='backend_only').hasUi,false);
+ assert.equal(list.find(plugin=>plugin.id==='frontend_only').hasUi,true);
+});
+test('invalid display metadata is rejected before plugin registration and remains readable in inventory',()=>{
+ const invalid=[{name:{unexpected:true}},{version:7},{description:[]},{sidebar:{label:{unexpected:true}}},{sidebar:'wrong'}];
+ for(const [index,fields] of invalid.entries()){
+  const id=`bad_metadata_${index}`;
+  writePlugin(id,{'manifest.json':JSON.stringify({id,name:'Valid name',...fields}),'index.js':"global.__badMetadataExecuted=true;"});
+  const row=require('../services/plugin-loader').list().find(plugin=>plugin.id===id);
+  assert.equal(row.loaded,false);assert.equal(row.hasUi,false);assert.equal(typeof row.name,'string');assert.match(row.error,/manifest\./);
+ }
+ assert.equal(global.__badMetadataExecuted,undefined);
 });

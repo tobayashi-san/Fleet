@@ -1,0 +1,102 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts":
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Administration" [level=1]
+  - paragraph: Configure console, access, integrations and system operations
+  - navigation "Administration":
+    - generic: Administration
+    - generic: General
+    - list:
+      - link "Appearance":
+        - /url: /settings/appearance
+    - generic: Access & security
+    - list:
+      - link "SSH":
+        - /url: /settings/ssh
+      - link "User Management":
+        - /url: /settings/users-roles
+    - generic: Integrations
+    - list:
+      - link "Git Integration":
+        - /url: /settings/git
+      - link "Plugins":
+        - /url: /settings/plugins
+      - link "Notifications":
+        - /url: /settings/notifications
+    - generic: System
+    - list:
+      - link "System":
+        - /url: /settings/system
+      - link "Danger Zone":
+        - /url: /settings/danger
+  - heading "Git Integration" [level=3]
+  - paragraph: Playbooks will be stored in this repository. Synced automatically before every run.
+  - generic: Repository URL
+  - generic: HTTPS or SSH remote URL
+  - textbox "Repository URL":
+    - /placeholder: https://github.com/user/repo.git
+  - generic: Authentication
+  - generic: Choose exactly one credential method for the remote repository.
+  - radiogroup "Git authentication method":
+    - radio "HTTPS token" [checked]
+    - radio "SSH key"
+  - generic: Access Token (HTTPS)
+  - generic: Personal Access Token (PAT) — not needed for SSH URLs. Stored securely.
+  - textbox "Access Token (HTTPS)":
+    - /placeholder: ghp_xxxxxxxxxxxx
+  - generic: Git User Name
+  - generic: Used for commits
+  - textbox "Git User Name":
+    - /placeholder: Shipyard Bot
+  - generic: Git User Email
+  - generic: Used for commits
+  - textbox "Git User Email":
+    - /placeholder: bot@example.com
+  - generic: Auto-pull
+  - generic: Pull before each run
+  - switch "Auto-pull" [checked]
+  - checkbox [checked]
+  - generic: Auto-push
+  - generic: Push after every save
+  - switch "Auto-push" [checked]
+  - checkbox [checked]
+  - button "Connect Repository" [disabled]:
+    - text: Connect Repository

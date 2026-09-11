@@ -1,3 +1,14 @@
+import { guestMetricPercent, guestMetricExplanation } from '@/features/infrastructure/guest-metrics';
+import type { ReactNode } from 'react';
+import { Timestamp } from '@/components/ui/timestamp';
+import {guestAuditPresentation} from '@/lib/audit-display';
+import {RestoreSnapshotDialog} from '@/features/infrastructure/RestoreSnapshotDialog';
+import {GuestPowerDialog} from '@/features/infrastructure/GuestPowerDialog';
+import {DeleteSnapshotDialog} from '@/features/infrastructure/DeleteSnapshotDialog';
+import { GuestTaskHistory } from '@/features/infrastructure/GuestTaskHistory';
+import { CreateSnapshotDialog } from '@/features/infrastructure/CreateSnapshotDialog';
+import { OverflowMenu, OverflowItem } from '@/components/ui/overflow-menu';
+import { managementLabel } from '@/lib/resource-model';
 import { useMemo, useState } from "react";
 import { Link, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -79,6 +90,7 @@ interface SnapshotResponse {
 interface VmContext {
   adopted_server?: { id: string; name: string } | null;
   deployments?: Array<{
+    definition_id?: string | null;
     workspace_id: string;
     workspace_name: string;
     vm_name: string;
@@ -112,6 +124,7 @@ interface VmConfiguration {
     agent_enabled?: boolean | null;
     boot_order?: string | null;
   };
+  container?: { architecture?: string | null; unprivileged?: boolean | null; swap_mb?: number | null; cpu_limit?: number | null };
   disks?: Array<{
     bus: string;
     storage: string;
@@ -155,25 +168,29 @@ function statusLabel(value: string) {
   return labels[value.toLowerCase()] || value || "Unknown";
 }
 function date(value?: number) {
-  return formatDateTime(value ? value * 1000 : undefined);
+  return <Timestamp value={value == null ? undefined : value * 1000} />;
 }
 function auditTime(value?: string) {
   return formatDateTime(value);
 }
 
-function VmConfigurationOverview({
+export function VmConfigurationOverview({
   configuration,
+  guestType,
   loading,
   error,
   onRetry,
   unavailable,
 }: {
   configuration?: VmConfiguration;
+  guestType?: "qemu" | "lxc";
   loading: boolean;
   error?: unknown;
   onRetry: () => void;
   unavailable: boolean;
 }) {
+  const isContainer = (guestType ?? configuration?.guest_type) === "lxc";
+  const resourceLabel = isContainer ? "Container" : "Virtual machine";
   if (unavailable)
     return (
       <Card>
@@ -184,7 +201,7 @@ function VmConfigurationOverview({
           </CardTitle>
         </CardHeader>
         <CardContent className="p-4 text-sm text-muted-foreground">
-          This inventory VM has no direct platform connection configured.
+          This inventory resource has no direct platform connection configured.
         </CardContent>
       </Card>
     );
@@ -209,7 +226,7 @@ function VmConfigurationOverview({
         <QueryErrorState
           compact
           error={error}
-          title="Virtual machine configuration could not be loaded"
+          title={`${resourceLabel} configuration could not be loaded`}
           onRetry={onRetry}
         />
       </Card>
@@ -224,7 +241,7 @@ function VmConfigurationOverview({
         <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <Cpu className="h-4 w-4" />
-            Hardware & virtual machine
+            {isContainer ? "Container configuration" : "Hardware & virtual machine"}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -233,7 +250,7 @@ function VmConfigurationOverview({
               label="CPU"
               value={
                 hardware?.cores
-                  ? `${hardware.sockets || 1} socket · ${hardware.cores} cores`
+                  ? isContainer ? `${hardware.cores} cores` : `${hardware.sockets || 1} socket · ${hardware.cores} cores`
                   : "—"
               }
             />
@@ -251,14 +268,20 @@ function VmConfigurationOverview({
               value={hardware?.os_type || "—"}
               mono
             />
+            {isContainer ? <>
+              <VmProperty label="Architecture" value={configuration?.container?.architecture || "Not reported"} />
+              <VmProperty label="Privilege mode" value={configuration?.container?.unprivileged == null ? "Not reported" : configuration.container.unprivileged ? "Unprivileged" : "Privileged"} />
+              <VmProperty label="Swap limit" value={configuration?.container?.swap_mb == null ? "Not reported" : `${configuration.container.swap_mb.toLocaleString("en-US")} MB`} />
+              <VmProperty label="CPU limit" value={configuration?.container?.cpu_limit == null ? "Not reported" : configuration.container.cpu_limit === 0 ? "No CPU time limit" : `${configuration.container.cpu_limit} CPU cores`} />
+            </> : <>
             <VmProperty
-              label="QEMU agent"
+              label="QEMU agent configuration"
               value={
-                hardware
-                  ? hardware.agent_enabled
-                    ? "Enabled"
-                    : "Disabled"
-                  : "—"
+                hardware?.agent_enabled == null
+                  ? 'Not applicable or configuration unavailable'
+                  : hardware.agent_enabled
+                    ? 'Enabled in Proxmox · guest reachability not checked'
+                    : 'Disabled in Proxmox'
               }
             />
             <VmProperty
@@ -282,6 +305,7 @@ function VmConfigurationOverview({
               value={configuration?.guest?.username || "Not set"}
               mono
             />
+            </>}
           </dl>
         </CardContent>
       </Card>
@@ -289,7 +313,7 @@ function VmConfigurationOverview({
         <CardHeader className="border-b py-3">
           <CardTitle className="flex items-center gap-2 text-base">
             <HardDrive className="h-4 w-4" />
-            Virtual disks
+            {isContainer ? "Root filesystem & mount points" : "Virtual disks"}
           </CardTitle>
         </CardHeader>
         <CardContent className="p-0">
@@ -317,7 +341,7 @@ function VmConfigurationOverview({
             </div>
           ) : (
             <div className="p-4 text-sm text-muted-foreground">
-              No virtual disks reported.
+              {isContainer ? "No root filesystem or mount points reported." : "No virtual disks reported."}
             </div>
           )}
         </CardContent>
@@ -379,11 +403,15 @@ function VmConfigurationOverview({
  * nearly identical resource card lower on the page.
  */
 function VmObjectSummary({
+  managementState,
+  hostName,
   vm,
   cluster,
   configuration,
   loading,
 }: {
+  managementState: string;
+  hostName?: string;
   vm: Vm;
   cluster: Cluster;
   configuration?: VmConfiguration;
@@ -394,13 +422,16 @@ function VmObjectSummary({
     (configuration?.guest?.ip_config || []).find(
       (item) => item.interface === primaryNetwork?.interface,
     ) || configuration?.guest?.ip_config?.[0];
-  const cpuUsed = (vm.cpu || 0) * (vm.maxcpu || 0);
+
   const platformName =
     cluster.connections
       ?.map((connection) => connection.name)
       .filter(Boolean)
       .join(", ") || "Proxmox";
   const kind = vm.guest_type === "lxc" ? "CT" : "VM";
+  const cpuSample = vm.maxcpu > 0 ? guestMetricPercent(vm.cpu, 1, true) : null;
+  const memorySample = guestMetricPercent(vm.mem, vm.maxmem);
+  const diskSample = guestMetricPercent(vm.disk, vm.maxdisk);
 
   return (
     <Card className="console-object-summary">
@@ -409,21 +440,25 @@ function VmObjectSummary({
           <div className="flex flex-wrap items-center gap-2 text-sm font-semibold">
             <Server className="h-4 w-4 text-muted-foreground" />
             <span>{vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}</span>
-            <StatusBadge tone={vm.status === "running" ? "success" : "muted"} dot>{vm.status || "Unknown"}</StatusBadge>
+            <StatusBadge tone={vm.status === "running" ? "success" : "muted"} dot>{statusLabel(vm.status || "unknown")}</StatusBadge>
             {loading && <span className="text-xs font-normal text-muted-foreground">Refreshing…</span>}
           </div>
           <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
             <span>Node <strong className="font-mono font-medium text-foreground">{vm.node_name}</strong></span>
             <span>{kind}-ID <strong className="font-mono font-medium text-foreground">{vm.vm_id}</strong></span>
             <span>Platform <strong className="font-medium text-foreground">{platformName}</strong></span>
-            <span>IP <strong className="font-mono font-medium text-foreground">{primaryIp?.ipv4 || "Not reported"}</strong></span>
-            <span>{vm.fleet_server_id ? "Managed host" : "Inventory only"}</span>
+            <span>Configured IPv4 <strong className="font-mono font-medium text-foreground">{primaryIp?.ipv4 || (configuration ? "No address in Proxmox configuration" : "Configuration not loaded")}</strong></span>
+            <span>{managementState}</span>
+            {hostName && <span>Host <strong className="font-medium text-foreground">{hostName}</strong></span>}
           </div>
+          <p className="mt-2 text-xs text-muted-foreground">Source: Proxmox configuration and inventory. Configured IPv4 may differ from the guest's current address. Agent configuration does not confirm a running guest agent.</p>
+          {(vm.status === "stopped" || !cpuSample || !memorySample || !diskSample) && <p className="mt-1 text-xs text-muted-foreground">{guestMetricExplanation(vm.status)}</p>}
+          {(!diskSample) && <p className="mt-1 text-xs text-muted-foreground">Guest filesystem usage was not supplied by this inventory sample. Check the guest filesystem and agent status in Proxmox or open the linked host's Storage view.</p>}
         </div>
-        <div className="grid shrink-0 grid-cols-3 gap-4 border-t pt-3 text-xs lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Live usage">
-          <div><span className="block text-muted-foreground">CPU</span><strong className="font-mono">{vm.maxcpu ? `${Math.round((cpuUsed / vm.maxcpu) * 100)}%` : "—"}</strong></div>
-          <div><span className="block text-muted-foreground">Memory</span><strong className="font-mono">{vm.maxmem ? `${Math.round((vm.mem / vm.maxmem) * 100)}%` : "—"}</strong></div>
-          <div><span className="block text-muted-foreground">Disk</span><strong className="font-mono">{vm.disk === null ? "Not reported" : vm.maxdisk ? `${Math.round((vm.disk / vm.maxdisk) * 100)}%` : "—"}</strong></div>
+        <div className="grid shrink-0 grid-cols-3 gap-4 border-t pt-3 text-xs lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Proxmox inventory usage">
+          <div><span className="block text-muted-foreground">CPU</span><strong className="font-mono">{cpuSample ?? "No sample"}</strong></div>
+          <div><span className="block text-muted-foreground">Memory</span><strong className="font-mono">{memorySample ?? "No sample"}</strong></div>
+          <div><span className="block text-muted-foreground">Disk</span><strong className="font-mono">{diskSample ?? "No sample"}</strong></div>
         </div>
       </CardContent>
     </Card>
@@ -436,21 +471,15 @@ function VmProperty({
   mono = false,
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   mono?: boolean;
 }) {
   return (
-    <div className="console-property">
+    <div className="console-property console-property-wrap">
       <dt>{label}</dt>
       <dd className={mono ? "font-mono text-xs" : ""}>{value}</dd>
     </div>
   );
-}
-
-function actionLabel(action?: string) {
-  return String(action || "Proxmox action")
-    .replace(/^infrastructure\./, "")
-    .replace(/_/g, " ");
 }
 
 // Keep VM task rows in the same order as platform/node task tables. Operators
@@ -480,23 +509,17 @@ function VmTaskRows({
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">
-                  {actionLabel(event.action)}
+                  {guestAuditPresentation(event).label}
                 </div>
                 <div className="mt-0.5 text-xs text-muted-foreground">
                   {auditTime(event.created_at)} · {event.user || "System"}
                 </div>
               </div>
               <StatusBadge
-                tone={
-                  event.success === false || event.success === 0
-                    ? "danger"
-                    : "success"
-                }
+                tone={guestAuditPresentation(event).tone}
                 dot
               >
-                {event.success === false || event.success === 0
-                  ? "Failed"
-                  : "Successful"}
+                {guestAuditPresentation(event).outcome}
               </StatusBadge>
             </div>
             {event.detail && (
@@ -518,7 +541,7 @@ function VmTaskRows({
               <th>Task</th>
               <th>Details</th>
               <th>Run by</th>
-              <th>Status</th>
+              <th>Audit result</th>
             </tr>
           </thead>
           <tbody>
@@ -527,7 +550,7 @@ function VmTaskRows({
                 <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
                   {auditTime(event.created_at)}
                 </td>
-                <td className="font-medium">{actionLabel(event.action)}</td>
+                <td className="font-medium">{guestAuditPresentation(event).label}</td>
                 <td className="max-w-[24rem]">
                   <span
                     className="block truncate text-muted-foreground"
@@ -541,16 +564,10 @@ function VmTaskRows({
                 </td>
                 <td>
                   <StatusBadge
-                    tone={
-                      event.success === false || event.success === 0
-                        ? "danger"
-                        : "success"
-                    }
+                    tone={guestAuditPresentation(event).tone}
                     dot
                   >
-                    {event.success === false || event.success === 0
-                      ? "Failed"
-                      : "Successful"}
+                    {guestAuditPresentation(event).outcome}
                   </StatusBadge>
                 </td>
               </tr>
@@ -591,9 +608,9 @@ function RecentVmTasks({
       </CardHeader>
       <CardContent className="p-0">
         {loading ? (
-          <div className="p-4 text-sm text-muted-foreground">Loading tasks…</div>
+          <div className="p-4 text-sm text-muted-foreground">Loading audit activity…</div>
         ) : error ? (
-          <QueryErrorState compact error={error} title="VM tasks could not be loaded" onRetry={onRetry} />
+          <QueryErrorState compact error={error} title="Guest audit activity could not be loaded" onRetry={onRetry} />
         ) : (
           <VmTaskRows events={events} limit={4} />
         )}
@@ -668,7 +685,7 @@ function VmProtectionSummary({
               label="Last snapshot"
               value={
                 latest
-                  ? `${latest.name} · ${date(latest.snaptime)}`
+                  ? <><span className="block">{latest.name}</span><span className="block font-normal">{date(latest.snaptime)}</span></>
                   : "No snapshots yet"
               }
               mono
@@ -698,22 +715,22 @@ export function ProxmoxVmDetailPage() {
   const { data: profile } = useProfile();
   const qc = useQueryClient();
   const [snapshotOpen, setSnapshotOpen] = useState(false);
-  const [snapshotName, setSnapshotName] = useState("");
-  const [snapshotDescription, setSnapshotDescription] = useState("");
+  const [auditPage, setAuditPage] = useState({scope:"",offset:0});
+  const [restoreSnapshot, setRestoreSnapshot] = useState<Snapshot|null>(null);
   const [powerAction, setPowerAction] = useState<
     "start" | "shutdown" | "reboot" | "stop" | null
   >(null);
   const [deleteSnapshot, setDeleteSnapshot] = useState<Snapshot | null>(null);
   const availableTabs = useMemo(
-    () => ["overview", "configuration", "snapshots", ...(hasCap(profile, "canViewAudit") ? ["tasks"] : [])],
-    [profile],
+    () => ["overview", "configuration", "snapshots", "tasks"],
+    [],
   );
   const vmTabs = useUrlTab("overview", availableTabs);
   const inventory = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
       apiFetch<InfrastructureResponse>(
-        `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`,
+        `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}`, {environmentId},
     ),
     staleTime: 15_000,
     refetchInterval: 2_500,
@@ -721,13 +738,13 @@ export function ProxmoxVmDetailPage() {
   const summaryInventory = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId, "summary"],
     queryFn: () => apiFetch<InfrastructureResponse>(
-      `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`,
+      `/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`, {environmentId},
     ),
     staleTime: 30_000,
   });
   const refreshInventory = async () => {
     const data = await apiFetch<InfrastructureResponse>(
-      `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}&refresh=1`,
+      `/opentofu/infrastructure?environment_id=${encodeURIComponent(environmentId)}&refresh=1`, {environmentId},
     );
     qc.setQueryData(["opentofu", "infrastructure", environmentId], data);
   };
@@ -745,15 +762,18 @@ export function ProxmoxVmDetailPage() {
     connectionId && vm
       ? `/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/vms/${encodeURIComponent(vm.node_name)}/${encodeURIComponent(String(vm.vm_id))}`
       : null;
+  const auditScope = `${environmentId}:${apiRoot}`;
+  const auditOffset = vmTabs.value === "tasks" && auditPage.scope===auditScope ? auditPage.offset : 0;
+  const setAuditOffset = (offset:number) => setAuditPage({scope:auditScope,offset});
   const snapshots = useQuery({
-    queryKey: ["proxmox-vm-snapshots", connectionId, nodeName, vmId],
-    queryFn: () => apiFetch<SnapshotResponse>(`${apiRoot}/snapshots`),
+    queryKey: ["proxmox-vm-snapshots", environmentId, connectionId, nodeName, vmId],
+    queryFn: () => apiFetch<SnapshotResponse>(`${apiRoot}/snapshots`, {environmentId}),
     enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "snapshots"),
     staleTime: 10_000,
   });
   const context = useQuery({
-    queryKey: ["proxmox-vm-context", connectionId, nodeName, vmId],
-    queryFn: () => apiFetch<VmContext>(`${apiRoot}/context`),
+    queryKey: ["proxmox-vm-context", environmentId, connectionId, nodeName, vmId],
+    queryFn: () => apiFetch<VmContext>(`${apiRoot}/context`, {environmentId}),
     enabled: Boolean(apiRoot) && vmTabs.value === "overview",
     staleTime: 10_000,
   });
@@ -762,11 +782,11 @@ export function ProxmoxVmDetailPage() {
   const adoptedServer =
     context.data?.adopted_server ||
     (vm?.fleet_server_id
-      ? { id: vm.fleet_server_id, name: "Host adopted" }
+      ? { id: vm.fleet_server_id, name: `Linked host ${vm.fleet_server_id}` }
       : null);
   const configuration = useQuery({
-    queryKey: ["proxmox-vm-configuration", connectionId, nodeName, vmId],
-    queryFn: () => apiFetch<VmConfiguration>(`${apiRoot}/configuration`),
+    queryKey: ["proxmox-vm-configuration", environmentId, connectionId, nodeName, vmId],
+    queryFn: () => apiFetch<VmConfiguration>(`${apiRoot}/configuration`, {environmentId}),
     enabled: Boolean(apiRoot) && (vmTabs.value === "overview" || vmTabs.value === "configuration"),
     staleTime: 15_000,
   });
@@ -779,94 +799,30 @@ export function ProxmoxVmDetailPage() {
   const canControl = Boolean(apiRoot) && canPower;
   const canManageSnapshots = Boolean(apiRoot) && canEdit;
   const audit = useQuery({
-    queryKey: ["audit-log", "proxmox-vm", environmentId, vmId, nodeName],
-    queryFn: () => apiFetch<AuditEvent[]>("/system/audit?limit=100"),
-    enabled: canViewAudit && (vmTabs.value === "overview" || vmTabs.value === "tasks"),
+    queryKey: ["audit-log", "proxmox-vm", environmentId, apiRoot, auditOffset],
+    queryFn: () => apiFetch<{events:AuditEvent[];total:number}>(`${apiRoot}/audit?offset=${auditOffset}`, {environmentId}),
+    enabled: Boolean(apiRoot) && canViewAudit && (vmTabs.value === "overview" || vmTabs.value === "tasks"),
     staleTime: 15_000,
   });
-  const vmEvents = useMemo(
-    () =>
-      (Array.isArray(audit.data) ? audit.data : [])
-        .filter((event) => {
-          const detail = String(event.detail || "");
-          return (
-            detail.includes(`vm=${vm?.name}`) ||
-            detail.includes(`vm_id=${vm?.vm_id}`)
-          );
-        })
-        .slice(0, 8),
-    [audit.data, vm?.name, vm?.vm_id],
-  );
+  const vmEvents = audit.data?.events || [];
   const invalidate = () => {
+    void qc.invalidateQueries({queryKey:["proxmox-guest-tasks",environmentId,apiRoot]});
     void qc.invalidateQueries({
       queryKey: ["opentofu", "infrastructure", environmentId],
     });
     void qc.invalidateQueries({
-      queryKey: ["proxmox-vm-snapshots", connectionId, nodeName, vmId],
+      queryKey: ["proxmox-vm-snapshots", environmentId, connectionId, nodeName, vmId],
     });
     void qc.invalidateQueries({
-      queryKey: ["proxmox-vm-context", connectionId, nodeName, vmId],
+      queryKey: ["proxmox-vm-context", environmentId, connectionId, nodeName, vmId],
     });
     void qc.invalidateQueries({
-      queryKey: ["proxmox-vm-configuration", connectionId, nodeName, vmId],
+      queryKey: ["proxmox-vm-configuration", environmentId, connectionId, nodeName, vmId],
     });
     void qc.invalidateQueries({
-      queryKey: ["audit-log", "proxmox-vm", vmId, nodeName],
+      queryKey: ["audit-log", "proxmox-vm", environmentId, apiRoot],
     });
   };
-  const power = useMutation({
-    mutationFn: (action: string) => {
-      if (!apiRoot)
-        throw new Error(
-          "No platform connection is configured for this virtual machine.",
-        );
-      return apiFetch(`${apiRoot}/power`, { method: "POST", body: { action } });
-    },
-    onSuccess: (_data, action) => {
-      showToast(`${vm?.guest_type === "lxc" ? "CT" : "VM"} action “${action}” was sent to Proxmox.`, "success");
-      setPowerAction(null);
-      invalidate();
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  const createSnapshot = useMutation({
-    mutationFn: () => {
-      if (!apiRoot)
-        throw new Error(
-          "No platform connection is configured for this virtual machine.",
-        );
-      return apiFetch(`${apiRoot}/snapshots`, {
-        method: "POST",
-        body: { name: snapshotName, description: snapshotDescription },
-      });
-    },
-    onSuccess: () => {
-      showToast("Snapshot was sent to Proxmox.", "success");
-      setSnapshotOpen(false);
-      setSnapshotName("");
-      setSnapshotDescription("");
-      invalidate();
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
-  const removeSnapshot = useMutation({
-    mutationFn: (snapshot: Snapshot) => {
-      if (!apiRoot)
-        throw new Error(
-          "No platform connection is configured for this virtual machine.",
-        );
-      return apiFetch(
-        `${apiRoot}/snapshots/${encodeURIComponent(snapshot.name)}`,
-        { method: "DELETE" },
-      );
-    },
-    onSuccess: () => {
-      showToast("Snapshot is being deleted in Proxmox.", "success");
-      setDeleteSnapshot(null);
-      invalidate();
-    },
-    onError: (error: Error) => showToast(error.message, "error"),
-  });
 
   const vmMissing = !cluster || !vm;
   if (vmMissing && (inventory.isLoading || summaryInventory.isLoading))
@@ -904,13 +860,12 @@ export function ProxmoxVmDetailPage() {
   const snapshotItems = (snapshots.data?.snapshots || []).filter(
     (snapshot) => snapshot.name !== "current",
   );
-  const powerLabel: Record<string, string> = {
-    start: "Start",
-    shutdown: "Shut down",
-    reboot: "Restart",
-    stop: "Stop immediately",
-  };
   const platformName = cluster.connections?.[0]?.name || "Proxmox";
+  const platformConsoleUrl = (() => {
+    try { const url = new URL(cluster.endpoint); return ['https:', 'http:'].includes(url.protocol) ? url.origin : null; }
+    catch { return null; }
+  })();
+
   const kind = vm.guest_type === "lxc" ? "CT" : "VM";
   const isRunning = vm.status === "running";
   const isStopped = vm.status === "stopped";
@@ -982,7 +937,7 @@ export function ProxmoxVmDetailPage() {
               <Button
                 size="sm"
                 onClick={() => setPowerAction("start")}
-                disabled={power.isPending}
+                disabled={Boolean(powerAction)}
               >
                 <Play />
                 Start
@@ -993,21 +948,21 @@ export function ProxmoxVmDetailPage() {
                 size="sm"
                 variant="outline"
                 onClick={() => setPowerAction("reboot")}
-                disabled={power.isPending}
+                disabled={Boolean(powerAction)}
               >
                 <RotateCw />
                 Restart
               </Button>
             )}
             {canControl && isRunning && (
-              <Button size="sm" variant="outline" onClick={() => setPowerAction("shutdown")} disabled={power.isPending}>
+              <Button size="sm" variant="outline" onClick={() => setPowerAction("shutdown")} disabled={Boolean(powerAction)}>
                 <Square />Shut down
               </Button>
             )}
             {canControl && isRunning && (
-              <Button size="sm" variant="destructive" onClick={() => setPowerAction("stop")} disabled={power.isPending}>
-                <Square />Force stop
-              </Button>
+              <OverflowMenu title="Advanced power actions">
+                <OverflowItem icon={Square} danger onClick={() => setPowerAction("stop")} disabled={Boolean(powerAction)}>Force stop</OverflowItem>
+              </OverflowMenu>
             )}
             <Button
               type="button"
@@ -1024,7 +979,15 @@ export function ProxmoxVmDetailPage() {
           </>
         }
       />
+      {inventory.isError && <QueryErrorState
+        compact
+        error={inventory.error}
+        title="Full inventory could not be refreshed; showing previously loaded or summary data"
+        onRetry={() => void inventory.refetch()}
+      />}
       <VmObjectSummary
+        managementState={context.isSuccess ? managementLabel(adoptedServer?.id, Boolean(context.data?.deployments?.length)) : context.isError ? "Management context unavailable" : "Loading management context…"}
+        hostName={adoptedServer?.name}
         vm={vm}
         cluster={cluster}
         configuration={configuration.data}
@@ -1041,12 +1004,10 @@ export function ProxmoxVmDetailPage() {
             <Camera className="h-4 w-4" />
             Snapshots
           </TabsTrigger>
-          {canViewAudit && (
-            <TabsTrigger value="tasks">
+          <TabsTrigger value="tasks">
               <ClipboardList className="h-4 w-4" />
               Tasks
-            </TabsTrigger>
-          )}
+          </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-0 space-y-4">
           <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.55fr)]">
@@ -1058,7 +1019,7 @@ export function ProxmoxVmDetailPage() {
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
                   Connections, declaration, and management for this virtual
-                  machine.
+                  machine. {context.isSuccess && managementLabel(adoptedServer?.id, Boolean(context.data?.deployments?.length))}
                 </p>
               </CardHeader>
               <CardContent className="p-0">
@@ -1072,7 +1033,7 @@ export function ProxmoxVmDetailPage() {
                   <div className="grid divide-y lg:grid-cols-2 lg:divide-x lg:divide-y-0">
                     <section className="p-4">
                       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Shipyard management
+                        Host operations
                       </div>
                       <div className="mt-2 text-sm font-medium">
                         {adoptedServer
@@ -1102,7 +1063,7 @@ export function ProxmoxVmDetailPage() {
                     </section>
                     <section className="p-4">
                       <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                        Declarative provisioning
+                        VM definition
                       </div>
                       {(context.data?.deployments || []).length ? (
                         <div className="mt-2 space-y-2">
@@ -1116,6 +1077,7 @@ export function ProxmoxVmDetailPage() {
                                   <div className="text-sm font-medium">
                                     {deployment.workspace_name}
                                   </div>
+                                  <p className="text-xs text-muted-foreground">Defined VM: {deployment.vm_name}</p>
                                   <div className="text-xs text-muted-foreground">
                                     {deployment.last_run
                                       ? `${deployment.last_run.action} · ${deployment.last_run.status}`
@@ -1125,9 +1087,10 @@ export function ProxmoxVmDetailPage() {
                                 <Button asChild size="sm" variant="outline">
                                   <Link
                                     to="/deployments/$id"
-                                    params={{ id: deployment.workspace_id }}
+                                    params={{ id: deployment.definition_id || deployment.workspace_id }}
+                                    aria-label={`Open VM definition ${deployment.vm_name} in ${deployment.workspace_name}`}
                                   >
-                                    Open
+                                    Open definition
                                   </Link>
                                 </Button>
                               </div>
@@ -1166,6 +1129,7 @@ export function ProxmoxVmDetailPage() {
         <TabsContent value="configuration" className="mt-0">
           <VmConfigurationOverview
             configuration={configuration.data}
+            guestType={vm.guest_type}
             loading={configuration.isLoading}
             error={configuration.error}
             onRetry={() => void configuration.refetch()}
@@ -1181,8 +1145,8 @@ export function ProxmoxVmDetailPage() {
                   Snapshots
                 </CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Snapshots are created and managed directly through the
-                  Proxmox API.
+                  Create recovery points or restore a selected snapshot. Restoration discards subsequent guest changes and may interrupt services.
+                  {platformConsoleUrl && <a href={platformConsoleUrl} target="_blank" rel="noopener noreferrer" className="ml-1 underline">Open Proxmox console</a>}
                 </p>
               </div>
               {canManageSnapshots && (
@@ -1229,6 +1193,7 @@ export function ProxmoxVmDetailPage() {
                           Includes RAM
                         </span>
                       ) : null}
+                      {canControl && <Button size="sm" variant="outline" onClick={()=>setRestoreSnapshot(snapshot)}>Restore</Button>}
                       {canManageSnapshots && (
                         <Button
                           size="sm"
@@ -1247,127 +1212,35 @@ export function ProxmoxVmDetailPage() {
             </CardContent>
           </Card>
         </TabsContent>
-        {canViewAudit && (
-          <TabsContent value="tasks" className="mt-0">
+          <TabsContent value="tasks" className="mt-0 space-y-4">
+            {apiRoot && hasCap(profile,"canViewServers") ? <GuestTaskHistory apiRoot={apiRoot} environmentId={environmentId} /> : <Card><CardContent className="p-4 text-sm text-muted-foreground">{apiRoot ? "Viewing guest requests requires permission to view servers." : "Connect this guest to a Proxmox platform to track its requests."}</CardContent></Card>}
+            {canViewAudit && (
             <Card>
               <CardHeader className="border-b py-3">
-                <CardTitle className="text-base">Tasks</CardTitle>
+                <CardTitle className="text-base">Audit activity</CardTitle>
                 <p className="mt-1 text-xs text-muted-foreground">
-                  Direct Proxmox actions for this VM, traceable through the
-                  audit log.
+                  Actions recorded with this guest’s stable identity. Older entries remain in Operations → Audit. An audit entry confirms a request was recorded; check Guest requests above for its Proxmox outcome.
                 </p>
               </CardHeader>
               <CardContent className="p-0">
                 {audit.isLoading ? (
                   <div className="p-4 text-sm text-muted-foreground">
-                    Loading tasks…
+                    Loading audit activity…
                   </div>
                 ) : audit.isError ? (
-                  <QueryErrorState compact error={audit.error} title="VM tasks could not be loaded" onRetry={() => void audit.refetch()} />
+                  <QueryErrorState compact error={audit.error} title="Guest audit activity could not be loaded" onRetry={() => void audit.refetch()} />
                 ) : (
-                  <VmTaskRows events={vmEvents} />
+                  <><VmTaskRows events={vmEvents} /><div className="flex items-center justify-between gap-2 border-t p-3 text-sm"><Button variant="outline" size="sm" disabled={auditOffset===0} onClick={()=>setAuditOffset(Math.max(0,auditOffset-20))}>Previous audit events</Button><span>{audit.data?.total || 0} events</span><Button variant="outline" size="sm" disabled={auditOffset+20 >= (audit.data?.total || 0)} onClick={()=>setAuditOffset(auditOffset+20)}>Next audit events</Button></div></>
                 )}
               </CardContent>
             </Card>
+            )}
           </TabsContent>
-        )}
       </Tabs>
-      <Dialog open={snapshotOpen} onOpenChange={setSnapshotOpen}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Create snapshot</DialogTitle>
-            <DialogDescription>
-              The VM is captured with its current RAM state. Processing then
-              continues in Proxmox.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="snapshot-name">Name</Label>
-              <Input
-                id="snapshot-name"
-                value={snapshotName}
-                onChange={(event) => setSnapshotName(event.target.value)}
-                placeholder="before-update"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="snapshot-description">Description</Label>
-              <Input
-                id="snapshot-description"
-                value={snapshotDescription}
-                onChange={(event) => setSnapshotDescription(event.target.value)}
-                placeholder="Before the update"
-              />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setSnapshotOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              onClick={() => createSnapshot.mutate()}
-              disabled={!snapshotName.trim() || createSnapshot.isPending}
-            >
-              <Camera />
-              Create
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <ConfirmDialog
-        open={Boolean(powerAction)}
-        onOpenChange={(open) => !open && setPowerAction(null)}
-        title={`${powerAction ? powerLabel[powerAction] : `${kind} action`}?`}
-        description={
-          powerAction === "stop" ? (
-            <>
-              The {kind} <strong>{vm.name}</strong> will be powered off immediately.
-              Unsaved virtual machine data may be lost.
-            </>
-          ) : (
-            <>
-              The action is sent directly to Proxmox for{" "}
-              <strong>{vm.name}</strong>.
-            </>
-          )
-        }
-        confirmLabel={powerAction ? powerLabel[powerAction] : "Run action"}
-        cancelLabel="Cancel"
-        variant={powerAction === "stop" ? "destructive" : "warning"}
-        confirmTextValue={
-          powerAction === "stop" ? `STOP ${vm.name}` : undefined
-        }
-        confirmInputLabel="Enter to confirm"
-        confirmInputHelp={
-          <>
-            Enter <strong className="font-mono">STOP {vm.name}</strong>.
-          </>
-        }
-        onConfirm={() => powerAction && power.mutate(powerAction)}
-        isPending={power.isPending}
-      />
-      <ConfirmDialog
-        open={Boolean(deleteSnapshot)}
-        onOpenChange={(open) => !open && setDeleteSnapshot(null)}
-        title="Delete snapshot?"
-        description={
-          <>
-            The snapshot{" "}
-            <strong className="font-mono">{deleteSnapshot?.name}</strong> will
-            be deleted in Proxmox and cannot be restored.
-          </>
-        }
-        confirmLabel="Delete snapshot"
-        cancelLabel="Cancel"
-        variant="destructive"
-        confirmTextValue={deleteSnapshot?.name || ""}
-        confirmInputLabel="Enter the snapshot name to confirm"
-        onConfirm={() =>
-          deleteSnapshot && removeSnapshot.mutate(deleteSnapshot)
-        }
-        isPending={removeSnapshot.isPending}
-      />
+      <CreateSnapshotDialog open={snapshotOpen} onOpenChange={setSnapshotOpen} apiRoot={apiRoot} environmentId={environmentId} guestName={vm.name} guestType={vm.guest_type} onAccepted={invalidate} />
+      <GuestPowerDialog action={powerAction} apiRoot={apiRoot} environmentId={environmentId} guestName={vm.name} onClose={()=>setPowerAction(null)} onAccepted={invalidate} />
+      <RestoreSnapshotDialog snapshotName={restoreSnapshot?.name ?? null} snapshotTime={restoreSnapshot?.snaptime ?? null} apiRoot={apiRoot} environmentId={environmentId} guestName={vm.name} onClose={()=>setRestoreSnapshot(null)} onAccepted={invalidate} />
+      <DeleteSnapshotDialog snapshotName={deleteSnapshot?.name ?? null} apiRoot={apiRoot} environmentId={environmentId} guestName={vm.name} onClose={()=>setDeleteSnapshot(null)} onAccepted={invalidate} />
     </div>
   );
 }

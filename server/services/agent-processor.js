@@ -181,7 +181,7 @@ function processIncomingReport({ serverId, report, source = 'push' }) {
   });
 
   const info = toServerInfo(serverId, report);
-  db.serverInfo.upsert(serverId, info);
+  db.serverInfo.upsert(serverId, info, 'agent');
   db.servers.updateStatus(serverId, 'online');
   db.agentConfig.setSeen(serverId, report.runner_version || null, manifestVersion);
   resourceAlerts.evaluateServer(serverId);

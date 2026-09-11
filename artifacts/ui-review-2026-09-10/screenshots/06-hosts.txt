@@ -1,0 +1,297 @@
+- banner:
+  - generic: SHIPYARD
+  - button "Toggle navigation":
+  - button "Search or enter a command… ⌘K":
+    - generic: Search or enter a command…
+    - generic: ⌘K
+  - button "Default environment":
+    - text: Default environment
+  - button "Help":
+  - button "Activity Center":
+  - button "Open profile menu":
+- complementary:
+  - group "Workspace":
+    - button "Operations" [pressed]:
+      - text: Operations
+    - button "Infrastructure":
+      - text: Infrastructure
+  - navigation "Operations":
+    - link "Dashboard":
+      - /url: /
+      - generic: Dashboard
+    - link "Operations":
+      - /url: /operations?section=tasks
+      - generic: Operations
+    - link "Managed Hosts" [active]:
+      - /url: /servers
+      - generic: Managed Hosts
+    - link "Managed VMs":
+      - /url: /deployments
+      - generic: Managed VMs
+    - link "Playbooks":
+      - /url: /playbooks
+      - generic: Playbooks
+  - link "Administration":
+    - /url: /settings
+    - generic: Administration
+  - link "Help":
+    - /url: https://github.com/tobayashi-san/Shipyard
+    - generic: Help
+  - button "Resize navigation":
+- main:
+  - heading "Managed Hosts" [level=1]
+  - paragraph: "Day-2 operations for hosts: health, updates, Docker, tasks, and access. Platform inventory is under Infrastructure · 14 hosts · 14 online · 0 offline"
+  - button "Add host":
+    - text: Add host
+  - textbox "Search hosts…"
+  - generic: /
+  - button "Filters":
+    - text: Filters
+  - button "Resource options":
+  - table "Host inventory":
+    - caption: Host inventory
+    - rowgroup:
+      - row "All Name IP Address Status Tags Actions":
+        - columnheader "All":
+          - checkbox "All"
+        - columnheader "Name"
+        - columnheader "IP Address"
+        - columnheader "Status"
+        - columnheader "Tags"
+        - columnheader "Actions"
+    - rowgroup:
+      - row "Select hr01-ctl-fleet01 hr01-ctl-fleet01 10.77.25.10 Debian Online proxmox qemu +1 Actions for hr01-ctl-fleet01":
+        - cell "Select hr01-ctl-fleet01":
+          - checkbox "Select hr01-ctl-fleet01"
+        - cell "hr01-ctl-fleet01":
+          - link "hr01-ctl-fleet01":
+            - /url: /servers/c7825652-1861-47af-afac-335ee94438d5
+        - cell "10.77.25.10 Debian":
+          - generic: 10.77.25.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-ctl-fleet01":
+          - button "Actions for hr01-ctl-fleet01":
+      - row "Select hr01-edge-newt-admin01 hr01-edge-newt-admin01 10.77.80.10 Debian Online proxmox qemu +1 Actions for hr01-edge-newt-admin01":
+        - cell "Select hr01-edge-newt-admin01":
+          - checkbox "Select hr01-edge-newt-admin01"
+        - cell "hr01-edge-newt-admin01":
+          - link "hr01-edge-newt-admin01":
+            - /url: /servers/27e22f7e-ac65-407b-b185-a441195e62ae
+        - cell "10.77.80.10 Debian":
+          - generic: 10.77.80.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-edge-newt-admin01":
+          - button "Actions for hr01-edge-newt-admin01":
+      - row "Select hr01-edge-newt-apps01 hr01-edge-newt-apps01 10.77.80.20 Debian Online proxmox qemu +1 Actions for hr01-edge-newt-apps01":
+        - cell "Select hr01-edge-newt-apps01":
+          - checkbox "Select hr01-edge-newt-apps01"
+        - cell "hr01-edge-newt-apps01":
+          - link "hr01-edge-newt-apps01":
+            - /url: /servers/061f3b82-feb1-46b0-854b-9cb4a62a045f
+        - cell "10.77.80.20 Debian":
+          - generic: 10.77.80.20
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-edge-newt-apps01":
+          - button "Actions for hr01-edge-newt-apps01":
+      - row "Select hr01-edge-newt-game01 hr01-edge-newt-game01 10.77.80.40 Debian Online proxmox qemu +1 Actions for hr01-edge-newt-game01":
+        - cell "Select hr01-edge-newt-game01":
+          - checkbox "Select hr01-edge-newt-game01"
+        - cell "hr01-edge-newt-game01":
+          - link "hr01-edge-newt-game01":
+            - /url: /servers/017e6a7a-f887-4983-ad4f-d8a460ff9b5f
+        - cell "10.77.80.40 Debian":
+          - generic: 10.77.80.40
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-edge-newt-game01":
+          - button "Actions for hr01-edge-newt-game01":
+      - row "Select hr01-edge-newt-media01 hr01-edge-newt-media01 10.77.80.30 Debian Online proxmox qemu +1 Actions for hr01-edge-newt-media01":
+        - cell "Select hr01-edge-newt-media01":
+          - checkbox "Select hr01-edge-newt-media01"
+        - cell "hr01-edge-newt-media01":
+          - link "hr01-edge-newt-media01":
+            - /url: /servers/1ee2063c-ae19-4089-b472-fd237551c99f
+        - cell "10.77.80.30 Debian":
+          - generic: 10.77.80.30
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-edge-newt-media01":
+          - button "Actions for hr01-edge-newt-media01":
+      - row "Select hr01-ext-cloud01 hr01-ext-cloud01 10.77.30.30 Debian Online proxmox lxc +1 Actions for hr01-ext-cloud01":
+        - cell "Select hr01-ext-cloud01":
+          - checkbox "Select hr01-ext-cloud01"
+        - cell "hr01-ext-cloud01":
+          - link "hr01-ext-cloud01":
+            - /url: /servers/bef19482-5a03-456e-b929-44fbce9d6926
+        - cell "10.77.30.30 Debian":
+          - generic: 10.77.30.30
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox lxc +1":
+          - generic: proxmox
+          - generic: lxc
+          - generic: "+1"
+        - cell "Actions for hr01-ext-cloud01":
+          - button "Actions for hr01-ext-cloud01":
+      - row "Select hr01-ext-immich01 hr01-ext-immich01 10.77.30.20 Debian Online proxmox lxc +1 Actions for hr01-ext-immich01":
+        - cell "Select hr01-ext-immich01":
+          - checkbox "Select hr01-ext-immich01"
+        - cell "hr01-ext-immich01":
+          - link "hr01-ext-immich01":
+            - /url: /servers/0d02c8f6-cbb3-4f60-a47e-74cb010b5cfb
+        - cell "10.77.30.20 Debian":
+          - generic: 10.77.30.20
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox lxc +1":
+          - generic: proxmox
+          - generic: lxc
+          - generic: "+1"
+        - cell "Actions for hr01-ext-immich01":
+          - button "Actions for hr01-ext-immich01":
+      - row "Select hr01-ext-unif01 hr01-ext-unif01 10.77.30.10 Debian Online proxmox qemu +1 Actions for hr01-ext-unif01":
+        - cell "Select hr01-ext-unif01":
+          - checkbox "Select hr01-ext-unif01"
+        - cell "hr01-ext-unif01":
+          - link "hr01-ext-unif01":
+            - /url: /servers/5c4c25ea-2031-4fa0-99f0-d8eef0ae0157
+        - cell "10.77.30.10 Debian":
+          - generic: 10.77.30.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-ext-unif01":
+          - button "Actions for hr01-ext-unif01":
+      - row "Select hr01-game-minecraft01 hr01-game-minecraft01 10.77.50.10 Debian Online proxmox qemu +1 Actions for hr01-game-minecraft01":
+        - cell "Select hr01-game-minecraft01":
+          - checkbox "Select hr01-game-minecraft01"
+        - cell "hr01-game-minecraft01":
+          - link "hr01-game-minecraft01":
+            - /url: /servers/b4170bb2-bfcf-495d-9773-524a7984c693
+        - cell "10.77.50.10 Debian":
+          - generic: 10.77.50.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-game-minecraft01":
+          - button "Actions for hr01-game-minecraft01":
+      - row "Select hr01-media-hms hr01-media-hms 10.77.40.20 Debian Online proxmox qemu +1 Actions for hr01-media-hms":
+        - cell "Select hr01-media-hms":
+          - checkbox "Select hr01-media-hms"
+        - cell "hr01-media-hms":
+          - link "hr01-media-hms":
+            - /url: /servers/a104c583-8f7e-4b44-90c8-52b5b9f7096d
+        - cell "10.77.40.20 Debian":
+          - generic: 10.77.40.20
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-media-hms":
+          - button "Actions for hr01-media-hms":
+      - row "Select hr01-media-plex hr01-media-plex 10.77.40.10 Debian Online proxmox qemu +1 Actions for hr01-media-plex":
+        - cell "Select hr01-media-plex":
+          - checkbox "Select hr01-media-plex"
+        - cell "hr01-media-plex":
+          - link "hr01-media-plex":
+            - /url: /servers/dc9c84f3-f096-4cb1-a349-9d99c25f4b35
+        - cell "10.77.40.10 Debian":
+          - generic: 10.77.40.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-media-plex":
+          - button "Actions for hr01-media-plex":
+      - row "Select hr01-ops-jump01 hr01-ops-jump01 10.77.20.10 Debian Online proxmox qemu +1 Actions for hr01-ops-jump01":
+        - cell "Select hr01-ops-jump01":
+          - checkbox "Select hr01-ops-jump01"
+        - cell "hr01-ops-jump01":
+          - link "hr01-ops-jump01":
+            - /url: /servers/89be8bfa-b961-47fd-bad2-4ce981651761
+        - cell "10.77.20.10 Debian":
+          - generic: 10.77.20.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox qemu +1":
+          - generic: proxmox
+          - generic: qemu
+          - generic: "+1"
+        - cell "Actions for hr01-ops-jump01":
+          - button "Actions for hr01-ops-jump01":
+      - row "Select nbg1-dmz-Pangolin nbg1-dmz-Pangolin 46.225.131.214 Ubuntu Online — Actions for nbg1-dmz-Pangolin":
+        - cell "Select nbg1-dmz-Pangolin":
+          - checkbox "Select nbg1-dmz-Pangolin"
+        - cell "nbg1-dmz-Pangolin":
+          - link "nbg1-dmz-Pangolin":
+            - /url: /servers/42038fdd-4a99-4b83-bff0-4fee7a52e860
+        - cell "46.225.131.214 Ubuntu":
+          - generic: 46.225.131.214
+          - generic: Ubuntu
+        - cell "Online":
+          - generic: Online
+        - cell "—":
+          - generic: —
+        - cell "Actions for nbg1-dmz-Pangolin":
+          - button "Actions for nbg1-dmz-Pangolin":
+      - row "Select pve001 pve001 10.77.10.10 Debian Online proxmox-node proxmox:Production Actions for pve001":
+        - cell "Select pve001":
+          - checkbox "Select pve001"
+        - cell "pve001":
+          - link "pve001":
+            - /url: /servers/dfbcda0a-2f44-42e4-9d4a-6611e4873993
+        - cell "10.77.10.10 Debian":
+          - generic: 10.77.10.10
+          - generic: Debian
+        - cell "Online":
+          - generic: Online
+        - cell "proxmox-node proxmox:Production":
+          - generic: proxmox-node
+          - generic: proxmox:Production
+        - cell "Actions for pve001":
+          - button "Actions for pve001":

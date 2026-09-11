@@ -1,0 +1,1119 @@
+{
+  "title": "Shipyard · Produkt- und UI-Review · erneute Live-Prüfung",
+  "date": "10. September 2026",
+  "summary": "Shipyard bietet einen sinnvollen, umfangreichen Funktionskern für den Infrastruktur-Betrieb. Die dunkle Oberfläche, Navigation, Tabellen und Statusfarben bilden eine professionelle Basis. Meine Enterprise-Einschätzung bleibt bei etwa 6,5 von 10: Die größten Lücken liegen in verlässlichen Informationen, sicheren Standardwerten und geführten Arbeitsabläufen. Ein neues Theme hätte deutlich weniger Nutzen als konsistente Zeiten, eindeutige Ressourcenbegriffe und verständliche Handlungsschritte.",
+  "scope": "Erneute Live-Prüfung der angemeldeten Admin-Oberfläche unter https://shipyard/ am 10. September 2026. 67 neue Desktop-Screenshots erfassen Hauptseiten, die wesentlichen Tabs, repräsentative Host-/VM-/CT-Details und zentrale Dialoge. Die 35 Featurebewertungen bauen auf dem vorhandenen Review vom 9. September auf und wurden anhand der aktuellen Aufnahmen abgeglichen. 74 ältere Aufnahmen bleiben separat als datierte Ergänzung enthalten; sie sind keine neuen Screenshots. Neue Aufnahmen zeigen den sichtbaren Bildschirmausschnitt (1414 × 873), ältere Aufnahmen enthalten ergänzende Ganzseitenansichten. Nicht jede einzelne Ressourceninstanz und nicht jeder mögliche Dialogzustand wurde wiederholt.",
+  "limits": "Keine Infrastrukturaktionen, Formularspeicherungen, Neustarts, Updates, Löschungen, Testnachrichten oder Deployments ausgeführt. Der Dateibrowser wurde lesend geöffnet; das SSH-Terminal wurde bei dieser erneuten Prüfung nicht verbunden. Terminal-, Editor-, Rollen- und weitere Formularvertiefungen stammen teilweise aus dem separat gekennzeichneten Vorreview. Login/Onboarding, MFA-Aktivierung, Rollenisolierung, mobile Ansichten und vollständige Barrierefreiheit wurden nicht geprüft. Aktive Pluginseiten, Agentbetrieb und deklarative VM-Ausführungszustände sind mangels aktivierter bzw. vorhandener Instanzen nicht live bewertbar. Fehlende Funktionen bedeuten hier: in den geprüften Oberflächen nicht sichtbar oder auffindbar. Scores sind qualitative Einschätzungen und keine technische Sicherheitszertifizierung.",
+  "criteria": [
+    "Sinn / Nutzen",
+    "Informationen",
+    "Eingaben",
+    "UI",
+    "Enterprise-Wirkung"
+  ],
+  "scale": "1 = deutlich unzureichend, 2 = schwach, 3 = brauchbar mit Lücken, 4 = gut, 5 = sehr gut; null = nicht anwendbar / nicht ausreichend live prüfbar.",
+  "findings": [
+    {
+      "id": "P1-01",
+      "title": "Zeitangaben konsistent und mit Zeitzone anzeigen",
+      "shots": [
+        2,
+        8,
+        12,
+        20,
+        22,
+        44,
+        55
+      ],
+      "observation": "Derselbe Compose-Lauf vom 9. September erscheint in Operations um 19:35 und in der Hosthistorie um 21:35. Playbook Runs zeigt den geplanten Start 01:00, die Hosthistorie 03:00. IPAM-Sync erscheint in Plattform-Tasks am 9. September um 23:18 und unter Platform connections am 10. September um 01:18. Damit betrifft die Abweichung auch das Datum.",
+      "impact": "Bei Fehleranalyse und Wartungsplanung lassen sich Ereignisse nicht zuverlässig zeitlich zuordnen.",
+      "change": "Alle Zeitangaben zentral nach derselben Benutzerzeitzone formatieren. Start, Ende und letzte Aktualisierung ausdrücklich unterscheiden. Zeitzone sichtbar oder per Tooltip ergänzen; absolute Zeit und relative Zeit kombinieren.",
+      "acceptance": "Ein identischer Lauf bzw. Sync hat in allen Ansichten dieselbe lokale Uhrzeit; UTC ist eindeutig gekennzeichnet.",
+      "baselineShots": [
+        2,
+        16,
+        25,
+        27,
+        32,
+        50,
+        62
+      ]
+    },
+    {
+      "id": "P1-02",
+      "title": "Gesundheitszustand und Datenquellen widerspruchsfrei machen",
+      "shots": [
+        1,
+        43,
+        48
+      ],
+      "observation": "Das Dashboard nennt für pve001 3 OS-Updates, die Proxmox-Ansicht 5. Beide Quellen können unterschiedliche Kataloge haben; der Zusammenhang und Datenstand werden aber nicht ausreichend erklärt. Der im Vorreview beobachtete Konflikt Healthy trotz Image-Updates war heute mangels offener Image-Updates nicht erneut reproduzierbar.",
+      "impact": "Grüne Zusammenfassungen vermitteln Sicherheit, obwohl Handlungsbedarf oder abweichende Daten vorliegen.",
+      "change": "OS-, Image- und Custom-Updates getrennt benennen und im Gesamthealth aggregieren. Quelle, Erhebungszeit und Veraltungsstatus anzeigen. Abweichende Updatekataloge erklären statt kommentarlos verschiedene Summen zu zeigen.",
+      "acceptance": "Quellen und Prüfzeitpunkte sind sichtbar. Unterschiedliche Updatezahlen werden erklärt; Gesamtstatus wird bei bekannten Image-, OS- und Custom-Updates konsistent berechnet und mit passenden Testfällen geprüft.",
+      "baselineShots": [
+        1,
+        10,
+        14,
+        49,
+        55
+      ]
+    },
+    {
+      "id": "P1-03",
+      "title": "Host, Inventar-VM und deklarativ verwaltete VM verständlich verbinden",
+      "shots": [
+        15,
+        38,
+        50,
+        54,
+        60
+      ],
+      "observation": "Managed VMs ist leer, die Plattform nennt 12 managed in Shipyard, die Umgebung 1 deployment. Infrastructure meldet 2 external hosts, der Baum 1 Standalone host. Dieselbe Ressource heißt als VM hr01-med-services02 und als Host hr01-media-hms. Die Details verlinken beide Objekte, aber Begriffe, Zähler und Baumklickziele bleiben uneinheitlich.",
+      "impact": "Benutzer können nicht sicher vorhersagen, welches Objekt sie öffnen oder was eine Kennzahl zählt.",
+      "change": "Drei eindeutige Managementzustände verwenden: Inventar, Hostbetrieb aktiv, deklarativ verwaltet. In jeder Ansicht beide Namen und Beziehungen zeigen. Baumklicks konsistent halten; Host- und VM-Ansicht ausdrücklich umschaltbar machen. Zähler nach derselben Definition berechnen.",
+      "acceptance": "Jede Zahl hat einen eindeutigen Geltungsbereich; dieselbe Ressource bleibt über Navigation und Aktionen eindeutig identifizierbar.",
+      "baselineShots": [
+        20,
+        44,
+        47,
+        61,
+        68,
+        70
+      ]
+    },
+    {
+      "id": "P1-04",
+      "title": "Reservierungsformular mit passendem Standard öffnen",
+      "shots": [
+        36,
+        37
+      ],
+      "observation": "Reserve address öffnet ein Formular mit Status Active und einem leeren IP-Feld, obwohl die Präfixseite bereits eine nächste freie Adresse kennt.",
+      "impact": "Die naheliegende Eingabe erzeugt semantisch einen aktiven Datensatz statt der angekündigten Reservierung.",
+      "change": "Reserved vorauswählen und die nächste freie Adresse vorbefüllen. Präfix und Quelle im Formular zeigen; bei Wechsel auf Active die Bedeutung erklären.",
+      "acceptance": "Der Standardpfad einer Reservierung erzeugt eine Reservierung und bleibt im gewählten Präfix.",
+      "baselineShots": [
+        41,
+        42
+      ]
+    },
+    {
+      "id": "P1-05",
+      "title": "Standardrolle bei neuen Benutzern transparenter und restriktiver gestalten",
+      "shots": [
+        28,
+        29
+      ],
+      "observation": "Add User wählt User vor. Laut Rollenansicht umfasst diese feste Rolle alle Server, Playbooks und Features. Der Name lässt diese Reichweite im Erstellungsformular nicht erkennen.",
+      "impact": "Ein vermeintlich normaler Benutzer kann deutlich mehr operative Rechte erhalten als beabsichtigt.",
+      "change": "Viewer oder explizite Rollenauswahl als Standard. Effektive Ressourcen und sensible Fähigkeiten direkt im Benutzerformular zusammenfassen. Die bestehenden guten Rollen-Presets dort integrieren.",
+      "acceptance": "Vor dem Erstellen sind Umfang und sensible Fähigkeiten sichtbar; ein neuer Benutzer erhält nicht implizit umfassende Betriebsrechte.",
+      "baselineShots": [
+        33,
+        34,
+        73
+      ]
+    },
+    {
+      "id": "P2-01",
+      "title": "Technische Ereignisse in verständliche Aufgaben übersetzen",
+      "shots": [
+        2,
+        5,
+        12,
+        59
+      ],
+      "observation": "Operations zeigt compose_up_hms, compose_pull_hms und lange vm-UUIDs; die ausgewählte Detailkarte wiederholt Tabellenfelder und führt zur Hostseite statt direkt zum Lauf. Activity Center nennt zwei unterschiedliche Vorgänge lediglich Server action. Die Hosthistorie mischt lesbare Titel und technische Codes.",
+      "impact": "Die Aktivitätszentrale hilft zu wenig dabei, Ursache, Ergebnis und nächsten Schritt zu erkennen.",
+      "change": "Lesbare Aktionsnamen, stabile Ressourcennamen auch nach Löschung, Detail-Deep-Links zum konkreten Run, Laufzeit, Ergebniszusammenfassung und verlinkte Logs ergänzen.",
+      "acceptance": "Ein Benutzer kann aus einer Zeile direkt den betroffenen Lauf und dessen Ergebnis öffnen.",
+      "baselineShots": [
+        2,
+        5,
+        16,
+        50
+      ]
+    },
+    {
+      "id": "P2-02",
+      "title": "Große Formulare in prüfbare Schritte aufteilen",
+      "shots": [
+        18,
+        23
+      ],
+      "observation": "VM-Konfiguration, erweiterte Hosteingabe, Zeitpläne und Rollen enthalten viele Felder in scrollenden Dialogen. Bei der VM stehen Clone attempts neben der Identität und ein Ubuntu-User als Vorgabe neben einem Debian-Template.",
+      "impact": "Wichtige Entscheidungen gehen in Details unter; Standardwerte und versteckte Felder werden leicht übersehen.",
+      "change": "VM-Assistent: Vorlage → Ressourcen → Netzwerk/Zugriff → Automatisierung → Zusammenfassung. Expertenoptionen ausblenden, Vorlagenwerte ableiten, Einheiten vereinheitlichen, feldnahe Fehler und eine dauerhaft sichtbare Zusammenfassung ergänzen.",
+      "acceptance": "Vor dem Speichern sind Ziel, Ressourcenumfang, Netzwerk, Zugriff und ausgelöste Schritte auf einer Review-Seite sichtbar.",
+      "baselineShots": [
+        9,
+        22,
+        28,
+        34
+      ]
+    },
+    {
+      "id": "P2-03",
+      "title": "Leere oder unbekannte Metriken erklärbar machen",
+      "shots": [
+        10,
+        41,
+        50,
+        51
+      ],
+      "observation": "Container-CPU und Memory zeigen Striche; selbst gebaute Images Cannot check. VM-Disk und IP heißen teils Not reported bei konfiguriertem QEMU agent Enabled. Gestoppte VMs werden im Baum Unknown genannt. Grund, Erhebungszeit und nächste Maßnahme fehlen.",
+      "impact": "Nicht verfügbar, nicht unterstützt, nicht abgefragt und tatsächlich null sind schwer auseinanderzuhalten.",
+      "change": "Explizite Zustände mit Grund, Datenquelle und Zeitpunkt. Agent konfiguriert von Agent erreichbar unterscheiden. Gestoppt nicht als Unknown darstellen. Dezimalwerte für CPU-Kerne und Details zur Image-Prüfbarkeit ergänzen.",
+      "acceptance": "Jede fehlende Metrik nennt einen Grund oder nächsten Schritt; Rundungen erzeugen keine widersprüchlichen Werte.",
+      "baselineShots": [
+        12,
+        44,
+        47,
+        57,
+        58
+      ]
+    },
+    {
+      "id": "P2-04",
+      "title": "Betriebseingriffe besser in Change-Prozesse einbetten",
+      "shots": [
+        4,
+        48,
+        50,
+        67
+      ],
+      "observation": "Wartung erfasst Ressourcen und Owner als Freitext. Auf VM-Seiten ist Force stop ständig prominent. Snapshots bieten Erstellung und Löschung, aber keine sichtbare Wiederherstellung. Paketupdates zeigen lange Paketbeschreibungen statt eines kompakten Auswirkungsüberblicks.",
+      "impact": "Die Werkzeuge sind vorhanden, aber der sichere Arbeitsablauf wird nicht ausreichend geführt.",
+      "change": "Ressourcen- und Teamauswahl, Konflikthinweise, Wartungsbezug und Change-Referenz ergänzen. Force stop in ein Gefahrenmenü verschieben. Snapshot-Restore anbieten oder klar zu Proxmox führen. Vor Updates Rebootbedarf und betroffene Dienste zusammenfassen.",
+      "acceptance": "Jeder kritische Ablauf erläutert Ziel, Auswirkungen und Wiederherstellungsmöglichkeiten; Ausführungsdialoge separat funktional testen.",
+      "baselineShots": [
+        4,
+        55,
+        57,
+        59
+      ]
+    },
+    {
+      "id": "P2-05",
+      "title": "Sprache, Beschriftungen und Tabellenhierarchie vereinheitlichen",
+      "shots": [
+        22,
+        39,
+        46,
+        56
+      ],
+      "observation": "Englische Seiten enthalten Anzeigename, API-Endpunkt, CPU-Modell und insgesamt. Status wechseln zwischen success, Success und Successful. Operations reserviert viel Platz für allgemeine Hinweise; viele wichtige Tabellenzeilen liegen erst unterhalb des sichtbaren Bereichs.",
+      "impact": "Die Oberfläche wirkt weniger ausgereift und erfordert unnötiges Lesen und Scrollen.",
+      "change": "Eine konsequente UI-Sprache, gemeinsames Glossar und Statusvokabular. Kürzere Seitentexte, kompaktere Statusleisten, gut lesbare Sekundärtexte, konsistente Tabellenwerkzeuge und kontextbezogene Hilfe.",
+      "acceptance": "Keine gemischten Sprachen oder internen Aktionscodes im Standardpfad; Kernaufgaben sind im ersten Bildschirm sichtbar.",
+      "baselineShots": [
+        2,
+        7,
+        45,
+        52,
+        63,
+        65
+      ]
+    },
+    {
+      "id": "P2-06",
+      "title": "Abgeschnittenen Verbindungsdialog reparieren",
+      "shots": [
+        55,
+        56
+      ],
+      "observation": "Bei Desktopgröße 1414 × 873 überschreitet der Inhalt von Platform connections die Dialogbreite. Einleitung und Connect-Schaltfläche sind rechts abgeschnitten; die Aktionsspalte liegt außerhalb des sichtbaren Bereichs.",
+      "impact": "Zentrale Verwaltungselemente sind schlecht auffindbar bzw. sichtbar unvollständig. Der Überlauf beeinträchtigt die Bedienbarkeit.",
+      "change": "Schrumpfbare Layout-Kinder (min-width:0), passende Dialogbreite und kontrolliertes Tabellen-Scrolling verwenden; Einleitung umbrechen. Verschachtelte Dialoge durch einen flachen Ablauf ersetzen.",
+      "acceptance": "Bei 1280, 1440 und 1920 Pixeln sowie 200% Zoom sind Dialogtitel, primäre Aktion und Schließen vollständig erreichbar; horizontales Scrolling ist auf die Tabelle beschränkt."
+    },
+    {
+      "id": "P2-07",
+      "title": "LXC-Informationen an den Ressourcentyp anpassen",
+      "shots": [
+        63,
+        64
+      ],
+      "observation": "Die LXC-Detailseite verwendet Hardware & virtual machine und zeigt QEMU agent: Disabled, BIOS / machine: Proxmox default, Boot order und Cloud-Init user.",
+      "impact": "Nicht anwendbare VM-Informationen sehen wie fehlende oder fehlerhafte Containerkonfiguration aus.",
+      "change": "Eigene Feldgruppen für LXC und QEMU: LXC-OS, Rootfs, Mounts, Netz, Privilegierung und passende Limits zeigen; VM-spezifische Felder ausblenden.",
+      "acceptance": "Eine LXC-Seite enthält keine QEMU-/BIOS-Defaults; unbekannt und nicht anwendbar sind unterscheidbar."
+    }
+  ],
+  "features": [
+    {
+      "name": "Dashboard",
+      "shots": [
+        1
+      ],
+      "scores": [
+        5,
+        3,
+        null,
+        4,
+        3
+      ],
+      "use": "Sinnvoll als täglicher Einstieg: Handlungsbedarf vor Inventarmenge.",
+      "info": "Die fünf Statusgruppen und betroffenen Hosts sind nützlich. Schweregrad, Alter und Updatearten bleiben zu wenig differenziert.",
+      "inputs": "Drill-downs sind passend; ein sichtbarer Zeitraum für Failed operations würde die Interpretation verbessern.",
+      "ui": "Ruhige Gestaltung und klare Tabelle. Die Attention-Sektion wiederholt Überschriften und nutzt viel Fläche.",
+      "improve": "Nach Dringlichkeit sortieren; Auswirkungen, Datenalter und direkt passende nächste Aktionen anbieten.",
+      "baselineShots": [
+        1
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Operations / Activity",
+      "shots": [
+        2
+      ],
+      "scores": [
+        5,
+        3,
+        4,
+        3,
+        3
+      ],
+      "use": "Die zentrale Sammlung von Host-, Deployment- und Playbook-Aktivitäten ist wertvoll.",
+      "info": "Zeit, Auslöser, Ziel und Status sind vorhanden. Technische Namen, UUID-Ziele und eine weitgehend redundante Detailkarte reduzieren den Nutzen.",
+      "inputs": "Quelle, Status, Suchtext und Datumsbereich passen. Kalender und gespeicherte Filter wären hilfreicher als reine Texteingabe.",
+      "ui": "Viel vertikaler Platz vor der eigentlichen Liste. Die rechte Detailansicht benötigt mehr relevante Inhalte.",
+      "improve": "Konkrete Run-Links, Ergebniszusammenfassung, Dauer und Logs ergänzen; Statusleiste komprimieren.",
+      "baselineShots": [
+        2
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Wartungsplanung",
+      "shots": [
+        3,
+        4
+      ],
+      "scores": [
+        4,
+        3,
+        2,
+        4,
+        2
+      ],
+      "use": "Ein notwendiger Baustein für geplante Betriebsänderungen.",
+      "info": "Name, Zeit, Beschreibung, Owner und Ressourcen sind vorhanden; Auswirkungen sind nur Freitext.",
+      "inputs": "Datumseingaben sind format- und zeitzonenbeschriftet, aber manuell. Nur vier Zeitzonen zur Auswahl; Ressourcen und Owner ohne echte Zuordnung.",
+      "ui": "Der leere Zustand erklärt den nächsten Schritt gut. Das Formular ist überschaubar.",
+      "improve": "Datum-/Zeitpicker mit Tastatureingabe, vollständige Zeitzonensuche, Ressourcen- und Teamauswahl, Wiederholung und Konflikthinweise.",
+      "baselineShots": [
+        3,
+        4
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Audit Log",
+      "shots": [
+        5
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        3,
+        3
+      ],
+      "use": "Für Verantwortlichkeit und Fehleranalyse unverzichtbar.",
+      "info": "Actor, IP, Zeit, Status und Objektlinks sind hilfreich. Retention ist sichtbar. Technische Eventcodes und oft leere Objektfelder stören.",
+      "inputs": "Filter nach Aktion, Benutzer, Status und Datum sowie Export sind passend. Volltext- und Objektfilter fehlen im sichtbaren Filterbereich.",
+      "ui": "Die Tabelle ist nachvollziehbar, aber textlastig. Manche Informationen wiederholen sich.",
+      "improve": "Änderungen als Vorher/Nachher-Diff zeigen, Ressourcen nach Löschung benennbar halten und Export-/Retention-Regeln transparent machen.",
+      "baselineShots": [
+        5,
+        6
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Managed Hosts / Inventar",
+      "shots": [
+        6
+      ],
+      "scores": [
+        5,
+        3,
+        4,
+        4,
+        3
+      ],
+      "use": "Kernfunktion für den täglichen Hostbetrieb.",
+      "info": "Name, IP, OS, Online-Status und Tags sind da; Updatebedarf und letzte erfolgreiche Erhebung fehlen als direkte Listenspalten.",
+      "inputs": "Suche, Status-/Tagfilter und Mehrfachauswahl sind passend. Speichern von Ansichten und anpassbare Spalten wären bei größeren Beständen wichtig.",
+      "ui": "Saubere, kompakte Tabelle. Die lange Day-2-Erklärung wirkt wie Produkterläuterung statt Betriebsinformation.",
+      "improve": "Attention, Updates, letzte Verbindung und Owner optional als Spalten; Bulk-Aktionen mit Zielzusammenfassung und klarer Auswahlreichweite.",
+      "baselineShots": [
+        7,
+        71
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Host hinzufügen / Metadaten",
+      "shots": [
+        7
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        3,
+        3
+      ],
+      "use": "Sinnvolle Minimalanlage plus Expertenfelder.",
+      "info": "Der Hinweis zum nur temporär verwendeten SSH-Passwort ist gut. Hostname, SSH-Ziel und Anzeigename könnten klarer unterschieden werden.",
+      "inputs": "Port, User, Tags, Links und Mounts passen grundsätzlich. Kommagetrennte Tags/Services sowie das unter Advanced versteckte Environment sind fehleranfällig.",
+      "ui": "Langer innerer Dialogscroll bei erweiterter Eingabe; Name und IP sind dagegen angenehm schlank.",
+      "improve": "Tag-Chips, strukturierte Services, sichtbarer Umgebungskontext, explizite Pflichtfelder und Teststatus mit Fehlerursache.",
+      "baselineShots": [
+        8,
+        9
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Hostübersicht / System / Storage",
+      "shots": [
+        8,
+        9
+      ],
+      "scores": [
+        5,
+        3,
+        null,
+        4,
+        3
+      ],
+      "use": "Die Trennung von Live-Übersicht und statischen Systemdaten ist sinnvoll.",
+      "info": "IPAM- und Proxmox-Links sind nützlich. Aktuell zeigt der Host RAM-Warnung und Updates: Healthy; Image-Updates waren bei dieser Aufnahme nicht offen. Der ältere Konflikt zwischen Healthy und Image-Updates ist heute somit nicht erneut reproduziert. API Latency bleibt ohne klare fachliche Bedeutung; Zeitpunkt und Trends fehlen.",
+      "inputs": "Kopieren von IP/Hostname und gezieltes Refresh passen.",
+      "ui": "Gute Abschnitte und Ressourcenbalken. Die aktuelle RAM-Warnung und der getrennte Updatezustand sind fachlich vereinbar; ein allgemeiner Gesamtstatus sollte den Warnzustand eindeutig zusammenfassen.",
+      "improve": "Kurze Verläufe, Erhebungszeit, klarer Metrikname für Latenz, korrekte Gesamtgesundheit und eindeutige Storage-Zustände.",
+      "baselineShots": [
+        10,
+        11
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Docker / Workloads",
+      "shots": [
+        10
+      ],
+      "scores": [
+        5,
+        3,
+        2,
+        3,
+        3
+      ],
+      "use": "Container nach Compose-Stacks gruppieren und Logs/Restart direkt erreichbar machen ist praktisch.",
+      "info": "Image- und Laufzustand helfen. CPU und Memory zeigen bei allen sichtbaren Containern Striche; selbst gebaute Images melden Cannot check ohne erklärten nächsten Schritt. Der Spaltenname Check for Updates benennt eine Aktion statt den angezeigten Zustand.",
+      "inputs": "Add Stack bietet nur Pfad und YAML. Es fehlen im sichtbaren Dialog Vorlage, Validierungsstatus und Erklärung der Save-Wirkung.",
+      "ui": "Dichte, lesbare Tabelle, aber die Spalte Check for Updates benennt eine Aktion statt den angezeigten Status.",
+      "improve": "Update status als Spaltenname, Gründe für unbekannte Werte, Compose-Validierung und klare Trennung von Speichern und Starten.",
+      "baselineShots": [
+        12,
+        13
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "OS-Updates / Custom Update Tasks",
+      "shots": [
+        11
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Standardpakete und eigene Anwendungen gemeinsam betreiben zu können ist sinnvoll.",
+      "info": "Der leere OS-Zustand ist verständlich, wird aber sprachlich nicht von Image-Updates getrennt. Custom Tasks erklären Ziel- und Ist-Version.",
+      "inputs": "Script, GitHub Release und Output Trigger sind sinnvolle Typen. Freie SSH-Kommandos brauchen bessere Beispiele und überprüfbare Ausgaben.",
+      "ui": "Kompakte Anzeige. Formulare wirken technisch und mehrere Labels sind im Accessibility-Baum nicht mit den Feldern verbunden.",
+      "improve": "Letzte Prüfung, Paketdifferenzen, Rebootbedarf, Test-vor-Speichern, Timeout und Versionsvergleich verständlich darstellen.",
+      "baselineShots": [
+        14,
+        15
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Hostaktivität / Logs",
+      "shots": [
+        12
+      ],
+      "scores": [
+        5,
+        3,
+        2,
+        3,
+        3
+      ],
+      "use": "Eine lokale Betriebshistorie ist ein guter Kontextanker.",
+      "info": "Start, Ende und Dauer sind stark. Fehlgeschlagene Läufe melden teils No error details were recorded; Aktionsnamen sind uneinheitlich.",
+      "inputs": "Logs lassen sich bei Fehlern öffnen. Filter und Suche sind in dieser Ansicht nicht sichtbar.",
+      "ui": "Viele Zeilen und Spalten ohne starke Fehlerpriorisierung.",
+      "improve": "Fehlergrund extrahieren, alle Runs direkt öffnen, nach Typ/Status/Zeitraum filtern und Zeitformat mit Operations vereinheitlichen.",
+      "baselineShots": [
+        16
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Hostnotizen",
+      "shots": [
+        13
+      ],
+      "scores": [
+        4,
+        3,
+        4,
+        4,
+        3
+      ],
+      "use": "Nützlich für Runbooks, Verantwortliche und Besonderheiten vor Ort.",
+      "info": "Markdown und Vorschau sind passend; im leeren Zustand fehlen konkrete Nutzungsbeispiele.",
+      "inputs": "Edit/Preview ist vertraut. Speicher- und Konfliktverhalten wurde nicht getestet.",
+      "ui": "Schlichte, ruhige Fläche.",
+      "improve": "Runbook-Vorlage, Autor, Änderungsdatum, Versionshistorie und Warnung vor ungespeicherten Änderungen.",
+      "baselineShots": [
+        17
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Dateibrowser / SSH-Terminal",
+      "shots": [
+        14
+      ],
+      "scores": [
+        5,
+        4,
+        4,
+        4,
+        3
+      ],
+      "use": "Schneller Zugriff ohne Werkzeugwechsel ist für Operatoren sehr wertvoll.",
+      "info": "Zielhost, User, Pfad, Dateigröße und Modus sind vorhanden. Terminal zeigt den verbundenen Root-Kontext klar.",
+      "inputs": "Pfadnavigation und Upload sind verständlich; Befehle und Transfers wurden nicht ausgeführt.",
+      "ui": "Terminal ist fokussiert. Numerische Unix-Modi und versteckte Dateien sind für erfahrene Admins passend, benötigen aber optional Hilfe.",
+      "improve": "Sessiondauer/-ablauf, Audit-/Recording-Status, Vollbild, Suche und ein eindeutiger Transferfortschritt; versteckte Dateien optional ausblenden.",
+      "baselineShots": [
+        18,
+        19
+      ],
+      "evidence": "Dateibrowser aktuell aufgenommen; Terminal selbst nur im Vorreview vom 9. September, diesmal nicht verbunden."
+    },
+    {
+      "name": "Managed VMs / Vorlagen / Erstellung",
+      "shots": [
+        15,
+        16,
+        18
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Deklarative VM-Erstellung mit isoliertem Zustand und Vorlagen ist ein starkes Produktmerkmal.",
+      "info": "Compute, Storage, Netz, Zugriff und Pre-/Post-Workflows sind umfassend. Der leere Inventarbereich widerspricht begrifflich anderen Managed-Zählern.",
+      "inputs": "Viele hilfreiche Defaults; MB und GB sind gemischt, Ubuntu-User wird beim Debian-Template vorgegeben, Clone attempts ist zu prominent.",
+      "ui": "Ein großer Dialog trägt zu viele Entscheidungen auf einmal.",
+      "improve": "Geführter Assistent mit Review, Vorlagenabhängigkeiten und IPAM-Auswahl; Planung, Apply, Drift und Wiederherstellung erst mit vorhandener Test-VM separat validieren.",
+      "baselineShots": [
+        20,
+        21,
+        22
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Playbook-Inventar / YAML-Editor",
+      "shots": [
+        19
+      ],
+      "scores": [
+        5,
+        4,
+        4,
+        4,
+        3
+      ],
+      "use": "Kategorisierte wiederverwendbare Automatisierung ist sinnvoll und gut integriert.",
+      "info": "Lesbare Playbook-Namen, Dateinamen, Kategorie und History sind gut. Autor, letzte Änderung und freigegebene Version könnten prominenter sein.",
+      "inputs": "YAML-Editor mit Syntaxprüfung ist angemessen für die Zielgruppe. Direktes Editieren beim Auswählen ist weniger sicher als eine klare Leseansicht.",
+      "ui": "Zweispaltige Inventar-/Detailstruktur ist stimmig. Interne System-Playbooks erzeugen vermeidbares Rauschen.",
+      "improve": "Read-only-Inspektion als Standard, explizit bearbeiten, strukturierte Metadaten, Diff/Revision und getestete Freigabestände.",
+      "baselineShots": [
+        23,
+        24
+      ],
+      "evidence": "Inventar aktuell; YAML-Editor und seine Bedienung ergänzend aus dem Vorreview vom 9. September."
+    },
+    {
+      "name": "Playbook Runs / Zielauswahl",
+      "shots": [
+        20
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        3,
+        3
+      ],
+      "use": "Ad-hoc-Ausführung und Historie schließen den Betriebsablauf sinnvoll zusammen.",
+      "info": "Hostsuche, IP, Tags, Status und Zielvorschau sind gute Absicherungen. Output und Historie teilen sich eine sehr lange Seite.",
+      "inputs": "JSON-Variablen sind technisch; localhost erscheint neben echten Hosts ohne gleichwertige Erläuterung des Ausführungsortes.",
+      "ui": "Die Form ist lang, wichtige Run-Optionen liegen weit unten.",
+      "improve": "Run-Assistent mit strukturierter Variableneingabe, deutlich markiertem localhost, sichtbarem Dry run und dauerhaft sichtbarer Zielzusammenfassung.",
+      "baselineShots": [
+        25
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Variablen & Secrets",
+      "shots": [
+        21
+      ],
+      "scores": [
+        5,
+        4,
+        4,
+        4,
+        3
+      ],
+      "use": "Umgebungsspezifische Konfiguration und maskierte Secrets sind notwendig.",
+      "info": "Scope und Verschlüsselungsversprechen sind deutlich. Dieses Review bestätigt nicht deren technische Durchsetzung.",
+      "inputs": "Key, Wert, Secret-Schalter und Beschreibung sind passend. Secret ist beim Anlegen nicht der Standard.",
+      "ui": "Übersichtlich, aber leere Liste und offenes Formular stehen redundant untereinander.",
+      "improve": "Typen und Verwendungshinweise, sichere Secret-Erkennung, Änderungshistorie, Ablauf-/Rotationshinweise und klare Überschreibungsreihenfolge.",
+      "baselineShots": [
+        26,
+        74
+      ],
+      "evidence": "Variablenübersicht aktuell; Eingabedialog ergänzend aus dem Vorreview vom 9. September."
+    },
+    {
+      "name": "Schedules",
+      "shots": [
+        22,
+        23
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Wiederkehrende Automatisierung mit Zielauswahl und Dry run ist sehr sinnvoll.",
+      "info": "Nächster Lauf samt Zone ist gut. Last run verwendet eine abweichende Uhrzeitdarstellung. Der vorhandene Name Weekly Updates gehört zu einem Daily-Zeitplan — eine Datenbenennung, kein nachgewiesener Schedulerfehler.",
+      "inputs": "Presets plus Cron, Parallelität und Extra-Variablen passen. Die Zielauswahl ist schwächer durchsuchbar als bei Runs.",
+      "ui": "Das neue Zeitplanformular ist schmal und lang; die nächsten Ausführungen sollten sichtbar zusammengefasst werden.",
+      "improve": "Gemeinsame Hostauswahl, nächste drei Läufe, Zone im Dialog, Retry-/Overlap-Regeln und Wartungsfensterbezug.",
+      "baselineShots": [
+        27,
+        28
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Git Integration",
+      "shots": [
+        24
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        4,
+        3
+      ],
+      "use": "Versionierte Playbooks sind für Teamarbeit wichtig.",
+      "info": "HTTPS-Token versus SSH-Key ist klar. Auto-pull und Auto-push stehen standardmäßig an; Branch-/Commit-Kontext fehlt im sichtbaren Formular.",
+      "inputs": "Repository, Identität und Authentifizierung sind angemessen. Ein Verbindungstest und die Behandlung lokaler Änderungen sollten vor Connect erläutert werden.",
+      "ui": "Saubere Form, aber wenig Unterstützung für kollaborative Freigabeprozesse.",
+      "improve": "Branch-Auswahl, letzte Revision/Sync, Konfliktstatus, schreibgeschützter Modus und bewusstes Opt-in für Auto-push.",
+      "baselineShots": [
+        29
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Infrastrukturübersicht / Baum",
+      "shots": [
+        54
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Plattform, Node und Gast hierarchisch zu verbinden ist fachlich richtig.",
+      "info": "Kapazitäten und Erreichbarkeit helfen. Externe-Host-Zähler, Managed-Status und Datastoreumfang sind nicht durchgängig gleich definiert.",
+      "inputs": "Baumsuche und Aufklappen passen. Bei 19 VMs ist der Baum bereits lang und einzelne Zielnamen sind sehr klein.",
+      "ui": "Konsistente Linien und Icons; die Plattformauswahl nimmt bei einer Plattform viel leere Fläche ein.",
+      "improve": "Favoriten und gespeicherte Filter, klarer Einstieg zur Infrastrukturübersicht, konsistente Klickziele und flexible Master-/Detailbreite.",
+      "baselineShots": [
+        61,
+        44
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Plattform- und Nodeinformationen",
+      "shots": [
+        38,
+        39,
+        40,
+        45,
+        46
+      ],
+      "scores": [
+        5,
+        4,
+        null,
+        4,
+        3
+      ],
+      "use": "Statische Hardware und aktuelle Kapazität sind gut getrennt.",
+      "info": "CPU, Memory, Uptime, Kernel und Bridges helfen. Configuration auf Plattformebene ist überwiegend eine zweite Inventarübersicht.",
+      "inputs": "Navigation und Copy-/Drill-down-Pfade sind ausreichend; keine Konfigurationsänderung getestet.",
+      "ui": "Ruhige Kartenstruktur, teils redundante Angaben und gemischtsprachige Bezeichnungen.",
+      "improve": "Configuration passend umbenennen oder echte Verbindungseinstellungen anbieten; Trends, Datenalter und vollständige Netz-/Storage-Abdeckung ergänzen.",
+      "baselineShots": [
+        44,
+        45,
+        46,
+        51,
+        52
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "VM-/CT-Inventar und Adoption",
+      "shots": [
+        41,
+        50,
+        51,
+        63,
+        64,
+        65,
+        66
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Vorhandene VMs sichtbar machen und gezielt als Hosts übernehmen ist sinnvoll.",
+      "info": "Managementzustand und Ressourcen sind vorhanden. Gestoppte VMs heißen im Baum Unknown; IP und Disk fehlen teilweise. LXC-Details zeigen dieselben VM-Felder wie BIOS, Boot order, Cloud-Init und QEMU agent, obwohl diese Darstellung zum Ressourcentyp nicht passt.",
+      "inputs": "Mehrfachauswahl und Actions sind passend. Import all orphaned virtual machines ist technisch und missverständlich benannt; Ausführung wurde nicht geprüft.",
+      "ui": "Breite Tabellen ohne sichtbare Suche oder Statusfilter im VM-Tab. Destruktive Buttons sind auf Detailseiten sehr prominent.",
+      "improve": "Suche/Filter, klarer Adoption-Assistent, lesbare Fehlerursachen, stabile Namen, getrennte Host-/VM-Ansichten und Gefahrenmenü. LXC und QEMU getrennt modellieren: nur anwendbare Felder anzeigen und fehlende Daten nicht als deaktivierte VM-Funktion darstellen.",
+      "baselineShots": [
+        47,
+        53,
+        57,
+        58,
+        70
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Datastores",
+      "shots": [
+        42,
+        47
+      ],
+      "scores": [
+        4,
+        3,
+        null,
+        4,
+        3
+      ],
+      "use": "Kapazitätsprüfung vor VM-Erstellung ist notwendig.",
+      "info": "Used, Free, Capacity und Prozentwert sind gut. Der Tab heißt Datastores, zeigt aber ausdrücklich nur ZFS; der VM-Assistent bietet zusätzlich local-lvm an.",
+      "inputs": "Keine Eingaben erforderlich.",
+      "ui": "Saubere Tabelle, bei einem Eintrag viel ungenutzte Fläche.",
+      "improve": "Alle relevanten Datastores anzeigen oder den Tab ZFS pools nennen; Health, Backend, Provisionierung, Reservierungen und Trend ergänzen.",
+      "baselineShots": [
+        48,
+        54
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Proxmox-Updates",
+      "shots": [
+        43,
+        48
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Updates im Plattformkontext planen zu können ist sehr sinnvoll.",
+      "info": "Installed/Available/Origin sind nützlich. Lange Paketbeschreibungen ersetzen keine Information zu Reboot, Auswirkungen und Dringlichkeit.",
+      "inputs": "Refresh catalog und Install sind eindeutig; der letzte Bestätigungsschritt wurde nicht ausgelöst.",
+      "ui": "Die Paketliste ist sachlich, wichtige Betriebshinweise fehlen im sichtbaren Vorfeld.",
+      "improve": "Kompakte Beschreibungen, Release Notes, Rebootbedarf, Wartungsbezug und eine zusammenhängende Ergebnis-/Fehleransicht.",
+      "baselineShots": [
+        49,
+        55
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Snapshots und Infrastruktur-Tasks",
+      "shots": [
+        44,
+        49,
+        52,
+        53,
+        67
+      ],
+      "scores": [
+        4,
+        3,
+        2,
+        4,
+        2
+      ],
+      "use": "Snapshots und nachvollziehbare Aktionen sind wichtig für Betriebssicherheit.",
+      "info": "Snapshotname und Datum sowie aggregierte Sync-Ereignisse sind hilfreich. Die Tasks erklären ihren begrenzten Umfang, wirken aber gegenüber anderen Historien fragmentiert.",
+      "inputs": "Snapshot erstellen/löschen sichtbar, Wiederherstellung nicht sichtbar. Keine Snapshotaktion ausgeführt.",
+      "ui": "Klare Leerzustände, aber wenig Unterstützung beim entscheidenden Recovery-Ablauf.",
+      "improve": "Restore oder Proxmox-Deep-Link, Schutzkennzeichnung, Retention und Kontext zu Konsistenz/RAM. Objektaktivität über Quellen hinweg vereinen.",
+      "baselineShots": [
+        50,
+        56,
+        59,
+        60
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "IPAM / Präfixe / Adressinventar",
+      "shots": [
+        35,
+        36,
+        37
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        4,
+        4
+      ],
+      "use": "Sehr sinnvoller Zusammenhang aus Adressraum, Reservierungen und Hostzuordnung.",
+      "info": "Freie Intervalle, nächste freie IP, Gateway, MAC, Quelle und Hostlink sind besonders nützlich. Die Präfixliste selbst zeigt keine Auslastung.",
+      "inputs": "Einzeladresse/Range und Präfix-CIDR passen. Reservierung startet als Active, IP-Beispiel stammt aus einem anderen Netz. IPv6 ist nicht sichtbar.",
+      "ui": "Einer der stärksten Bereiche. Zwei Suchfelder auf der Startseite sollten ihre unterschiedlichen Bereiche deutlicher erklären.",
+      "improve": "Korrekte Reservierungsdefaults, Präfix-Auslastung, Konflikte, Quelle/Alter dauerhaft sichtbar; IPv6/VRF nur entsprechend Zielmarkt ausbauen.",
+      "baselineShots": [
+        39,
+        40,
+        41,
+        42
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "IPAM Sources",
+      "shots": [
+        34
+      ],
+      "scores": [
+        5,
+        4,
+        4,
+        4,
+        3
+      ],
+      "use": "Automatischer Import verhindert manuelle Doppelpflege.",
+      "info": "Verbindungsstatus, Testzeit, Synczeit, Intervall und Konflikte sind gut. Grün bei null beobachteten Adressen benötigt mehr Erklärung.",
+      "inputs": "UniFi/pfSense, URL, Token und Site sind nachvollziehbar. Automatische Erkennung von URL-Varianten und ein klarer Testschritt würden helfen.",
+      "ui": "Die Statuskarte ist gut gegliedert; die lange rohe API-URL ist visuell dominant.",
+      "improve": "Controller und Site als lesbare Felder, Sync-Differenz, Datenvorschau und Warnung bei unerwartet leerem Bestand.",
+      "baselineShots": [
+        43,
+        72
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Proxmox Platform connections",
+      "shots": [
+        55,
+        56
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        2,
+        3
+      ],
+      "use": "Wiederverwendbare umgebungsbezogene Verbindungen sind richtig modelliert.",
+      "info": "Endpoint, IPAM-Intervall und Last sync sind nützlich. Access configured sagt wenig über tatsächlich verfügbare Rechte aus.",
+      "inputs": "Token, Public Key und TLS-Prüfung sind passend; Tokenformat und Mindestberechtigungen brauchen Hilfe. Keine Tokens eingegeben.",
+      "ui": "Der Dialog Platform connections schneidet bei 1414 × 873 rechts Text, Connect-Schaltfläche und Aktionsspalte ab. Danach öffnet sich ein zweiter Dialog. Sprachmischung und dieser Überlauf schwächen den Enterprise-Eindruck deutlich.",
+      "improve": "Zuerst den horizontalen Überlauf beheben: Dialogbreite begrenzen, Kinder schrumpfbar machen und Tabelle gezielt scrollbar halten. Danach Verbindungen in eine eigene Seite oder einen flachen Dialog führen; Rechtecheck, CA-Zertifikatsweg und Service-Account-Beispiel ergänzen.",
+      "baselineShots": [
+        62,
+        63
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Appearance / persönliche Darstellung",
+      "shots": [
+        25,
+        57,
+        58
+      ],
+      "scores": [
+        3,
+        3,
+        4,
+        4,
+        3
+      ],
+      "use": "Branding und persönliche Darstellung sind sinnvoll, aber nachrangig gegenüber Betriebskonsistenz.",
+      "info": "Persönliches Theme versus globale Marke ist erklärt. White Label verspricht auch ein Icon; im geprüften Abschnitt sind Name/Farbe sichtbar.",
+      "inputs": "Theme, Density, Appname und Farbe passen. Scope und unmittelbare beziehungsweise gespeicherte Wirkung sollten konsistent sein.",
+      "ui": "Die aktuelle dunkle Farbwelt ist kohärent. Viele Theme-Optionen auf der Kontoseite gewichten Kosmetik stärker als Sessioninformationen.",
+      "improve": "Appearance als eigene persönliche Einstellung, zuverlässige Defaults, Kontrastprüfung und Priorität auf Typografie/Status statt neue Themes.",
+      "baselineShots": [
+        30,
+        64,
+        65
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "SSH-Schlüsselverwaltung",
+      "shots": [
+        26
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        3,
+        3
+      ],
+      "use": "Zentraler Schlüssel mit Verteilung vereinfacht den Betrieb.",
+      "info": "Public Key, Algorithmus, Status und manuelle Installationsanweisung sind hilfreich; Lebenszyklus und Reichweite bleiben wenig sichtbar.",
+      "inputs": "Ziel, User, Port und Einmalpasswort passen. Distribute to all hosts braucht eine klare Ziel-/Folgenübersicht im späteren Ablauf.",
+      "ui": "Mehrere lange Konfigurationsblöcke; kritische Export-/Importaktionen stehen neben Routineinformationen.",
+      "improve": "Fingerprint, Alter, Rotation, Verwendungsübersicht und separate Schutzstufe für Private-Key-Export; mehrere Schlüssel nach Umgebung als Ausbau prüfen.",
+      "baselineShots": [
+        31
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Benutzer, Rollen und Kontosicherheit",
+      "shots": [
+        27,
+        28,
+        29,
+        58
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        3,
+        3
+      ],
+      "use": "Granulare Rollen, Ressourcen-Scope und 2FA sind notwendige Enterprise-Bausteine.",
+      "info": "Rollen-Presets und Live preview sind gut. Die breite Built-in-Rolle User, rohe Null in der Benutzerzeile und fehlende sichtbare Sessionübersicht sind Schwächen.",
+      "inputs": "Anlage ist einfach, aber initiales Passwort wird vom Admin gesetzt und User ist voreingestellt. Rollenformular ist sehr lang.",
+      "ui": "Grundstruktur passt. Sensitive Rechte sollten besser gruppiert und ihre effektive Kombination leichter prüfbar sein.",
+      "improve": "Einladungen, restriktive Defaults, SSO/MFA-Policy, Sessions/Widerruf und Rights-Diff als Enterprise-Ausbau; keine Sicherheitswirkung aus dem UI allein ableiten.",
+      "baselineShots": [
+        32,
+        33,
+        34,
+        65,
+        73
+      ],
+      "evidence": "Benutzerformular, Rollenübersicht und Konto aktuell; ausführlicher Rollen-Editor ergänzend aus dem Vorreview vom 9. September."
+    },
+    {
+      "name": "Plugins",
+      "shots": [
+        30
+      ],
+      "scores": [
+        3,
+        3,
+        1,
+        3,
+        2
+      ],
+      "use": "Erweiterbarkeit ist für Spezialfälle nützlich, aktuell aber eher ein Entwicklermechanismus.",
+      "info": "Pfad und volle Serverrechte sind ehrlich erklärt. Im geprüften System sind keine Plugins installiert.",
+      "inputs": "Manuelles Ablegen auf dem Dateisystem und Reload sind keine geführte Unternehmensverwaltung.",
+      "ui": "Der Leerzustand ist verständlich, wiederholt aber den Installationspfad.",
+      "improve": "Paket-/Versionsinventar, Quelle, Kompatibilität, Rechteumfang, Freigabe und Update-/Rollback-Status; aktive Pluginseiten separat prüfen.",
+      "baselineShots": [
+        35
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Benachrichtigungen",
+      "shots": [
+        31
+      ],
+      "scores": [
+        5,
+        3,
+        3,
+        4,
+        3
+      ],
+      "use": "Fehlerbenachrichtigungen außerhalb der Konsole sind für den Betrieb wesentlich. Die angebotenen Ereignistypen müssen zum tatsächlich aktiven Funktionsumfang passen.",
+      "info": "Webhook, SMTP und Eventschalter sind klar. Zustellhistorie und nachweisbarer Status fehlen im sichtbaren Bereich.",
+      "inputs": "Basisfelder reichen zum Start. Webhooktyp, SMTP-TLS-Modus, Empfängervalidierung und Testvoraussetzungen könnten deutlicher sein.",
+      "ui": "Saubere Form, aber mehrere identisch beschriftete Save/Test-Buttons.",
+      "improve": "Kanäle benennen, Testfeedback und Zustellprotokoll, Severity-/Teamrouting, Deduplizierung und Wartungsunterdrückung.",
+      "baselineShots": [
+        36
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Systembetrieb / Polling / Agent",
+      "shots": [
+        32
+      ],
+      "scores": [
+        5,
+        4,
+        3,
+        3,
+        3
+      ],
+      "use": "Laufzeitstatus und Pollingsteuerung sind sinnvoll.",
+      "info": "Versionen, Intervall und SSH/Agent-Unterschied werden erklärt. Custom Updates sagt gleichzeitig run check commands und nothing is executed — sprachlich widersprüchlich.",
+      "inputs": "Intervalle und Zone passen; Auswirkungen der Änderungen auf Last, Aktualität und aktive Abläufe fehlen.",
+      "ui": "Lange Seite mit heterogenen Aufgaben von Binary-Installation über Polling bis Agentkonfiguration.",
+      "improve": "System Health, Polling und Runtime getrennt führen; letzte erfolgreiche Erhebung, Fehler, Queue und Agent-Verteilung zeigen. Agentaktivierung nicht getestet.",
+      "baselineShots": [
+        37
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Danger Zone / Wiederherstellung",
+      "shots": [
+        33
+      ],
+      "scores": [
+        2,
+        3,
+        null,
+        3,
+        2
+      ],
+      "use": "Gezielte Bereinigung kann nötig sein; fünf globale Resetfunktionen sind kein primärer Enterprise-Mehrwert.",
+      "info": "Folgen werden kurz genannt. Ob etwa Container data nur lokale Daten oder Remote-Daten meint, sollte eindeutig sein.",
+      "inputs": "Keine destruktiven Dialoge oder Aktionen ausgeführt; Bestätigungsqualität nicht bewertet.",
+      "ui": "Gefahr ist farblich deutlich, die Buttons stehen jedoch sehr direkt nebeneinander.",
+      "improve": "Backup/Restore priorisieren, Datenumfang und betroffene Umgebung genau nennen, aktuelle Sicherung und geschützte Bestätigung im Ablauf verlangen.",
+      "baselineShots": [
+        38
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    },
+    {
+      "name": "Suche, Activity Center, Umgebungen und Hilfe",
+      "shots": [
+        59,
+        60,
+        61,
+        62
+      ],
+      "scores": [
+        5,
+        3,
+        4,
+        4,
+        3
+      ],
+      "use": "Globale Navigation und Umgebungskontext sind zentrale Produktfunktionen.",
+      "info": "Command Palette und Umgebungskontext sind gut zugänglich. Activity Center zeigt jetzt 2 recent mit generischem Server action; der Zeitraum bleibt unklar. Die Umgebung meldet 1 deployment trotz leerer Managed-VM-Liste. Help enthält nur GitHub und Issues; im Linux-Kontext steht weiterhin ⌘K.",
+      "inputs": "Suche und Umgebungsanlage sind einfach. Die Palette könnte VM-/Node-/Präfixressourcen und Klartextnamen besser einbeziehen.",
+      "ui": "Konsistenter Kopfbereich. Das macOS-Symbol ⌘K wird in dieser Linux-Sitzung angezeigt.",
+      "improve": "Scope der Live-Zentrale benennen, Zähler vereinheitlichen, Plattform-Shortcuts, kontextuelle Dokumentation, Support-/Versionsinformationen.",
+      "baselineShots": [
+        66,
+        67,
+        68,
+        69
+      ],
+      "evidence": "Neue Live-Aufnahmen; ergänzende Detailzustände im Vorreview vom 9. September."
+    }
+  ],
+  "roadmap": [
+    {
+      "phase": "P1 · Vertrauen und Standardwerte",
+      "items": [
+        "Zeitformat und Zeitzone über alle Ansichten vereinheitlichen.",
+        "Host-, VM- und Deployment-Zähler sowie Updatequellen eindeutig definieren.",
+        "Reservierungsdefault auf Reserved setzen und nächste freie IP vorfüllen.",
+        "Neue Benutzer erst nach bewusster Rollenwahl anlegen; effektive Rechte zeigen."
+      ]
+    },
+    {
+      "phase": "P2 · Tägliche Bedienung",
+      "items": [
+        "Dialogüberlauf beheben; VM-, Zeitplan- und Rollenformulare in prüfbare Schritte gliedern.",
+        "Operations direkt mit konkreten Runs und Logs verknüpfen.",
+        "Unbekannte Metriken erklären, gestoppte Ressourcen korrekt kennzeichnen und LXC-Felder bereinigen.",
+        "Sprache, Statusvokabular, Tabellenfilter und Aktionshierarchie vereinheitlichen."
+      ]
+    },
+    {
+      "phase": "Enterprise-Ausbau · nach Zielkunden priorisieren",
+      "items": [
+        "Wartungsfenster mit echten Ressourcen, Zuständigkeit, Konflikten und Change-Referenz verbinden.",
+        "Einladungen, MFA-Policy, SSO und Sessionverwaltung anhand konkreter Kundenanforderungen planen.",
+        "Zustellhistorie, Routing und Wartungsunterdrückung für Benachrichtigungen; sichere Wiederherstellung und nachvollziehbare Releases ausbauen.",
+        "Vor Produktionsfreigabe: lokale Änderungen gegen den Live-Stand abgleichen sowie Rechte, Fehlerfälle, mobile Ansichten und Tastaturbedienung separat testen."
+      ]
+    }
+  ],
+  "code_note": "Die lokale Arbeitskopie enthält bereits umfangreiche Änderungen und entspricht erkennbar nicht vollständig der Live-Oberfläche. Beispiel: users-roles.tsx Zeile 296 startet die Rollenauswahl leer; Zeile 301 verlangt eine explizite Rolle. Live ist weiterhin User vorausgewählt. operations.tsx enthält bereits strukturierte resource_scope-Felder, während die Live-Wartungsmaske Freitext zeigt. Die Befunde bewerten daher die bereitgestellte App; lokal vorhandene Änderungen sind kein Nachweis einer produktiven Behebung. Dies ist ein UI-/Produktreview mit gezieltem Quellenabgleich, kein vollständiger Code- oder Security-Audit. In diesem Durchgang wurden keine Quellcodedateien geändert."
+}

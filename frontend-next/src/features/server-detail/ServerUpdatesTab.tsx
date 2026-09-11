@@ -1,3 +1,8 @@
+import { imageCatalogFreshness as catalogFreshness } from './image-catalog-freshness';
+import { OsUpdateImpact } from './components/OsUpdateImpact';
+import { OsUpdatePreview } from './components/OsUpdatePreview';
+import { PackageVersionChange } from './components/PackageVersionChange';
+import { formatDateTime } from '@/lib/utils';
 import {
   lazy,
   Suspense,
@@ -151,7 +156,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
     timeFormat,
     hour12,
     serverKnown,
-    openTofuAvailable,
+    canViewManagementRelationships,
     deploymentData,
     managedDeployments,
     managedProxmoxDeployment,
@@ -173,6 +178,9 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
     notesData,
     customTasks,
     customTaskList,
+    customTasksLoading,
+    customTasksFailed,
+    refetchCustomTasks,
     agentStatus,
     refetchAgent,
     imageUpdates,
@@ -182,9 +190,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
     notesEditing,
     setNotesEditing,
     renderedNotes,
-    notesTimer,
     saveNotesMut,
-    autoSaveNotes,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -265,6 +271,11 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
           <TabsContent value="updates" className="space-y-4">
             {hasCap(profile, "canViewUpdates") && (
               <Card>
+                {rawUpdates && !Array.isArray(rawUpdates) && <div className="border-b px-4 py-3 text-xs text-muted-foreground">
+                  <p>{rawUpdates.source} · Last successful check: {formatDateTime(rawUpdates.updated_at)} · Stale after {Math.round(rawUpdates.stale_after_seconds / 60)} minutes</p>
+                  <p className={rawUpdates.stale ? 'mt-1 text-warning' : 'mt-1'}>{rawUpdates.stale ? 'Catalog is stale or has no timestamp. Refresh before planning updates.' : rawUpdates.cached ? 'Stored result; a background refresh may still be running.' : 'Result from the latest requested check.'}</p>
+                  <p className="mt-1">Host packages, Proxmox node packages and container images are separate catalogs and may have different refresh times.</p>
+                </div>}
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <CardTitle className="text-sm">
                     {t("det.tabUpdates")}
@@ -301,7 +312,13 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                       </div>
                     </div>
                   )}
-                  {updatesList.length === 0 ? (
+                  {rawUpdates != null && <div className="border-b px-4 py-3"><OsUpdateImpact available={updatesList.length} deferred={phasedList.length} rebootRequired={info?.reboot_required} /></div>}
+                  <OsUpdatePreview serverId={id} />
+                  {rawUpdates == null ? (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">OS update catalog unavailable. Refresh to retry.</p>
+                  ) : updatesList.length === 0 && phasedList.length > 0 ? (
+                    <p className="px-4 py-3 text-sm text-muted-foreground">All listed OS package updates are currently held back by the simulated upgrade. Review the deferred packages below.</p>
+                  ) : updatesList.length === 0 ? (
                     <div className="flex items-center gap-2 px-4 py-3 text-sm text-emerald-500">
                       <span>✓</span> {t("det.allUpToDate")}
                     </div>
@@ -315,14 +332,12 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                         {updatesList.map((u, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between px-4 py-1.5 text-sm"
+                            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 text-sm"
                           >
                             <span className="font-mono text-xs">
                               {u.package}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                              {u.version || ""}
-                            </span>
+                            <PackageVersionChange installed={u.current_version} candidate={u.version} />
                           </div>
                         ))}
                       </div>
@@ -338,14 +353,12 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                         {phasedList.map((u, i) => (
                           <div
                             key={i}
-                            className="flex items-center justify-between px-4 py-1.5 text-sm"
+                            className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-4 py-2 text-sm"
                           >
                             <span className="font-mono text-xs">
                               {u.package}
                             </span>
-                            <span className="text-xs text-muted-foreground">
-                              {u.version || ""}
-                            </span>
+                            <PackageVersionChange installed={u.current_version} candidate={u.version} />
                           </div>
                         ))}
                       </div>
@@ -388,7 +401,13 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                   )}
                 </CardHeader>
                 <CardContent className="p-0">
-                  {customTaskList.length === 0 ? (
+                  {!hasCap(profile, "canViewCustomUpdates") ? (
+                    <p role="status" className="p-4 text-sm text-muted-foreground">Your role cannot view custom update checks.</p>
+                  ) : customTasksFailed ? (
+                    <div role="alert" className="p-4 text-sm"><p>Custom update checks could not be loaded.</p><Button variant="outline" size="sm" onClick={() => void refetchCustomTasks()}>Retry</Button></div>
+                  ) : customTasksLoading ? (
+                    <p role="status" className="p-4 text-sm text-muted-foreground">Loading custom update checks…</p>
+                  ) : customTaskList.length === 0 ? (
                     <div className="flex min-h-12 items-center px-4 py-3 text-sm text-muted-foreground">
                       {t("det.noCustomTasks")}
                     </div>
@@ -400,10 +419,10 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                       >
                         <colgroup>
                           <col className="w-[21%]" />
-                          <col className="w-[12%]" />
-                          <col className="w-[19%]" />
-                          <col className="w-[19%]" />
-                          <col className="w-[17%]" />
+                          <col className="w-[10%]" />
+                          <col className="w-[14%]" />
+                          <col className="w-[14%]" />
+                          <col className="w-[29%]" />
                           <col className="w-[12%]" />
                         </colgroup>
                         <thead className="border-b bg-muted/30 text-left text-xs uppercase tracking-wider text-muted-foreground">
@@ -463,10 +482,14 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                                   : task.last_version || "—"}
                               </td>
                               <td className="px-3 py-2">
-                                {task.has_update ? (
+                                {task.last_check_error ? (
+                                  <div className="space-y-1"><StatusBadge tone="danger">Check failed</StatusBadge><p className="text-xs text-muted-foreground">{task.last_check_error}</p><p className="text-xs text-muted-foreground">Attempt: {formatDateTime(task.last_attempted_at)}</p></div>
+                                ) : task.has_update ? (
                                   <StatusBadge tone="warning">
                                     {t("det.imageUpdateAvail")}
                                   </StatusBadge>
+                                ) : !catalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh ? (
+                                  <StatusBadge tone="warning">Check missing or stale</StatusBadge>
                                 ) : task.last_checked_at ? (
                                   <span className="text-xs text-emerald-500">
                                     ✓ {t("det.imageUpToDate")}
@@ -476,6 +499,8 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                                     —
                                   </span>
                                 )}
+                                <p className="mt-1 text-xs text-muted-foreground">{task.last_checked_at ? `Last successful check: ${formatDateTime(task.last_checked_at)}` : 'Not checked yet'}</p>
+                                <p className="text-xs text-muted-foreground">{task.source}{!catalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh && task.has_update ? ' · Stale result; verify before updating' : ''}</p>
                               </td>
                               <td className="px-4 py-2 text-right">
                                 <div className="flex justify-end">

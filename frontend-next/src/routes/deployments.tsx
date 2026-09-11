@@ -1,3 +1,4 @@
+import { ConfirmDeleteConnection } from '@/features/infrastructure/ConfirmDeleteConnection';
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -15,9 +16,9 @@ import { useUi } from "@/lib/store";
 import { hasCap, useProfile } from "@/lib/queries";
 import { showToast } from "@/lib/toast";
 import { formatDateTime } from "@/lib/utils";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { PlatformConnectionsDialog } from '@/features/infrastructure/PlatformConnectionsDialog';
 import { ProxmoxConnectionDialog, type ProxmoxConnection } from "@/features/infrastructure/ProxmoxConnectionDialog";
-import { ConfirmDeleteConnection, ProxmoxConnectionsCard } from "@/routes/infrastructure";
+import { ProxmoxConnectionsCard } from "@/routes/infrastructure";
 
 interface Run {
   id: string;
@@ -113,8 +114,8 @@ export function DeploymentsPage() {
 
   return <div className="space-y-5">
     <PageHeader
-      title="Managed VMs"
-      description="Each VM is managed independently with its own OpenTofu state, plans, and run history."
+      title="VM definitions"
+      description="VM definitions describe desired configuration and have independent plans and run history. Host operations (SSH, updates and playbooks) are linked separately."
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
         {(canManagePlatforms || connections.length > 0) && <Button type="button" variant="outline" onClick={() => setConnectionsOpen(true)}><Settings2 />Platform connections</Button>}
@@ -134,9 +135,9 @@ export function DeploymentsPage() {
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
       : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Managed VMs could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
-      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No managed VMs" description="Create a managed VM, or open Infrastructure inventory to inspect existing Proxmox virtual machines for adoption." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
+      : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No VM definitions" description="This list contains declaratively managed VM definitions. Existing Proxmox VMs and hosts remain in Infrastructure inventory; adopting a host does not create a VM definition." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
       : <Card>
-        <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />Managed VMs</CardTitle></CardHeader>
+        <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />VM definitions</CardTitle></CardHeader>
         <CardContent className="p-0">
           <div className="table-scroll">
             <table data-density="compact" className="w-full min-w-[850px] text-sm">
@@ -178,12 +179,9 @@ export function DeploymentsPage() {
         : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
     <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
-    <Dialog open={connectionsOpen} onOpenChange={setConnectionsOpen}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-3xl overflow-y-auto p-0">
-        <DialogHeader className="border-b px-5 py-4"><DialogTitle>Platform connections</DialogTitle><DialogDescription>Manage the Proxmox connections used to create and operate managed VMs.</DialogDescription></DialogHeader>
-        <div className="p-4">{connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}</div>
-      </DialogContent>
-    </Dialog>
+    <PlatformConnectionsDialog open={connectionsOpen && !connectionEditorOpen && !connectionToDelete} onOpenChange={setConnectionsOpen}>
+      {connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}
+    </PlatformConnectionsDialog>
     <ProxmoxConnectionDialog environmentId={environmentId} connection={connectionToEdit} open={connectionEditorOpen} onOpenChange={setConnectionEditorOpen} />
     <ConfirmDeleteConnection connection={connectionToDelete} onOpenChange={(next) => !next && setConnectionToDelete(null)} onDeleted={() => { setConnectionToDelete(null); refresh(); }} />
     <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />

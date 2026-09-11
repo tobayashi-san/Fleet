@@ -30,6 +30,7 @@ function buildServerAttention({
   updates = [],
   imageUpdates = null,
   customUpdatesCount = 0,
+  customCheckFailures = 0,
   history = [],
   alerts = [],
   includeUpdates = false,
@@ -102,6 +103,10 @@ function buildServerAttention({
   if (containerUpdates > 0) reasons.push({ code: 'image_updates', severity: 'warning', count: containerUpdates });
   if (includeCustomUpdates && customUpdatesCount > 0) {
     reasons.push({ code: 'custom_updates', severity: 'warning', count: customUpdatesCount });
+  }
+
+  if (includeCustomUpdates && customCheckFailures > 0) {
+    reasons.push({ code: 'custom_check_failed', severity: 'warning', count: customCheckFailures });
   }
 
   const recentRuns = includeHistory ? history.slice(0, 4) : [];

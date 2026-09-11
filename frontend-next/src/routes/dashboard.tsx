@@ -9,11 +9,12 @@ import {
   Activity, ChevronDown, ChevronUp,
 } from 'lucide-react';
 import { api, apiFetch } from '@/lib/api';
+import { attentionPriority, compareAttentionHosts } from '@/features/dashboard/attention-order';
 import { showToast } from '@/lib/toast';
 import { ws } from '@/lib/ws';
 import { actionLabel, statusLabel } from '@/lib/history-labels';
 import { useUi } from '@/lib/store';
-import { asArray, cn } from '@/lib/utils';
+import { asArray, cn, parseApiDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { PageHeader } from '@/components/ui/page-header';
@@ -34,9 +35,12 @@ interface ServerInfo {
   cpu_pct?: number | null;
   uptime_seconds?: number | null;
   reboot_required?: boolean;
-  updates_count?: number;
-  image_updates_count?: number;
-  custom_updates_count?: number;
+  updates_count?: number | null;
+  updates_stale?: boolean;
+  image_updates_count?: number | null;
+  image_updates_stale?: boolean;
+  custom_updates_count?: number | null;
+  custom_updates_stale?: boolean;
   tags?: string[];
   agent_mode?: string;
   agent_state?: string;
@@ -49,7 +53,6 @@ interface ServerInfo {
     reasons: { code: string; severity: 'warning' | 'critical'; count: number }[];
   };
 }
-
 interface CustomUpdateTask {
   id: string;
   name: string;
@@ -87,7 +90,7 @@ interface DashboardData {
   alerts?: AlertInfo[];
   recentHistory: HistoryEntry[];
 }
-interface FailedOperationsData { counts?: { failed?: number } }
+interface OperationCountsData { counts?: { failed?: number; active?: number } }
 
 interface AlertInfo {
   id: string;
@@ -125,8 +128,8 @@ function formatUptime(seconds?: number | null) {
 function formatRelativeTime(dateStr: string | undefined, t: (k: string, o?: Record<string, unknown>) => string) {
   if (!dateStr) return '—';
   try {
-    const dt = !dateStr.endsWith('Z') ? dateStr.replace(' ', 'T') + 'Z' : dateStr;
-    const diff = Date.now() - new Date(dt).getTime();
+    const diff = Date.now() - parseApiDate(dateStr).getTime();
+    if (!Number.isFinite(diff)) return '—';
     const mins = Math.floor(diff / 60000);
     if (mins < 1) return t('dash.justNow');
     if (mins < 60) return t('dash.minutesAgo', { n: mins });
@@ -161,11 +164,12 @@ export function DashboardPage() {
     queryFn: () => api.getDashboard() as unknown as Promise<DashboardData>,
     refetchInterval: 30_000,
   });
-  const operationsQuery = useQuery<FailedOperationsData>({
+  const operationsQuery = useQuery<OperationCountsData>({
     queryKey: ['operations', environmentId, 'dashboard-counts'],
-    queryFn: () => apiFetch<FailedOperationsData>('/operations?scope=failed&page=1&page_size=1'),
+    queryFn: () => apiFetch<OperationCountsData>('/operations?scope=failed&page=1&page_size=1', { environmentId }),
     enabled: canViewOperations,
     staleTime: 30_000,
+    refetchInterval: 30_000,
   });
   const operationsData = operationsQuery.data;
 
@@ -214,10 +218,10 @@ export function DashboardPage() {
         }
       }
     } finally {
-      await refetch();
+      await Promise.all([refetch(), ...(canViewOperations ? [operationsQuery.refetch()] : [])]);
       setRefreshing(false);
     }
-  }, [canViewUpdates, data?.servers, refetch, t]);
+  }, [canViewUpdates, canViewOperations, data?.servers, refetch, operationsQuery.refetch, t]);
 
   const isBusy = isFetching || refreshing;
   const agentEnabled = data?.agentEnabled === true;
@@ -226,11 +230,11 @@ export function DashboardPage() {
     const allServers = asArray<ServerInfo>(data?.servers);
     return allServers.filter((server) => String((server as ServerInfo & { environment_id?: string }).environment_id || 'default') === environmentId);
   }, [data?.servers, environmentId]);
-  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0, failedOperations: operationsData?.counts?.failed ?? data?.summary?.failedOperations ?? (canViewOperations && (operationsQuery.isPending || operationsQuery.isError) ? null : 0) }), [canViewOperations, data?.summary?.failedOperations, operationsData?.counts?.failed, operationsQuery.isError, operationsQuery.isPending, servers]);
+  const summary = useMemo(() => ({ total: servers.length, online: servers.filter(s => s.status === 'online').length, offline: servers.filter(s => s.status === 'offline').length, rebootRequired: servers.filter(s => s.reboot_required).length, totalUpdates: servers.reduce((total, s) => total + (s.updates_count ?? 0), 0), criticalDisk: 0, criticalRam: 0, failedOperations: canViewOperations && !operationsQuery.isError ? operationsData?.counts?.failed ?? null : null }), [canViewOperations, operationsData?.counts?.failed, operationsQuery.isError, servers]);
   const recentHistory = asArray<HistoryEntry>(data?.recentHistory);
   const attentionCount = useMemo(() => servers.filter(needsAttention).length, [servers]);
 
-  const orderedHosts = useMemo(() => [...servers].sort((a, b) => Number(needsAttention(b)) - Number(needsAttention(a)) || a.name.localeCompare(b.name, 'en')), [servers]);
+  const orderedHosts = useMemo(() => [...servers].sort(compareAttentionHosts), [servers]);
   const attentionHosts = useMemo(() => orderedHosts.filter(needsAttention), [orderedHosts]);
   const ackAlert = useMutation({
     mutationFn: (id: string) => api.acknowledgeAlert(id),
@@ -249,13 +253,14 @@ export function DashboardPage() {
     );
   }, [data?.alerts, servers]);
   const actionableHistory = useMemo(() => recentHistory.filter(item => item.status === 'failed' || item.status === 'running' || item.status === 'queued'), [recentHistory]);
-  const runningTaskCount = actionableHistory.filter(item => item.status === 'running' || item.status === 'queued').length;
-  const criticalAlertCount = activeAlerts.filter(alert => alertTone(alert) === 'danger').length;
+  const runningTaskCount = canViewOperations && !operationsQuery.isError ? operationsData?.counts?.active ?? null : null;
+  const criticalHostCount = servers.filter(host => attentionPriority(host) === 2).length;
+  const unknownUpdateHosts = servers.filter(server => (canViewUpdates && (server.updates_count == null || server.updates_stale === true)) || (canViewUpdates && canViewDocker && (server.image_updates_count == null || server.image_updates_stale === true)) || (canViewCustomUpdates && server.custom_updates_stale === true)).length;
   const updateCount = servers.reduce((total, server) => total
     + (canViewUpdates ? (server.updates_count ?? 0) : 0)
     + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
     + (canViewCustomUpdates ? (server.custom_updates_count ?? 0) : 0), 0);
-  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0;
+  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0 || (runningTaskCount ?? 0) > 0 || (summary.failedOperations ?? 0) > 0;
   const dataAge = dataUpdatedAt ? Math.max(0, freshnessNow - dataUpdatedAt) : 0;
   const freshness = dataUpdatedAt ? formatDashboardFreshness(dataUpdatedAt, freshnessNow, t) : t('dash.notUpdatedYet');
 
@@ -274,21 +279,25 @@ export function DashboardPage() {
 
       <OverviewStatusBar
         loading={isLoading}
-        criticalAlerts={criticalAlertCount}
+        criticalHosts={criticalHostCount}
         offlineHosts={summary.offline}
         updates={updateCount}
+        unknownUpdateHosts={unknownUpdateHosts}
         runningTasks={runningTaskCount}
         failedOperations={summary.failedOperations}
+        canViewOperations={canViewOperations}
       />
 
-      {canViewOperations && operationsQuery.isError && data?.summary?.failedOperations == null && (
+      {!isLoading && !isError && unknownUpdateHosts > 0 && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Update checks are missing or stale for {unknownUpdateHosts} host{unknownUpdateHosts === 1 ? '' : 's'}. The update total includes only reported results; open the hosts to check missing OS, image or custom results and refresh stale results.</p>}
+
+      {canViewOperations && operationsQuery.isError && (
         <QueryErrorState
           compact
           error={operationsQuery.error}
           onRetry={() => {
             void operationsQuery.refetch();
           }}
-          title="Failed operation count could not be loaded"
+          title="Operation counts could not be loaded"
         />
       )}
 
@@ -315,7 +324,7 @@ export function DashboardPage() {
         </Card>
       )}
 
-      {!isError && !isLoading && servers.length > 0 && !hasAttention && (
+      {!isError && !isLoading && servers.length > 0 && unknownUpdateHosts === 0 && !hasAttention && (!canViewOperations || (runningTaskCount !== null && summary.failedOperations !== null)) && (
         <HealthySummary totalHosts={summary.total} onlineHosts={summary.online} />
       )}
 
@@ -350,29 +359,32 @@ function alertTone(alert: AlertInfo): 'danger' | 'warning' | 'muted' {
   return alert.severity === 'critical' || alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'muted';
 }
 
-function OverviewStatusBar({ loading, criticalAlerts, offlineHosts, updates, runningTasks, failedOperations }: {
+function OverviewStatusBar({ loading, criticalHosts, offlineHosts, updates, unknownUpdateHosts, runningTasks, failedOperations, canViewOperations }: {
   loading: boolean;
-  criticalAlerts: number;
+  criticalHosts: number;
   offlineHosts: number;
   updates: number;
-  runningTasks: number;
+  unknownUpdateHosts: number;
+  runningTasks: number | null;
   failedOperations: number | null;
+  canViewOperations: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label={t('dash.currentEnvironmentStatus')}>
-      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label={t('dash.critical')} value={loading ? '—' : criticalAlerts} to="/servers" search={{ attention: true }} tone={criticalAlerts > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical hosts" value={loading ? '—' : criticalHosts} to="/servers" search={{ severity: 'critical' }} tone={criticalHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
-      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
-      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label={t('dash.runningTasks')} value={loading ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={runningTasks > 0 ? 'info' : 'neutral'} />
-      <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Failed operations" value={loading || failedOperations === null ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={(failedOperations ?? 0) > 0 ? 'danger' : 'neutral'} />
+      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} description={unknownUpdateHosts ? 'Reported results · incomplete checks' : 'Reported OS, image and custom updates'} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
+      {canViewOperations && <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Active operations" description="Running and queued" value={loading || runningTasks === null ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={(runningTasks ?? 0) > 0 ? 'info' : 'neutral'} />}
+      {canViewOperations && <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Unacknowledged failures" description="All retained history" value={loading || failedOperations === null ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={(failedOperations ?? 0) > 0 ? 'danger' : 'neutral'} />}
     </section>
   );
 }
 
-function OverviewStatusItem({ icon, label, value, to, search, tone }: {
+function OverviewStatusItem({ icon, label, description, value, to, search, tone }: {
   icon: React.ReactNode;
   label: string;
+  description?: string;
   value: number | string;
   to: '/operations' | '/servers';
   search?: Record<string, string | boolean>;
@@ -389,6 +401,7 @@ function OverviewStatusItem({ icon, label, value, to, search, tone }: {
       <span className="min-w-0">
         <span className={cn('block font-mono text-lg font-semibold leading-5', tone === 'danger' && 'text-destructive', tone === 'warning' && 'text-warning')}>{value}</span>
         <span className="block truncate text-[13px] text-muted-foreground group-hover:text-foreground">{label}</span>
+        {description && <span className="block text-xs text-muted-foreground">{description}</span>}
       </span>
     </Link>
   );
@@ -444,7 +457,7 @@ function RecentTasksSection({ history }: { history: HistoryEntry[] }) {
   return (
     <div className="border-b">
       <DashboardSectionHeader icon={<Clock className="h-3.5 w-3.5" />} title={t('dash.runningFailedTasks')} count={history.length} />
-        <div className="table-scroll hidden md:block">
+      <div className="table-scroll hidden md:block">
           <table className="w-full text-sm" data-density="compact">
             <thead><tr className="border-b text-left text-xs text-muted-foreground"><th className="w-8 px-4 py-2" /><th className="px-2 py-2">{t('dash.target')}</th><th className="px-2 py-2">{t('dash.task')}</th><th className="w-36 px-2 py-2">{t('dash.started')}</th><th className="w-32 px-4 py-2">{t('dash.result')}</th></tr></thead>
             <tbody>{history.slice(0, 6).map((item, index) => <RecentTaskRow key={item.id ?? index} item={item} />)}</tbody>
@@ -460,13 +473,15 @@ function taskTone(status?: string): 'info' | 'danger' | 'muted' {
 }
 
 function RecentTaskRow({ item }: { item: HistoryEntry }) {
+  const environmentId = useUi(state => state.environmentId);
   const { t } = useTranslation();
-  return <tr className="border-b last:border-b-0 hover:bg-muted/35"><td className="px-4 py-2"><span className={`block h-2 w-2 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /></td><td className="px-2 py-2 font-medium">{item.server_name || '—'}</td><td className="px-2 py-2 text-muted-foreground">{actionLabel(t, item.action)}</td><td className="px-2 py-2 font-mono text-xs text-muted-foreground">{formatRelativeTime(item.started_at, t)}</td><td className="px-4 py-2"><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></td></tr>;
+  return <tr className="border-b last:border-b-0 hover:bg-muted/35"><td className="px-4 py-2"><span className={`block h-2 w-2 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /></td><td className="px-2 py-2 font-medium">{item.server_name || '—'}</td><td className="px-2 py-2 text-muted-foreground">{item.id != null ? <Link to="/operations/executions/$id" params={{ id: `host-${item.id}` }} search={{ environment: environmentId }} className="text-primary hover:underline">{actionLabel(t, item.action)}</Link> : actionLabel(t, item.action)}</td><td className="px-2 py-2 font-mono text-xs text-muted-foreground">{formatRelativeTime(item.started_at, t)}</td><td className="px-4 py-2"><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></td></tr>;
 }
 
 function RecentTaskCard({ item }: { item: HistoryEntry }) {
+  const environmentId = useUi(state => state.environmentId);
   const { t } = useTranslation();
-  return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
+  return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{item.id != null ? <Link to="/operations/executions/$id" params={{ id: `host-${item.id}` }} search={{ environment: environmentId }} className="text-primary hover:underline">{actionLabel(t, item.action)}</Link> : actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
 }
 
 function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: TFunction }) {
@@ -481,6 +496,7 @@ function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: Serve
         count={total}
         action={<Link to="/servers" search={{ attention: true }} className="text-xs font-medium text-primary hover:underline">{t('dash.allHosts')}</Link>}
       />
+      <p className="px-4 pb-2 text-xs text-muted-foreground">Critical hosts first, then warnings; sorted by name within each severity.</p>
       <div className="table-scroll hidden md:block">
         <table className="w-full text-sm" data-density="compact">
           <thead><tr><th>{t('servers.host')}</th><th className="w-[120px]">{t('common.status')}</th><th>{t('dash.reason')}</th>{agentEnabled && <th className="w-[150px]">{t('dash.agentMode')}</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
@@ -508,7 +524,7 @@ function AttentionHostMobileRow({ server }: { server: ServerInfo }) {
         <span className="min-w-0 flex-1 truncate text-sm font-medium">{server.name}</span>
         <span className="font-mono text-xs text-muted-foreground">{server.ip_address}</span>
       </div>
-      <div className="mt-2 flex flex-wrap gap-1"><UpdatesChips s={server} /></div>
+      <div className="mt-2 flex flex-wrap gap-1"><AttentionReasonChips s={server} /></div>
     </Link>
   );
 }
@@ -536,7 +552,7 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
       onClick={() => navigate({ to: '/servers/$id', params: { id: String(s.id) } })}>
       <td className="px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
-          <span className="truncate font-medium">{s.name}</span>
+          <Link to="/servers/$id" params={{ id: String(s.id) }} onClick={event => event.stopPropagation()} className="truncate font-medium hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{s.name}</Link>
           <span className="truncate font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
         </div>
       </td>
@@ -561,6 +577,8 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   const chips: React.ReactNode[] = [];
   const failedOperations = s.attention?.reasons.find(reason => reason.code === 'failed_operations')?.count ?? 0;
   const activeAlertCount = s.attention?.reasons.find(reason => reason.code === 'active_alerts')?.count ?? (s.alert_count ?? 0);
+  const failedCustomChecks = s.attention?.reasons.find(reason => reason.code === 'custom_check_failed')?.count ?? 0;
+  if (canViewCustomUpdates && failedCustomChecks > 0) chips.push(<StatusBadge key="custom-check-failed" tone="warning">{failedCustomChecks} failed custom {failedCustomChecks === 1 ? 'check' : 'checks'}</StatusBadge>);
   const resourceReasons = s.attention?.reasons.filter(reason => reason.code.endsWith('_capacity')) || [];
   if (s.status === 'offline') chips.push(<StatusBadge key="offline" tone="danger">{t('common.offline')}</StatusBadge>);
   if (activeAlertCount > 0) chips.push(<StatusBadge key="alerts" tone="danger"><Bell className="mr-1 h-3 w-3" />{t('dash.alertCount', { count: activeAlertCount })}</StatusBadge>);
@@ -576,5 +594,3 @@ function AttentionReasonChips({ s }: { s: ServerInfo }) {
   if (chips.length === 0) return null;
   return <>{chips}</>;
 }
-
-const UpdatesChips = AttentionReasonChips;

@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
+import React from 'react';import {createRoot} from 'react-dom/client';import {QueryClient,QueryClientProvider} from '@tanstack/react-query';import {createRouter,createRootRoute,RouterProvider} from '@tanstack/react-router';import {SchedulesTab} from '/src/features/playbooks/PlaybookSchedules.tsx';import {Dialog} from '/src/components/ui/dialog.tsx';import '/src/lib/i18n.ts';import '/src/index.css';
+window.fetch=async url=>{
+ const endpoint=String(url);
+ const data=endpoint.includes('/profile')?{role:'admin',permissions:{full:true}}:endpoint.includes('/preview')?{timezone:'Europe/Zurich',runs:['2026-09-10T01:00:00Z','2026-09-11T01:00:00Z','2026-09-12T01:00:00Z'],computedAt:'2026-09-09T19:00:00Z'}:endpoint.includes('/playbooks')?[{filename:'update.yml',description:'Update packages'}]:endpoint.includes('/servers')?[{id:'web',name:'web-01',hostname:'web.internal',ip_address:'10.0.0.10',status:'online',tags:['production']},{id:'db',name:'db-01',hostname:'db.internal',ip_address:'10.0.0.20',status:'offline',tags:['database']}]:[];
+ return new Response(JSON.stringify(data),{status:200,headers:{'Content-Type':'application/json'}});
+};
+const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
+const route=createRootRoute({component:()=>React.createElement('main',{style:{maxWidth:1050,margin:'24px auto',padding:24}},React.createElement('h1',null,'Schedules · local review fixture'),React.createElement(SchedulesTab))});
+const router=createRouter({routeTree:route});
+createRoot(document.getElementById('root')).render(React.createElement(QueryClientProvider,{client},React.createElement(RouterProvider,{router})));
+</script></body></html>

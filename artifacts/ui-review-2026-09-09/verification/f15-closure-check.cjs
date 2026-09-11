@@ -1,0 +1,22 @@
+const { chromium, expect } = require('../../../frontend-next/node_modules/@playwright/test');
+const fs = require('fs');
+const path = require('path');
+const project = path.resolve(__dirname, '../../..');
+const frontend = path.join(project, 'frontend-next');
+const temporary = path.join(frontend, 'f15-run-fixture.html');
+(async()=>{let browser;try{
+  if(fs.existsSync(temporary))throw Error(`Temporary fixture exists: ${temporary}`);
+  fs.copyFileSync(path.join(__dirname,'f15-run-fixture.html'),temporary);
+  browser=await chromium.launch({headless:true,executablePath:'/home/tobiasamstutz/.cache/ms-playwright/chromium-1234/chrome-linux64/chrome',args:['--no-sandbox']});
+  const page=await browser.newPage({viewport:{width:1440,height:1050}});await page.goto('http://localhost:5188/f15-run-fixture.html');
+  await page.getByLabel('Playbook').selectOption('patch.yml');
+  await expect(page.getByText('Runs inside the Shipyard runtime, not on a remote host.')).toBeVisible();
+  await page.getByText('web-01').click();await page.getByText('localhost',{exact:true}).click();
+  await expect(page.getByText('Target preview · 2 hosts')).toBeVisible();
+  await page.getByRole('button',{name:'Add variable'}).click();await page.getByLabel('Variable 1 key').fill('batch_size');await page.getByLabel('Variable 1 type').selectOption('number');await page.getByLabel('Variable 1 value').fill('10');
+  await page.getByRole('switch',{name:'Dry run'}).click();await expect(page.getByRole('button',{name:'Start dry run'})).toBeVisible();
+  await page.screenshot({path:path.join(__dirname,'playbook-run-structured-final.png'),fullPage:true});
+  await page.getByRole('button',{name:'Start dry run'}).click();await expect(page.getByRole('dialog')).toBeVisible();await expect(page.getByText('Dry run · 5 parallel hosts')).toBeVisible();await expect(page.getByText('repository_token')).toBeVisible();await expect(page.getByText('••••••••')).toBeVisible();await expect(page.getByText('batch_size')).toBeVisible();await expect(page.getByText('10',{exact:true})).toBeVisible();
+  await page.screenshot({path:path.join(__dirname,'playbook-run-review-final.png'),fullPage:true});
+  console.log('PASS structured run variables, localhost, dry run and exact review');
+}finally{if(browser)await browser.close();if(fs.existsSync(temporary))fs.unlinkSync(temporary);}})().catch(error=>{console.error(error);process.exitCode=1;});

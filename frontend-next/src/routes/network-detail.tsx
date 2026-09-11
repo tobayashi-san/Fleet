@@ -1,3 +1,4 @@
+import { prefixInputErrors } from "@/lib/ipam-form-validation";
 import {
   cloneElement,
   Fragment,
@@ -25,6 +26,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { apiFetch } from "@/lib/api";
+import { releaseIpamAllocations, type ReleaseResult } from "@/lib/ipam-bulk-release";
 import { showToast } from "@/lib/toast";
 import { formatDateTime } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -192,8 +194,12 @@ const sourceSystemName = (type?: string) =>
         : type || "";
 
 export function NetworkDetailPage() {
-  const networkTabs = useUrlTab("allocations", NETWORK_TABS);
   const { id } = useParams({ strict: false }) as { id: string };
+  return <NetworkDetailContent key={id} id={id} />;
+}
+
+function NetworkDetailContent({ id }: { id: string }) {
+  const networkTabs = useUrlTab("allocations", NETWORK_TABS);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
@@ -204,7 +210,7 @@ export function NetworkDetailPage() {
   const [macAddress, setMacAddress] = useState("");
   const [description, setDescription] = useState("");
   const [serverId, setServerId] = useState("");
-  const [addressStatus, setAddressStatus] = useState("active");
+  const [addressStatus, setAddressStatus] = useState("reserved");
   const [addressRole, setAddressRole] = useState("");
   const [rangeStart, setRangeStart] = useState("");
   const [rangeEnd, setRangeEnd] = useState("");
@@ -230,6 +236,7 @@ export function NetworkDetailPage() {
     queryKey: ["ipam", "network", id],
     queryFn: () => apiFetch<Prefix>(`/ipam/subnets/${encodeURIComponent(id)}`),
   });
+  const targetEnvironmentId = detail.data?.environment_id || environmentId;
   const allocations = useQuery({
     queryKey: ["ipam", "allocations", id, allocationPage, allocationSearch, allocationStatus],
     queryFn: () =>
@@ -238,11 +245,12 @@ export function NetworkDetailPage() {
       ),
   });
   const reservationValidation = useQuery({
-    queryKey: ["ipam", "reservation-validation", id, addKind, deferredAddress, deferredRangeStart, deferredRangeEnd],
+    queryKey: ["ipam", "reservation-validation", id, targetEnvironmentId, addKind, deferredAddress, deferredRangeStart, deferredRangeEnd],
     queryFn: () => apiFetch<{ valid: boolean; message: string }>(
       `/ipam/subnets/${encodeURIComponent(id)}/reservations/validate`,
       {
         method: "POST",
+        environmentId: targetEnvironmentId,
         body: addKind === "address"
           ? { kind: "address", address: deferredAddress }
           : { kind: "range", start_address: deferredRangeStart, end_address: deferredRangeEnd },
@@ -266,31 +274,36 @@ export function NetworkDetailPage() {
       apiFetch<Prefix[]>(`/ipam/subnets/${encodeURIComponent(id)}/children`),
   });
   const servers = useQuery({
-    queryKey: ["servers", environmentId],
-    queryFn: () => apiFetch<Server[]>(`/servers?environment_id=${encodeURIComponent(environmentId)}`),
+    queryKey: ["servers", targetEnvironmentId],
+    queryFn: () => apiFetch<Server[]>(`/servers?environment_id=${encodeURIComponent(targetEnvironmentId)}`, { environmentId: targetEnvironmentId }),
   });
   const connections = useQuery({
-    queryKey: ["opentofu", "proxmox-connections", environmentId],
+    queryKey: ["opentofu", "proxmox-connections", targetEnvironmentId],
     queryFn: () =>
       apiFetch<ProxmoxConnection[]>(
-        `/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`,
+        `/opentofu/proxmox-connections?environment_id=${encodeURIComponent(targetEnvironmentId)}`,
+        { environmentId: targetEnvironmentId },
       ),
     retry: false,
   });
   const refresh = () =>
     void queryClient.invalidateQueries({ queryKey: ["ipam"] });
   const openAddressReservation = (nextAddress = "") => {
+    reserve.reset();
+    reserveRange.reset();
     setAddress(nextAddress);
     setHostname("");
     setMacAddress("");
     setDescription("");
     setServerId("");
-    setAddressStatus("active");
+    setAddressStatus("reserved");
     setAddressRole("");
     setAddKind("address");
     setAddOpen(true);
   };
   const openRangeReservation = (segment: FreeSpaceSegment) => {
+    reserve.reset();
+    reserveRange.reset();
     setRangeStart(segment.start_address);
     setRangeEnd(segment.end_address);
     setRangeDescription("");
@@ -302,6 +315,7 @@ export function NetworkDetailPage() {
     mutationFn: () =>
       apiFetch(`/ipam/subnets/${encodeURIComponent(id)}/reservations`, {
         method: "POST",
+        environmentId: targetEnvironmentId,
         body: {
           address,
           hostname,
@@ -322,7 +336,10 @@ export function NetworkDetailPage() {
       showToast(tr("ipCreated"), "success");
       refresh();
     },
-    onError: (error: Error) => showToast(error.message, "error"),
+    onError: (error: Error) => {
+      showToast(error.message, "error");
+      void queryClient.invalidateQueries({ queryKey: ["ipam", "reservation-validation", id] });
+    },
   });
   const reserveRange = useMutation({
     mutationFn: () =>
@@ -330,6 +347,7 @@ export function NetworkDetailPage() {
         `/ipam/subnets/${encodeURIComponent(id)}/reservations/range`,
         {
           method: "POST",
+        environmentId: targetEnvironmentId,
           body: {
             start_address: rangeStart,
             end_address: rangeEnd,
@@ -346,14 +364,19 @@ export function NetworkDetailPage() {
       showToast(tr("rangeReserved", { count: result.count }), "success");
       refresh();
     },
-    onError: (error: Error) => showToast(error.message, "error"),
+    onError: (error: Error) => {
+      showToast(error.message, "error");
+      void queryClient.invalidateQueries({ queryKey: ["ipam", "reservation-validation", id] });
+    },
   });
   const removeReservation = useMutation({
     mutationFn: (reservationId: string) =>
       apiFetch(`/ipam/reservations/${encodeURIComponent(reservationId)}`, {
         method: "DELETE",
+        environmentId: targetEnvironmentId,
       }),
     onSuccess: () => {
+      setReleaseTarget(null);
       showToast(tr("ipReleased"), "success");
       refresh();
     },
@@ -363,8 +386,10 @@ export function NetworkDetailPage() {
     mutationFn: (rangeId: string) =>
       apiFetch(`/ipam/ranges/${encodeURIComponent(rangeId)}`, {
         method: "DELETE",
+        environmentId: targetEnvironmentId,
       }),
     onSuccess: () => {
+      setReleaseTarget(null);
       showToast(tr("rangeReleased"), "success");
       refresh();
     },
@@ -374,6 +399,7 @@ export function NetworkDetailPage() {
     mutationFn: (reservation: Reservation) =>
       apiFetch(`/ipam/reservations/${encodeURIComponent(reservation.id)}`, {
         method: "PUT",
+        environmentId: targetEnvironmentId,
         body: {
           ...reservation,
           status:
@@ -392,6 +418,7 @@ export function NetworkDetailPage() {
     mutationFn: ({ reservation, name }: { reservation: Reservation; name: string }) =>
       apiFetch(`/ipam/reservations/${encodeURIComponent(reservation.id)}/device-name`, {
         method: "PATCH",
+        environmentId: targetEnvironmentId,
         body: { name },
       }),
     onSuccess: () => {
@@ -405,6 +432,7 @@ export function NetworkDetailPage() {
     mutationFn: (value: Partial<Prefix>) =>
       apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, {
         method: "PUT",
+        environmentId: targetEnvironmentId,
         body: value,
       }),
     onSuccess: () => {
@@ -415,7 +443,7 @@ export function NetworkDetailPage() {
     onError: (error: Error) => showToast(error.message, "error"),
   });
   const deletePrefix = useMutation({
-    mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, { method: "DELETE" }),
+    mutationFn: () => apiFetch(`/ipam/subnets/${encodeURIComponent(id)}`, { method: "DELETE", environmentId: targetEnvironmentId }),
     onSuccess: async () => {
       setDeletePrefixOpen(false);
       await queryClient.invalidateQueries({ queryKey: ["ipam"] });
@@ -433,7 +461,8 @@ export function NetworkDetailPage() {
         failed: number;
       }>(
         `/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/sync-ipam`,
-        { method: "POST", body: { subnet_id: id } },
+        { method: "POST",
+        environmentId: targetEnvironmentId, body: { subnet_id: id } },
       ),
     onSuccess: (result) => {
       showToast(
@@ -558,7 +587,7 @@ export function NetworkDetailPage() {
             {canEdit && <Button
               size="sm"
               onClick={() => {
-                openAddressReservation();
+                openAddressReservation(network.next_free_address || "");
               }}
             >
               <Plus />
@@ -586,9 +615,9 @@ export function NetworkDetailPage() {
               {tr("syncProxmox")}
             </Button>}
             {canEdit && <OverflowMenu title={tr("moreActions")}>
-              <OverflowItem icon={Pencil} onClick={() => setEditPrefixOpen(true)}>{tr("editPrefix")}</OverflowItem>
+              <OverflowItem icon={Pencil} onClick={() => { updatePrefix.reset(); setEditPrefixOpen(true); }}>{tr("editPrefix")}</OverflowItem>
               <OverflowSep />
-              <OverflowItem icon={Trash2} danger onClick={() => setDeletePrefixOpen(true)}>{tr("delete")}</OverflowItem>
+              <OverflowItem icon={Trash2} danger onClick={() => { deletePrefix.reset(); setDeletePrefixOpen(true); }}>{tr("delete")}</OverflowItem>
             </OverflowMenu>}
           </div>
         }
@@ -674,9 +703,7 @@ export function NetworkDetailPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    setAddress(network.next_free_address || "");
-                    setAddKind("address");
-                    setAddOpen(true);
+                    openAddressReservation(network.next_free_address || "");
                   }}
                   className="font-mono text-sm font-medium text-brand hover:underline"
                 >
@@ -765,6 +792,7 @@ export function NetworkDetailPage() {
             />
           ) : (
             <AllocationTable
+              environmentId={network.environment_id}
               rows={allocationRows}
               freeSegments={freeSegments}
               loading={allocations.isPending}
@@ -779,23 +807,12 @@ export function NetworkDetailPage() {
               onStatusFilter={setAllocationStatus}
               onEdit={setEditing}
               onName={setNaming}
-              onRelease={setReleaseTarget}
-              onBulkRelease={async (selected) => {
-                await Promise.all(
-                  selected.map((row) =>
-                    apiFetch(
-                      row.kind === "address"
-                        ? `/ipam/reservations/${encodeURIComponent(row.id)}`
-                        : `/ipam/ranges/${encodeURIComponent(row.id)}`,
-                      { method: "DELETE" },
-                    ),
-                  ),
-                );
-                showToast(
-                  tr("recordsReleased", { count: selected.length }),
-                  "success",
-                );
+              onRelease={(row) => { removeReservation.reset(); removeRange.reset(); setReleaseTarget(row); }}
+              onBulkRelease={async (selected, targetEnvironmentId) => {
+                const result = await releaseIpamAllocations(selected, targetEnvironmentId);
+                if (!result.failed.length) showToast(tr("recordsReleased", { count: result.released.length }), "success");
                 refresh();
+                return result;
               }}
               onReserveFirst={(segment) =>
                 openAddressReservation(segment.start_address)
@@ -830,15 +847,19 @@ export function NetworkDetailPage() {
         onSave={(name) => naming && updateDeviceName.mutate({ reservation: naming, name })}
         saving={updateDeviceName.isPending}
       />
-      <EditPrefixDialog
+      {editPrefixOpen && <EditPrefixDialog
         prefix={network}
         open={editPrefixOpen}
         onOpenChange={setEditPrefixOpen}
         onSave={(value) => updatePrefix.mutate(value)}
         saving={updatePrefix.isPending}
-      />
+        error={updatePrefix.error?.message}
+      />}
       <ConfirmDialog
         open={deletePrefixOpen}
+        targetEnvironmentId={targetEnvironmentId}
+        closeOnConfirm={false}
+        error={deletePrefix.error?.message}
         onOpenChange={setDeletePrefixOpen}
         title={tr("deletePrefix")}
         description={tr("deletePrefixDescription", {
@@ -854,6 +875,9 @@ export function NetworkDetailPage() {
       />
       <ConfirmDialog
         open={Boolean(releaseTarget)}
+        targetEnvironmentId={targetEnvironmentId}
+        closeOnConfirm={false}
+        error={(releaseTarget?.kind === "range" ? removeRange.error : removeReservation.error)?.message}
         onOpenChange={(open) => !open && setReleaseTarget(null)}
         title={
           releaseTarget?.kind === "range"
@@ -881,18 +905,20 @@ export function NetworkDetailPage() {
         }}
         isPending={removeReservation.isPending || removeRange.isPending}
       />
-      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+      <Dialog open={addOpen} onOpenChange={(open) => { if (!reserve.isPending && !reserveRange.isPending) setAddOpen(open); }}>
         <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{tr("reserveSpace")}</DialogTitle>
             <DialogDescription>
-              {tr("reserveSpaceDescription")}
+              {tr("reserveSpaceDescription")} {tr("reservationContext", { cidr: network.cidr })}
+              {addressStatus === "active" && tr("activeReservationHint")}
             </DialogDescription>
           </DialogHeader>
           <div className="inline-flex w-fit rounded-md border bg-muted/30 p-0.5">
             <Button
               type="button"
               size="sm"
+              disabled={reserve.isPending || reserveRange.isPending}
               variant={addKind === "address" ? "secondary" : "ghost"}
               onClick={() => setAddKind("address")}
             >
@@ -901,6 +927,7 @@ export function NetworkDetailPage() {
             <Button
               type="button"
               size="sm"
+              disabled={reserve.isPending || reserveRange.isPending}
               variant={addKind === "range" ? "secondary" : "ghost"}
               onClick={() => setAddKind("range")}
             >
@@ -925,6 +952,8 @@ export function NetworkDetailPage() {
               onRetry={() => void reservationValidation.refetch()}
             />
           )}
+          {(addKind === "address" ? reserve.error : reserveRange.error) && <p role="alert" className="text-sm text-destructive">{(addKind === "address" ? reserve.error : reserveRange.error)?.message}</p>}
+          {(reserve.isPending || reserveRange.isPending) && <p role="status" className="text-sm text-muted-foreground">{tr("savingReservation", { cidr: network.cidr })}</p>}
           {addKind === "address" ? (
             <AddressForm
               address={address}
@@ -936,7 +965,7 @@ export function NetworkDetailPage() {
               role={addressRole}
               servers={serverRows}
               submitting={reserve.isPending}
-              validation={reservationValidation.data}
+              validation={reservationValidation.isError ? { valid: false, message: tr("reservationValidationFailed") } : reservationValidation.data}
               validating={reservationValidation.isFetching || address.trim() !== deferredAddress}
               onAddress={setAddress}
               onHostname={setHostname}
@@ -953,7 +982,7 @@ export function NetworkDetailPage() {
               end={rangeEnd}
               description={rangeDescription}
               submitting={reserveRange.isPending}
-              validation={reservationValidation.data}
+              validation={reservationValidation.isError ? { valid: false, message: tr("reservationValidationFailed") } : reservationValidation.data}
               validating={reservationValidation.isFetching || rangeStart.trim() !== deferredRangeStart || rangeEnd.trim() !== deferredRangeEnd}
               onStart={setRangeStart}
               onEnd={setRangeEnd}
@@ -1279,6 +1308,7 @@ function ChildPrefixTable({
 }
 
 function AllocationTable({
+  environmentId,
   rows,
   freeSegments,
   loading = false,
@@ -1313,12 +1343,16 @@ function AllocationTable({
   onEdit: (row: Reservation) => void;
   onName: (row: Reservation) => void;
   onRelease: (row: Allocation) => void;
-  onBulkRelease: (rows: Allocation[]) => Promise<void>;
+  environmentId: string;
+  onBulkRelease: (rows: Allocation[], environmentId: string) => Promise<ReleaseResult>;
   onReserveFirst: (segment: FreeSpaceSegment) => void;
   onReserveRange: (segment: FreeSpaceSegment) => void;
 }) {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [confirmRelease, setConfirmRelease] = useState(false);
+  const [releaseEnvironment, setReleaseEnvironment] = useState(environmentId);
+  const [releaseTargets, setReleaseTargets] = useState<Allocation[]>([]);
+  const [releaseError, setReleaseError] = useState("");
   const [releasing, setReleasing] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const keyFor = (row: Allocation) => `${row.kind}:${row.id}`;
@@ -1348,12 +1382,19 @@ function AllocationTable({
       return next;
     });
   const releaseSelected = async () => {
+    if (releasing || !releaseTargets.length) return;
     setReleasing(true);
+    setReleaseError("");
     try {
-      await onBulkRelease(selectedRows);
-      setSelected(new Set());
-      setConfirmRelease(false);
+      const result = await onBulkRelease(releaseTargets, releaseEnvironment);
+      const failedKeys = new Set(result.failed.map(item => item.key));
+      setSelected(failedKeys);
+      setReleaseTargets(current => current.filter(row => failedKeys.has(keyFor(row))));
+      if (result.failed.length) {
+        setReleaseError(tr("bulkReleasePartial", { released: result.released.length, failed: result.failed.length, details: result.failed.map(item => `${item.label}: ${item.message}`).join(" ") }));
+      } else setConfirmRelease(false);
     } catch (error) {
+      setReleaseError(error instanceof Error ? error.message : tr("releaseFailed"));
       showToast(
         (error as Error).message ||
           tr("releaseFailed"),
@@ -1413,7 +1454,7 @@ function AllocationTable({
             </Button>
             {canEdit && selectedRows.length > 0 && (
               <OverflowMenu title={tr("bulkActions")} trigger={`${tr("bulkActions")} · ${selectedRows.length}`}>
-                <OverflowItem icon={Trash2} danger onClick={() => setConfirmRelease(true)}>
+                <OverflowItem icon={Trash2} danger onClick={() => { setReleaseEnvironment(environmentId); setReleaseTargets([...selectedRows]); setReleaseError(""); setConfirmRelease(true); }}>
                   {tr("release")} {selectedRows.length}
                 </OverflowItem>
               </OverflowMenu>
@@ -1708,12 +1749,15 @@ function AllocationTable({
         itemLabel={tr("allocationsPagination")}
       />
       <ConfirmDialog
+        targetEnvironmentId={releaseEnvironment}
         open={confirmRelease}
+        closeOnConfirm={false}
+        error={releaseError}
         onOpenChange={setConfirmRelease}
         title={tr("releaseSelectedTitle")}
         description={
           <>
-            {tr("releaseSelectedDescription", { count: selectedRows.length })}
+            {tr("releaseSelectedDescription", { count: releaseTargets.length })}
             {selectedRows.some(
               (row) =>
                 row.kind === "address" &&
@@ -2191,17 +2235,17 @@ function AddressForm({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit();
+        if (!submitting && !validating && validation?.valid) onSubmit();
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <fieldset disabled={submitting} className="grid gap-4 sm:grid-cols-2">
         <Field label={tr("ipAddress")}>
           <Input
             required
             autoFocus
             value={address}
             onChange={(event) => onAddress(event.target.value)}
-            placeholder="10.20.10.25"
+            placeholder={tr("ipAddress")}
             inputMode="decimal"
           />
         </Field>
@@ -2273,7 +2317,7 @@ function AddressForm({
             />
           </Field>
         </div>
-      </div>
+      </fieldset>
       {address && (
         <p className={`flex items-center gap-2 rounded-md border px-3 py-2 text-xs ${
           validation?.valid
@@ -2321,17 +2365,17 @@ function RangeForm({
       className="space-y-4"
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit();
+        if (!submitting && !validating && validation?.valid) onSubmit();
       }}
     >
-      <div className="grid gap-4 sm:grid-cols-2">
+      <fieldset disabled={submitting} className="grid gap-4 sm:grid-cols-2">
         <Field label={tr("firstAddress")}>
           <Input
             required
             autoFocus
             value={start}
             onChange={(event) => onStart(event.target.value)}
-            placeholder="10.20.10.100"
+            placeholder={tr("firstAddress")}
             inputMode="decimal"
           />
         </Field>
@@ -2340,7 +2384,7 @@ function RangeForm({
             required
             value={end}
             onChange={(event) => onEnd(event.target.value)}
-            placeholder="10.20.10.150"
+            placeholder={tr("lastAddress")}
             inputMode="decimal"
           />
         </Field>
@@ -2353,7 +2397,7 @@ function RangeForm({
             />
           </Field>
         </div>
-      </div>
+      </fieldset>
       <p className="rounded-md border bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
         {tr("rangeObjectHint")}
       </p>
@@ -2588,20 +2632,8 @@ function EditAddressDialog({
   );
 }
 
-function EditPrefixDialog({
-  prefix,
-  open,
-  onOpenChange,
-  onSave,
-  saving,
-}: {
-  prefix: Prefix;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  onSave: (value: Partial<Prefix>) => void;
-  saving: boolean;
-}) {
-  const [value, setValue] = useState({
+function prefixFormValue(prefix: Prefix) {
+  return {
     name: prefix.name,
     gateway: prefix.gateway || "",
     dhcpStart: prefix.dhcp_start || "",
@@ -2612,26 +2644,32 @@ function EditPrefixDialog({
     description: prefix.description || "",
     status: prefix.status,
     role: prefix.role || "",
-  });
-  useEffect(() => {
-    if (!open) return;
-    setValue({
-      name: prefix.name,
-      gateway: prefix.gateway || "",
-      dhcpStart: prefix.dhcp_start || "",
-      dhcpEnd: prefix.dhcp_end || "",
-      dns: (prefix.dns_servers || []).join(", "),
-      vlan: prefix.vlan_id == null ? "" : String(prefix.vlan_id),
-      bridge: prefix.bridge || "",
-      description: prefix.description || "",
-      status: prefix.status,
-      role: prefix.role || "",
-    });
-  }, [open, prefix]);
+  };
+}
+
+function EditPrefixDialog({
+  prefix,
+  open,
+  onOpenChange,
+  onSave,
+  saving,
+  error,
+}: {
+  prefix: Prefix;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSave: (value: Partial<Prefix>) => void;
+  saving: boolean;
+  error?: string;
+}) {
+  const [baseline] = useState(() => prefixFormValue(prefix));
+  const [value, setValue] = useState(baseline);
+  const changedOnServer = JSON.stringify(prefixFormValue(prefix)) !== JSON.stringify(baseline);
+  const inputErrors = prefixInputErrors(value.vlan, value.dhcpStart, value.dhcpEnd);
   const change = (key: keyof typeof value, next: string) =>
     setValue((current) => ({ ...current, [key]: next }));
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={(next) => { if (!saving) onOpenChange(next); }}>
       <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-xl overflow-y-auto">
         <DialogHeader>
           <DialogTitle>{tr("editPrefix")}</DialogTitle>
@@ -2640,16 +2678,17 @@ function EditPrefixDialog({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="grid gap-4 sm:grid-cols-2"
+          className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault();
+            if (saving || changedOnServer || inputErrors.length) return;
             onSave({
               name: value.name,
               gateway: value.gateway,
               dhcp_start: value.dhcpStart,
               dhcp_end: value.dhcpEnd,
               dns_servers: value.dns.split(",").map((item) => item.trim()).filter(Boolean),
-              vlan_id: value.vlan ? Number(value.vlan) : null,
+              vlan_id: value.vlan.trim() ? Number(value.vlan.trim()) : null,
               bridge: value.bridge,
               description: value.description,
               status: value.status,
@@ -2657,6 +2696,10 @@ function EditPrefixDialog({
             });
           }}
         >
+          {changedOnServer && <p role="alert" className="text-sm text-destructive">{tr("prefixChangedWhileEditing")}</p>}
+          {inputErrors.map(key => <p key={key} role="alert" className="text-sm text-destructive">{tr(key)}</p>)}
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+          <fieldset disabled={saving} className="grid gap-4 sm:grid-cols-2">
           <Field label={tr("name")}><Input required value={value.name} onChange={(event) => change("name", event.target.value)} /></Field>
           <Field label={tr("cidr")}><Input value={prefix.cidr} disabled /></Field>
           <Field label={tr("status")}>
@@ -2673,9 +2716,10 @@ function EditPrefixDialog({
           <Field label={tr("vlanId")}><Input inputMode="numeric" value={value.vlan} onChange={(event) => change("vlan", event.target.value)} /></Field>
           <Field label={tr("bridge")}><Input value={value.bridge} onChange={(event) => change("bridge", event.target.value)} /></Field>
           <div className="sm:col-span-2"><Field label={tr("descriptionLabel")}><Input value={value.description} onChange={(event) => change("description", event.target.value)} /></Field></div>
-          <DialogFooter className="sm:col-span-2">
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>{tr("cancel")}</Button>
-            <Button type="submit" disabled={saving}><Pencil />{tr("savePrefix")}</Button>
+          </fieldset>
+          <DialogFooter>
+            <Button type="button" variant="outline" disabled={saving} onClick={() => onOpenChange(false)}>{tr("cancel")}</Button>
+            <Button type="submit" disabled={saving || changedOnServer || inputErrors.length > 0}><Pencil />{tr("savePrefix")}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

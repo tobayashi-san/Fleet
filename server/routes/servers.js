@@ -1,3 +1,9 @@
+const { hostAuditDetail } = require('../utils/host-audit');
+const { validHistoryRange, matchesHistoryRange } = require('../utils/history-date-range');
+const { compareHistory } = require('../utils/history-order');
+const { updateCatalogAge } = require('../utils/update-catalog-age');
+const { workflowHostIds } = require('../utils/workflow-history-scope');
+const { parseSshPort } = require('../utils/ssh-port');
 const express = require('express');
 const router = express.Router();
 const rateLimit = require('express-rate-limit');
@@ -10,7 +16,7 @@ const { refreshDockerCache } = require('../services/docker-inventory');
 const resourceAlerts = require('../services/resource-alerts');
 const { parseImageUpdateReport } = require('../utils/parse-image-updates');
 const { serverError } = require('../utils/http-error');
-const { targetIncludesServer, validateInventoryHostName } = require('../utils/validate');
+const { validateInventoryHostName } = require('../utils/validate');
 const { isValidStorageMountPath, parseConfiguredStorageMounts } = require('../utils/storage-mounts');
 const { buildServerAttention } = require('../utils/server-attention');
 
@@ -166,13 +172,58 @@ function accessibleGroupsForEnvironment(permissions, environmentId) {
 }
 
 // GET /api/servers - List all servers
+// Cached operating state shared by inventory and host detail; never starts SSH work.
+function serverOperatingState(server, perms) {
+    const canViewUpdates = can(perms, 'canViewUpdates');
+    const canViewDocker = can(perms, 'canViewDocker');
+    const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
+    const canViewHistory = can(perms, 'canViewServerHistory');
+    const info = db.serverInfo.get(server.id);
+    const imageUpdatesMeta = canViewDocker && canViewUpdates
+      ? db.dockerImageUpdatesCache.getWithMeta(server.id)
+      : null;
+    const updatesMeta = canViewUpdates ? db.updatesCache.getWithMeta(server.id) : null;
+    const updates = updatesMeta?.updates || null;
+    const customUpdatesCount = canViewCustomUpdates ? db.customUpdateTasks.countHasUpdate(server.id) : 0;
+    const attention = buildServerAttention({
+      server,
+      info,
+      updates: updates || [],
+      imageUpdates: imageUpdatesMeta?.results || null,
+      customUpdatesCount,
+      customCheckFailures: canViewCustomUpdates ? db.customUpdateTasks.countCheckFailures(server.id) : 0,
+      history: canViewHistory ? db.updateHistory.getByServer(server.id) : [],
+      alerts: db.resourceAlerts.list({ statuses: ['active'], serverIds: [server.id], limit: 200 }),
+      includeUpdates: canViewUpdates,
+      includeDockerUpdates: canViewDocker && canViewUpdates,
+      includeCustomUpdates: canViewCustomUpdates,
+      includeHistory: canViewHistory,
+    });
+    return {
+      attention,
+      ...(canViewUpdates ? {
+        updates_count: updates === null ? null : updates.filter(update => !update.phased).length,
+        updates_checked_at: updatesMeta?.updated_at || null,
+        updates_stale: updateCatalogAge(updatesMeta?.updated_at, db.settings.get('poll_updates_interval_min')).stale,
+        reboot_required: !!info?.reboot_required,
+      } : {}),
+      ...(canViewDocker && canViewUpdates ? {
+        image_updates_count: imageUpdatesMeta ? imageUpdatesMeta.results.filter(update => update.status === 'update_available').length : null,
+        image_updates_checked_at: imageUpdatesMeta?.updated_at || null,
+        image_updates_stale: updateCatalogAge(imageUpdatesMeta?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360).stale,
+      } : {}),
+      ...(canViewCustomUpdates ? { custom_updates_count: customUpdatesCount, custom_updates_stale: db.customUpdateTasks.getByServer(server.id).some(task => updateCatalogAge(task.last_checked_at, db.settings.get('poll_custom_updates_interval_min') || 360).stale) } : {}),
+      info_cached_at: info?.updated_at || null,
+    };
+}
+
 router.get('/', guard('canViewServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
     const environmentId = req.environmentId || String(req.query.environment_id || '').trim() || 'default';
     const servers = filterServers(db.servers.getAll(), perms)
       .filter(server => String(server.environment_id || 'default') === environmentId);
-    res.json(servers.map(parseServer));
+    res.json(servers.map(server => ({ ...parseServer(server), ...serverOperatingState(server, perms) })));
   } catch (error) {
     serverError(res, error, 'list servers');
   }
@@ -259,7 +310,7 @@ router.post('/import', guard('canExportImportServers'), (req, res) => {
           name:      String(s.name).slice(0, 100),
           hostname:  String(s.hostname  || s.ip_address).slice(0, 255),
           ip_address: String(s.ip_address).slice(0, 45),
-          ssh_port:  parseInt(s.ssh_port, 10) || 22,
+          ssh_port:  parseSshPort(s.ssh_port),
           ssh_user:  String(s.ssh_user || 'root').slice(0, 100),
           tags:      normalizedTags,
           services:  Array.isArray(s.services) ? s.services : [],
@@ -335,11 +386,51 @@ router.post('/groups', guard('canEditServers'), (req, res) => {
   res.json(db.serverGroups.create(name.trim(), color, parent_id || null, environmentId));
 });
 
+// Validate moves before either metadata or hierarchy is written. Keeping an
+// existing parent does not require administration rights on that ancestor.
+function validateGroupParent(req, parentId) {
+  const groupId = String(req.params.groupId || '');
+  const groups = db.serverGroups.getAll();
+  const current = groups.find(group => group.id === groupId);
+  if (!current) return { status: 404, error: 'Folder not found.' };
+  if (parentId === current.parent_id) return null;
+  const parent = parentId ? groups.find(group => group.id === parentId) : null;
+  if (parentId && !parent) return { status: 400, error: 'Parent folder not found.' };
+  if (parent && !canAccessServerGroup(getPermissions(req.user), parent)) return { status: 403, error: 'Target folder access denied.' };
+  if (parent && parent.environment_id !== current.environment_id) return { status: 400, error: 'Folders cannot be nested across environments.' };
+  if (parentId === groupId) return { status: 400, error: 'A folder cannot be its own parent.' };
+  const descendantIds = new Set([groupId]);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const group of groups) {
+      if (group.parent_id && descendantIds.has(group.parent_id) && !descendantIds.has(group.id)) {
+        descendantIds.add(group.id);
+        changed = true;
+      }
+    }
+  }
+  if (parentId && descendantIds.has(parentId)) return { status: 400, error: 'A folder cannot be moved into one of its descendants.' };
+  return null;
+}
+
 // PUT /api/servers/groups/:groupId
 router.put('/groups/:groupId', guard('canEditServers'), guardServerGroupAccess, (req, res) => {
   const { name, color } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error: 'Name required' });
-  db.serverGroups.update(req.params.groupId, name.trim(), color);
+  if (typeof name !== 'string' || !name.trim()) return res.status(400).json({ error: 'Name required' });
+  const hasParent = Object.prototype.hasOwnProperty.call(req.body, 'parent_id');
+  if (hasParent && req.body.parent_id !== null && (typeof req.body.parent_id !== 'string' || !req.body.parent_id.trim())) {
+    return res.status(400).json({ error: 'Parent folder must be an ID or null.' });
+  }
+  const parentId = hasParent ? req.body.parent_id : undefined;
+  if (hasParent) {
+    const failure = validateGroupParent(req, parentId);
+    if (failure) return res.status(failure.status).json({ error: failure.error });
+  }
+  db.db.transaction(() => {
+    db.serverGroups.update(req.params.groupId, name.trim(), color);
+    if (hasParent) db.serverGroups.setGroupParent(req.params.groupId, parentId);
+  })();
   res.json({ success: true });
 });
 
@@ -351,22 +442,10 @@ router.delete('/groups/:groupId', guard('canDeleteServers'), guardServerGroupAcc
 
 // PUT /api/servers/groups/:groupId/parent
 router.put('/groups/:groupId/parent', guard('canEditServers'), guardServerGroupAccess, (req, res) => {
-  const groupId = String(req.params.groupId || '');
   const parentId = req.body.parent_id ? String(req.body.parent_id) : null;
-  const groups = db.serverGroups.getAll();
-  const current = groups.find(group => group.id === groupId);
-  if (!current) return res.status(404).json({ error: 'Folder not found.' });
-  const parent = parentId ? groups.find(group => group.id === parentId) : null;
-  if (parentId && !parent) return res.status(400).json({ error: 'Parent folder not found.' });
-  const perms = getPermissions(req.user);
-  if (parent && !canAccessServerGroup(perms, parent)) return res.status(403).json({ error: 'Target folder access denied.' });
-  if (parent && parent.environment_id !== current.environment_id) return res.status(400).json({ error: 'Folders cannot be nested across environments.' });
-  if (parentId === groupId) return res.status(400).json({ error: 'A folder cannot be its own parent.' });
-  const descendantIds = new Set([groupId]);
-  let changed = true;
-  while (changed) { changed = false; for (const group of groups) if (group.parent_id && descendantIds.has(group.parent_id) && !descendantIds.has(group.id)) { descendantIds.add(group.id); changed = true; } }
-  if (parentId && descendantIds.has(parentId)) return res.status(400).json({ error: 'A folder cannot be moved into one of its descendants.' });
-  db.serverGroups.setGroupParent(groupId, parentId);
+  const failure = validateGroupParent(req, parentId);
+  if (failure) return res.status(failure.status).json({ error: failure.error });
+  db.serverGroups.setGroupParent(req.params.groupId, parentId);
   res.json({ success: true });
 });
 
@@ -398,7 +477,7 @@ router.put('/group/bulk', guard('canEditServers'), (req, res) => {
     const update = db.db.prepare('UPDATE servers SET group_id = ? WHERE id = ?');
     servers.forEach(server => update.run(groupId, server.id));
   })();
-  db.auditLog.write('servers.group_bulk_move', `servers=${serverIds.length} group=${groupId || 'root'}`, req.ip, true, req.user?.username);
+  db.auditLog.write('servers.group_bulk_move', `servers=${serverIds.length} group=${groupId || 'root'} targets=${servers.map(server=>server.name).join(',')}`, req.ip, true, req.user?.username, [...environments][0]);
   res.json({ success: true, moved: serverIds.length, group_id: groupId });
 });
 
@@ -446,28 +525,7 @@ router.post('/auto-group-by-tags', guard('canEditServers'), (req, res) => {
 router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
   try {
     const perms = getPermissions(req.user);
-    const canViewUpdates = can(perms, 'canViewUpdates');
-    const canViewDocker = can(perms, 'canViewDocker');
-    const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
-    const canViewHistory = can(perms, 'canViewServerHistory');
-    const info = db.serverInfo.get(req.server.id);
-    const imageUpdatesMeta = canViewDocker && canViewUpdates
-      ? db.dockerImageUpdatesCache.getWithMeta(req.server.id)
-      : null;
-    const attention = buildServerAttention({
-      server: req.server,
-      info,
-      updates: canViewUpdates ? (db.updatesCache.get(req.server.id) || []) : [],
-      imageUpdates: imageUpdatesMeta?.results || null,
-      customUpdatesCount: canViewCustomUpdates ? db.customUpdateTasks.countHasUpdate(req.server.id) : 0,
-      history: canViewHistory ? db.updateHistory.getByServer(req.server.id) : [],
-      alerts: db.resourceAlerts.list({ statuses: ['active'], serverIds: [req.server.id], limit: 200 }),
-      includeUpdates: canViewUpdates,
-      includeDockerUpdates: canViewDocker && canViewUpdates,
-      includeCustomUpdates: canViewCustomUpdates,
-      includeHistory: canViewHistory,
-    });
-    res.json({ ...parseServer(req.server), attention });
+    res.json({ ...parseServer(req.server), ...serverOperatingState(req.server, perms) });
   } catch (error) {
     serverError(res, error, 'get server');
   }
@@ -476,7 +534,7 @@ router.get('/:id', guardServerAccess, guard('canViewServers'), (req, res) => {
 // POST /api/servers - Add a new server
 router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAddServers')) return res.status(403).json({ error: 'Permission denied' }); next(); }, (req, res) => {
   try {
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, environment_id } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, owner, tags, services, links, storage_mounts, environment_id } = req.body;
     if (!name || typeof name !== 'string' || !ip_address || typeof ip_address !== 'string') {
       return res.status(400).json({ error: 'Name and IP address are required' });
     }
@@ -487,6 +545,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (ip_address.length > 45) return res.status(400).json({ error: 'IP address too long (max 45)' });
     if (hostname && (typeof hostname !== 'string' || hostname.length > 255)) return res.status(400).json({ error: 'Hostname too long (max 255)' });
     if (ssh_user && (typeof ssh_user !== 'string' || ssh_user.length > 100)) return res.status(400).json({ error: 'SSH user too long (max 100)' });
+    if (owner != null && (typeof owner !== 'string' || owner.length > 100)) return res.status(400).json({ error: 'Owner too long (max 100)' });
     const normalizedLinks = normalizeServerLinks(links || []);
     const normalizedStorageMounts = normalizeStorageMounts(storage_mounts || []);
     const normalizedTags = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : [];
@@ -494,12 +553,14 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const permissions = getPermissions(req.user);
     if (!canAccessEnvironment(permissions, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
-    const server = db.servers.create({
+    const server = db.db.transaction(() => {
+    const created = db.servers.create({
       name: normalizedName,
       hostname: (hostname || ip_address).slice(0, 255),
       ip_address: ip_address.slice(0, 45),
-      ssh_port: Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)),
+      ssh_port: parseSshPort(ssh_port),
       ssh_user: (ssh_user || 'root').slice(0, 100),
+      owner: String(owner || '').trim().slice(0, 100),
       tags: normalizedTags,
       services: Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : [],
       links: normalizedLinks,
@@ -508,10 +569,12 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
     });
     const autoGroupId = resolveGroupIdByTags(normalizedTags, accessibleGroupsForEnvironment(permissions, environmentId));
     if (autoGroupId) {
-      db.serverGroups.setServerGroup(server.id, autoGroupId);
-      server.group_id = autoGroupId;
+      db.serverGroups.setServerGroup(created.id, autoGroupId);
+      created.group_id = autoGroupId;
     }
-    db.auditLog.write('server.create', `Server "${normalizedName}" (${ip_address}) created`, req.ip, true, req.user?.username);
+    db.auditLog.write('server.create', `Server ${JSON.stringify(normalizedName)} (${ip_address}) created; server_id=${JSON.stringify(created.id)}`, req.ip, true, req.user?.username, environmentId);
+    return created;
+    })();
     res.status(201).json(parseServer(server));
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -524,7 +587,7 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
   try {
     const existing = req.server;
 
-    const { name, hostname, ip_address, ssh_port, ssh_user, tags, services, links, storage_mounts, dockerEnabled, environment_id } = req.body;
+    const { name, hostname, ip_address, ssh_port, ssh_user, owner, tags, services, links, storage_mounts, dockerEnabled, environment_id } = req.body;
     const sName   = name !== undefined ? String(name).trim().slice(0, 100) : existing.name;
     if (name !== undefined) {
       const nameErr = validateInventoryHostName(sName);
@@ -532,8 +595,9 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     }
     const sHost   = hostname !== undefined ? String(hostname).slice(0, 255) : existing.hostname;
     const sIp     = ip_address !== undefined ? String(ip_address).slice(0, 45) : existing.ip_address;
-    const sPort   = ssh_port !== undefined ? Math.min(65535, Math.max(1, parseInt(ssh_port, 10) || 22)) : existing.ssh_port;
+    const sPort   = ssh_port !== undefined ? parseSshPort(ssh_port) : existing.ssh_port;
     const sUser   = ssh_user !== undefined ? String(ssh_user).slice(0, 100) : existing.ssh_user;
+    const sOwner  = owner !== undefined ? String(owner).trim().slice(0, 100) : (existing.owner || '');
     const sTags   = Array.isArray(tags) ? tags.filter(t => typeof t === 'string').map(t => t.slice(0, 100)) : JSON.parse(existing.tags || '[]');
     const sSvcs   = Array.isArray(services) ? services.filter(s => typeof s === 'string').map(s => s.slice(0, 100)) : JSON.parse(existing.services || '[]');
     const sLinks  = links !== undefined ? normalizeServerLinks(links) : parseServerLinks(existing.links);
@@ -543,9 +607,10 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
     const permissions = getPermissions(req.user);
     if (!canAccessEnvironment(permissions, environmentId)) return res.status(403).json({ error: 'Environment access denied' });
-    const server = db.servers.update(req.params.id, {
+    const server = db.db.transaction(() => {
+    const updated = db.servers.update(req.params.id, {
       name: sName, hostname: sHost, ip_address: sIp,
-      ssh_port: sPort, ssh_user: sUser, tags: sTags, services: sSvcs,
+      ssh_port: sPort, ssh_user: sUser, owner: sOwner, tags: sTags, services: sSvcs,
       links: sLinks,
       storage_mounts: sMounts,
       docker_enabled: sDockerEnabled,
@@ -554,15 +619,20 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
     const environmentChanged = String(environmentId) !== String(existing.environment_id || 'default');
     if (environmentChanged && existing.group_id) {
       db.serverGroups.setServerGroup(req.params.id, null);
-      server.group_id = null;
+      updated.group_id = null;
     }
     if (tags !== undefined) {
       const autoGroupId = resolveGroupIdByTags(sTags, accessibleGroupsForEnvironment(permissions, environmentId));
       if (autoGroupId && autoGroupId !== existing.group_id) {
         db.serverGroups.setServerGroup(req.params.id, autoGroupId);
-        server.group_id = autoGroupId;
+        updated.group_id = autoGroupId;
       }
     }
+    const current = db.servers.getById(req.params.id);
+    const detail = hostAuditDetail(existing, current);
+    if (JSON.parse(detail).changes.length) db.auditLog.write('server.update', detail, req.ip, true, req.user?.username, environmentId);
+    return current;
+    })();
     res.json(parseServer(server));
   } catch (error) {
     if (error.statusCode) return res.status(error.statusCode).json({ error: error.message });
@@ -574,14 +644,16 @@ router.put('/:id', guardServerAccess, guard('canEditServers'), (req, res) => {
 router.delete('/:id', guardServerAccess, guard('canDeleteServers'), (req, res) => {
   try {
     const server = req.server;
-    db.servers.delete(req.params.id);
-    // OpenTofu and imported Proxmox inventory mappings deliberately have no
-    // database foreign key for backwards compatibility.
-    // Remove them with the host so an old resource never remains as a broken
-    // link in the infrastructure tree.
-    try { db.db.prepare('DELETE FROM tofu_managed_servers WHERE server_id = ?').run(req.params.id); } catch { /* schema unavailable during partial migration */ }
-    try { db.db.prepare('DELETE FROM proxmox_inventory_servers WHERE server_id = ?').run(req.params.id); } catch { /* schema unavailable during partial migration */ }
-    db.auditLog.write('server.delete', `Server "${server.name}" (${server.ip_address}) deleted`, req.ip, true, req.user?.username);
+    db.db.transaction(() => {
+      db.servers.delete(req.params.id);
+      // Old installations may not have inventory integration tables yet.
+      for (const table of ['tofu_managed_servers', 'proxmox_inventory_servers']) {
+        if (db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table)) {
+          db.db.prepare(`DELETE FROM ${table} WHERE server_id = ?`).run(req.params.id);
+        }
+      }
+      db.auditLog.write('server.delete', `Server ${JSON.stringify(server.name)} (${server.ip_address}) deleted; server_id=${JSON.stringify(server.id)}`, req.ip, true, req.user?.username, server.environment_id || 'default');
+    })();
     res.json({ message: 'Server deleted' });
   } catch (error) {
     serverError(res, error, 'delete server');
@@ -600,7 +672,8 @@ router.post('/connection-test', testConnectionLimiter, guard('canEditServers'), 
   const ipAddress = String(req.body?.ip_address || '').trim();
   const sshUser = String(req.body?.ssh_user || 'root').trim() || 'root';
   const password = String(req.body?.password || '');
-  const sshPort = Math.min(65535, Math.max(1, parseInt(req.body?.ssh_port, 10) || 22));
+  let sshPort;
+  try { sshPort = parseSshPort(req.body?.ssh_port); } catch (error) { return res.status(400).json({ error: error.message }); }
   if (!ipAddress || !password) return res.status(400).json({ error: 'Host address and password are required.' });
   try {
     const connected = await sshManager.testPasswordConnection(ipAddress, sshUser, password, sshPort);
@@ -649,21 +722,39 @@ router.post('/:id/reset-host-key', guardServerAccess, guard('canUseTerminal'), (
 // GET /api/servers/:id/notes
 router.get('/:id/notes', guardServerAccess, guard('canViewNotes'), (req, res) => {
   try {
-    res.json({ notes: req.server.notes || '' });
+    const last = db.db.prepare('SELECT revision, author, created_at FROM server_note_revisions WHERE server_id = ? ORDER BY revision DESC LIMIT 1').get(req.params.id);
+    res.json({ notes: req.server.notes || '', revision: last?.revision || 0, author: last?.author || null, updated_at: last?.created_at || null });
   } catch (error) {
     serverError(res, error, 'get server notes');
   }
 });
 
+router.get('/:id/notes/history', guardServerAccess, guard('canViewNotes'), (req, res) => {
+  const revisions = db.db.prepare('SELECT revision, notes, author, created_at FROM server_note_revisions WHERE server_id = ? ORDER BY revision DESC LIMIT 100').all(req.params.id);
+  res.json({ revisions });
+});
+
 // PUT /api/servers/:id/notes
 router.put('/:id/notes', guardServerAccess, guard('canEditNotes'), (req, res) => {
   try {
-    if (typeof req.body.notes === 'string' && req.body.notes.length > 5000) {
-      return res.status(400).json({ error: 'Notes too long (max 5000 characters)' });
-    }
-    const notes = typeof req.body.notes === 'string' ? req.body.notes : '';
-    db.servers.setNotes(req.params.id, notes);
-    res.json({ success: true });
+    if (typeof req.body.notes !== 'string' || req.body.notes.length > 5000) return res.status(400).json({ error: 'Notes must be text with at most 5000 characters.' });
+    if (!Number.isInteger(req.body.revision) || req.body.revision < 0) return res.status(428).json({ error: 'Load the current notes revision before saving.' });
+    const result = db.db.transaction(() => {
+      const last = db.db.prepare('SELECT revision FROM server_note_revisions WHERE server_id = ? ORDER BY revision DESC LIMIT 1').get(req.params.id);
+      if ((last?.revision || 0) !== req.body.revision) return null;
+      const current = db.db.prepare('SELECT notes FROM servers WHERE id = ?').get(req.params.id);
+      if (!last) db.db.prepare('INSERT INTO server_note_revisions (server_id, revision, notes) VALUES (?, 0, ?)').run(req.params.id, current.notes || '');
+      const revision = req.body.revision + 1;
+      const updated_at = new Date().toISOString();
+      const author = req.user?.username || 'Unknown user';
+      db.servers.setNotes(req.params.id, req.body.notes);
+      db.db.prepare('INSERT INTO server_note_revisions (server_id, revision, notes, author, created_at) VALUES (?, ?, ?, ?, ?)').run(req.params.id, revision, req.body.notes, author, updated_at);
+      db.db.prepare('DELETE FROM server_note_revisions WHERE server_id = ? AND revision <= ?').run(req.params.id, revision - 100);
+      db.auditLog.write('server.notes_update', `server_id=${JSON.stringify(req.params.id)} server=${JSON.stringify(req.server.name)} from_revision=${req.body.revision} to_revision=${revision}`, req.ip, true, author, req.server.environment_id);
+      return { notes: req.body.notes, revision, author, updated_at };
+    })();
+    if (!result) return res.status(409).json({ error: 'Notes changed since you opened them. Copy your draft, reload the saved notes, and merge your changes.' });
+    res.json(result);
   } catch (error) {
     serverError(res, error, 'update server notes');
   }
@@ -721,6 +812,11 @@ router.put('/:id/alert-settings', guardServerAccess, guard('canEditServers'), (r
   }
 });
 
+// GET /api/servers/:id/info/history - Recent bounded capacity observations
+router.get('/:id/info/history', guardServerAccess, guard('canViewServers'), (req, res) => {
+  res.json(db.serverInfo.getHistory(req.params.id, req.query.limit));
+});
+
 // GET /api/servers/:id/info - Get system info (stale-while-revalidate)
 router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, res) => {
   const server = req.server;
@@ -740,7 +836,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
   // Serve cache immediately, refresh in background
   if (cached && !force) {
     const isOnline = server.status === 'online';
-    const payload = { ...cached, _cached: true };
+    const payload = { ...cached, _cached: true, _source: 'ssh' };
     if (!isOnline) {
       payload.ram_used_mb = null;
       payload.disk_used_gb = null;
@@ -777,7 +873,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
     if (info.docker_detected && !server.docker_enabled) {
       db.servers.setDockerEnabled(server.id, 1);
     }
-    res.json(info);
+    res.json({ ...db.serverInfo.get(server.id), _source: 'ssh' });
   } catch (error) {
     db.servers.updateStatus(req.params.id, 'offline');
     resourceAlerts.evaluateServer(req.params.id);
@@ -799,15 +895,33 @@ router.get('/:id/services', guardServerAccess, guard('canViewServers'), async (r
   }
 });
 
+// A fresh, uncached simulation. It refreshes package metadata but never
+// installs/removes packages, records update history or changes the catalog.
+router.get('/:id/updates/preview', guardServerAccess, guard('canViewUpdates'), rateLimit({
+  windowMs: 60_000, max: 5, standardHeaders: true, legacyHeaders: false,
+}), async (req, res) => {
+  try {
+    res.json(await systemInfo.getAvailableUpdates(req.server, { includePlan: true }));
+  } catch (error) {
+    serverError(res, error, 'preview server updates');
+  }
+});
+
 // GET /api/servers/:id/updates - Get available updates (stale-while-revalidate)
 router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (req, res) => {
   const server = req.server;
 
   const cached = db.updatesCache.get(req.params.id);
   const force = req.query.force === '1';
+  const respond = (updates, cachedResult) => {
+    if (req.query.include_meta !== '1') return res.json(cachedResult ? updates.map(update => ({ ...update, _cached: true })) : updates);
+    const meta = db.db.prepare('SELECT updated_at FROM server_updates_cache WHERE server_id = ?').get(server.id);
+    return res.json({ updates, source: 'Host package manager over SSH', updated_at: meta?.updated_at || null, cached: cachedResult, ...updateCatalogAge(meta?.updated_at, db.settings.get('poll_updates_interval_min')) });
+  };
+
 
   if (cached && !force) {
-    res.json(cached.map(u => ({ ...u, _cached: true })));
+    respond(cached, true);
     systemInfo.getAvailableUpdates(server)
       .then(updates => {
         db.updatesCache.set(server.id, updates);
@@ -821,12 +935,12 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
     const updates = await systemInfo.getAvailableUpdates(server);
     db.updatesCache.set(server.id, updates);
     resourceAlerts.evaluateServer(server.id);
-    res.json(updates);
+    respond(updates, false);
   } catch (error) {
     // A background refresh may use the last known result. A manually forced
     // check must instead report its failure so the UI never presents stale
     // data as a freshly completed package check.
-    if (cached && !force) return res.json(cached);
+    if (cached && !force) return respond(cached, true);
     if (error.message && error.message.includes('SSH connection failed')) {
       return res.status(503).json({ error: error.message });
     }
@@ -835,20 +949,44 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
 });
 
 // GET /api/servers/:id/history - Get update history + scheduled playbook runs
+// A log dialog follows its run independently of list filters and pagination.
+router.get('/:id/history/:source/:runId', guardServerAccess, guard('canViewServerHistory'), (req, res) => {
+  try {
+    const { source, runId } = req.params;
+    if (source === 'manual') {
+      const row = db.db.prepare('SELECT * FROM update_history WHERE id = ? AND server_id = ?').get(runId, req.server.id);
+      return row ? res.json(row) : res.status(404).json({ error: 'History run not found' });
+    }
+    if (source === 'schedule') {
+      const row = db.scheduleHistory.getById(runId);
+      if (!row || row.environment_id !== (req.server.environment_id || 'default') || !workflowHostIds(row)?.includes(req.server.id)) {
+        return res.status(404).json({ error: 'History run not found' });
+      }
+      return res.json({ id: row.id, server_id: req.server.id, action: row.playbook, playbook: row.playbook, schedule_name: row.schedule_name, triggered_by: row.schedule_name || 'schedule', status: row.status, started_at: row.started_at, completed_at: row.completed_at, output: row.output, _type: 'schedule' });
+    }
+    return res.status(400).json({ error: 'Invalid history source' });
+  } catch (error) {
+    serverError(res, error, 'get server history run');
+  }
+});
+
 router.get('/:id/history', guardServerAccess, guard('canViewServerHistory'), (req, res) => {
   try {
     const server = req.server;
-    const manualHistory = db.updateHistory.getByServer(req.params.id);
+    const paginated = req.query.page !== undefined;
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.page_size, 10) || 20));
+    const requestedPage = Math.max(1, parseInt(req.query.page, 10) || 1);
+    const manualHistory = paginated
+      ? db.db.prepare('SELECT id, server_id, server_name_snapshot, environment_id, action, status, started_at, completed_at, triggered_by FROM update_history WHERE server_id = ? ORDER BY started_at DESC, id DESC').all(req.params.id)
+      : db.updateHistory.getByServer(req.params.id);
 
     // Also fetch scheduled playbook runs that targeted this server
     let scheduleRuns = [];
     if (server) {
-      const allRuns = db.scheduleHistory.getAll(200);
-      const serverName = server.name;
-      const createdAt = server.created_at ? new Date(server.created_at) : null;
+      const allRuns = db.scheduleHistory.getAll(-1, null, server.environment_id || 'default');
       scheduleRuns = allRuns
-        .filter(r => targetIncludesServer(r.targets, serverName) &&
-          (!createdAt || new Date(r.started_at) >= createdAt))
+        .filter(r => workflowHostIds(r)?.includes(server.id))
+        .slice(0, paginated ? undefined : 200)
         .map(r => ({
           id: r.id,
           server_id: req.params.id,
@@ -864,11 +1002,43 @@ router.get('/:id/history', guardServerAccess, guard('canViewServerHistory'), (re
         }));
     }
 
-    // Merge and sort by started_at descending
-    const combined = [...manualHistory, ...scheduleRuns]
-      .sort((a, b) => new Date(b.started_at) - new Date(a.started_at));
+    // Read outputs only after host scoping. Unfiltered pagination needs logs for
+    // the visible page only; text searches inspect one log at a time.
+    const manualOutput = db.db.prepare('SELECT output FROM update_history WHERE id = ? AND server_id = ?');
+    const scheduleOutput = db.db.prepare('SELECT output FROM schedule_history WHERE id = ? AND environment_id = ?');
+    const readOutput = row => row._type === 'schedule'
+      ? scheduleOutput.get(row.id, server.environment_id || 'default')?.output
+      : manualOutput.get(row.id, req.params.id)?.output;
+    const withOutput = row => ({ ...row, output: readOutput(row) });
 
-    res.json(combined);
+    // Merge and sort by started_at descending
+    let combined = [...manualHistory, ...scheduleRuns]
+      .sort(compareHistory);
+
+    if (paginated) {
+      const action = String(req.query.action || '');
+      const status = String(req.query.status || '');
+      const search = String(req.query.search || '').trim().toLowerCase();
+      const from = String(req.query.from || '');
+      const to = String(req.query.to || '');
+      if (!validHistoryRange(from, to)) return res.status(400).json({ error: 'Invalid history date range' });
+      const actions = [...new Set(combined.map(row => row.action).filter(Boolean))].sort();
+      const totalUnfiltered = combined.length;
+      combined = combined.filter(row => {
+        if (action && row.action !== action) return false;
+        if (status && row.status !== status) return false;
+        if (search && ![row.action, row.triggered_by, readOutput(row), row.playbook].filter(Boolean).join(' ').toLowerCase().includes(search)) return false;
+        if (!matchesHistoryRange(row.started_at, from, to)) return false;
+        return true;
+      });
+      const totalPages = Math.max(1, Math.ceil(combined.length / pageSize));
+      const page = Math.min(requestedPage, totalPages);
+      return res.json({ actions, total_unfiltered: totalUnfiltered, items: combined.slice((page - 1) * pageSize, page * pageSize).map(withOutput), pagination: {
+        page, page_size: pageSize, total: combined.length, total_pages: totalPages,
+        has_prev: page > 1, has_next: page < totalPages,
+      } });
+    }
+    res.json(combined.map(withOutput));
   } catch (error) {
     serverError(res, error, 'get server history');
   }
@@ -959,9 +1129,9 @@ router.get('/:id/docker/:container/logs', guardServerAccess, guard('canViewDocke
 });
 
 // GET /api/servers/:id/docker/image-updates/cached - Return cached image update results (no SSH)
-router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canPullDocker'), (req, res) => {
+router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canViewDocker'), guard('canViewUpdates'), (req, res) => {
   const cached = db.dockerImageUpdatesCache.getWithMeta(req.params.id);
-  res.json(cached ? { results: cached.results, updated_at: cached.updated_at } : { results: [], updated_at: null });
+  res.json({ results: cached?.results || [], updated_at: cached?.updated_at || null, source: 'Container registry digest comparison over SSH', ...updateCatalogAge(cached?.updated_at, db.settings.get('poll_image_updates_interval_min') || 360) });
 });
 
 // GET /api/servers/:id/docker/image-updates - Check for image updates

@@ -1,8 +1,0 @@
-<!doctype html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
-import React from 'react';import {createRoot} from 'react-dom/client';import {QueryClient,QueryClientProvider} from '@tanstack/react-query';import {CreateServerDialog} from '/src/components/CreateServerDialog.tsx';import {api} from '/src/lib/api.ts';import '/src/lib/i18n.ts';import '/src/index.css';
-let pending=[];
-api.getEnvironments=async()=>[{id:'default',name:'Default environment'},{id:'staging',name:'Staging'}];
-api.testNewServerConnection=()=>new Promise(resolve=>{pending.push(resolve);setTimeout(()=>resolve({connected:true}),8000)});
-function App(){const [open,setOpen]=React.useState(true);const [tick,setTick]=React.useState(0);React.useEffect(()=>{const timer=setInterval(()=>setTick(value=>value+1),1000);return()=>clearInterval(timer)},[]);return React.createElement(React.Fragment,null,React.createElement('button',{onClick:()=>{pending.shift()?.({connected:true})}},'Resolve pending test'),React.createElement('button',{onClick:()=>setOpen(!open)},'Toggle host dialog'),React.createElement(CreateServerDialog,{open,onOpenChange:setOpen,initialValues:{name:'',revision:tick}}))}
-createRoot(document.getElementById('root')).render(React.createElement(QueryClientProvider,{client:new QueryClient()},React.createElement(App)));
-</script></body></html>

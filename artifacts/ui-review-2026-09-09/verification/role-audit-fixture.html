@@ -1,7 +1,0 @@
-<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
-import React from 'react';import{createRoot}from'react-dom/client';import{AuditTableRow,AuditMobileRow}from'/src/features/operations/AuditLogPanel.tsx';import'/src/index.css';import'/src/lib/i18n.ts';
-window.fetch=async()=>Response.json([]);
-const row={action:'roles.update',user:'review-admin',ip:'127.0.0.1',success:1,created_at:'2026-09-10T16:00:00Z',detail:JSON.stringify({kind:'role-change',version:1,resource:{id:'role-removed',name:'Production operators'},changes:[{label:'Name',before:'Operators',after:'Production operators'},{label:'Use Terminal',before:'Not allowed',after:'Allowed'},{label:'Servers',before:'all',after:JSON.stringify({groups:['operations-team'],servers:['host-with-a-very-long-stable-identifier-012345678901234567890123456789']})}]})};
-const legacy={...row,action:'roles.delete',detail:'Deleted role: legacy-role'};
-createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement('h1',null,'Role audit verification'),React.createElement('table',{style:{width:'100%',marginBottom:24}},React.createElement('tbody',null,React.createElement(AuditTableRow,{row}),React.createElement(AuditTableRow,{row:legacy}))),React.createElement('section',{style:{width:320,border:'1px solid #555'}},React.createElement(AuditMobileRow,{row}))));
-</script></html>

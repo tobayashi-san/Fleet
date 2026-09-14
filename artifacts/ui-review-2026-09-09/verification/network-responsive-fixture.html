@@ -1,5 +1,0 @@
-<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
-import React from'react';import{createRoot}from'react-dom/client';import{NodeConfiguration}from'/src/features/infrastructure/DetailPanels.tsx';import'/src/index.css';
-const bridge={name:'vmbr0',type:'bridge',active:true,address:'192.0.2.10',cidr:24,address6:'2001:db8:1234:5678:90ab:cdef:1234:5678',cidr6:64,gateway6:'2001:db8:1234:5678:90ab:cdef:1234:1'};const node={name:'Example node',status:'online',cpu:0,maxcpu:4,mem:0,maxmem:100,uptime:100,network_status:'available',network_checked_at:'2026-09-10T00:00:00Z',bridges:[bridge],network_interfaces:[bridge,{name:'eno1',type:'eth',active:true},{name:'bond0',type:'bond',active:false},{name:'eno1.20',type:'vlan',active:null}]};
-createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement(NodeConfiguration,{node,vms:[]})));
-</script></html>

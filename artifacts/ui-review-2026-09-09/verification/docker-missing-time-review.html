@@ -1,6 +1,0 @@
-<!doctype html><html><div id="root"></div><script type="module">
-import React from'react';import{createRoot}from'react-dom/client';import{ServerDockerTab}from'/src/features/server-detail/ServerDockerTab.tsx';import{Tabs}from'/src/components/ui/tabs.tsx';import i18n from'/src/lib/i18n.ts';import'/src/index.css';
-const containers=['local-build','registry-error','unchecked'].map(container_name=>({container_name,image:container_name+':latest',status:'Up 2 hours',cpu_percent:0,memory_usage:'0 B'}));
-const controller={t:i18n.t.bind(i18n),server:{docker_enabled:true},profile:{role:'operator',permissions:{canViewDocker:true,canViewUpdates:true}},containers,stacks:{map:{},standalone:containers},imageUpdates:{'local-build':'up_to_date','registry-error':'updated'},imageCatalog:{updated_at:null,source:'Registry digest comparison over SSH',stale:false},checkImageMut:{isPending:false},logsContainer:null};
-createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement(Tabs,{defaultValue:'docker'},React.createElement(ServerDockerTab,{controller}))));
-</script></html>

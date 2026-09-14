@@ -1,7 +1,0 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
-import React from 'react';import {createRootRoute,createRouter,RouterProvider,createMemoryHistory} from '@tanstack/react-router';import {createRoot} from 'react-dom/client';import {QueryClient,QueryClientProvider} from '@tanstack/react-query';import {MaintenanceWindowDialog} from '/src/routes/operations.tsx';import '/src/index.css';import '/src/lib/i18n.ts';
-window.fetch=async(url,options)=>{if(options?.method==='PUT'){document.querySelector('#saved').textContent=options.body;return new Response('{}',{headers:{'content-type':'application/json'}});}return new Response('[]',{headers:{'content-type':'application/json'}});};
-const client=new QueryClient({defaultOptions:{queries:{retry:false}}});
-const initial={id:'fixture',name:'Quarterly maintenance',starts_at:'2026-03-29T00:30:00.000Z',ends_at:'2026-03-29T02:30:00.000Z',timezone:'Europe/Zurich',resource_ids:[]};
-const root=createRootRoute({component:()=>React.createElement(MaintenanceWindowDialog,{window:initial,environmentId:'default',onClose:()=>{}})});const router=createRouter({routeTree:root,history:createMemoryHistory({initialEntries:['/']})});createRoot(document.getElementById('root')).render(React.createElement(QueryClientProvider,{client},React.createElement(RouterProvider,{router}))); 
-</script><pre id="saved" aria-label="Saved request"></pre></body></html>

@@ -1,6 +1,0 @@
-<!doctype html><html><meta charset="utf-8"><button id="finish">Finish simulated reset with error</button><div id="root"></div><script type="module">
-import React from'react';import{createRoot}from'react-dom/client';import{DangerTab}from'/src/routes/settings/tabs/danger.tsx';import{useUi}from'/src/lib/store';import'/src/index.css';import'/src/lib/i18n.ts';
-useUi.setState({environmentId:'review-environment'});
-let finish; window.fetch=()=>new Promise(resolve=>{finish=()=>resolve(Response.json({error:'Fixture: reset was not executed'},{status:409}));}); document.getElementById('finish').onclick=()=>finish?.();
-createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24,maxWidth:1000,margin:'auto'}},React.createElement(DangerTab)));
-</script></html>

@@ -1,5 +1,0 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head><body><div id="root"></div><script type="module">
-import React from 'react';import {createRoot} from 'react-dom/client';import {ActionRunDialog} from '/src/components/ui/action-run-dialog.tsx';import {completionStatus} from '/src/lib/execution-status.ts';import '/src/index.css';import '/src/lib/i18n.ts';
-function Fixture(){const[unknown,setUnknown]=React.useState(false);const[open,setOpen]=React.useState(true);React.useEffect(()=>{const handler=e=>{if(e.key==='F8')setUnknown(true);};window.addEventListener('keydown',handler);return()=>window.removeEventListener('keydown',handler);},[]);return open?React.createElement(ActionRunDialog,{open:true,title:'Package update · fixture host',status:completionStatus({status:unknown?'unrecognized':'cancelled',success:false}),lines:[{text:'Controller reported cancellation.'}],onClose:()=>setOpen(false)}):React.createElement('p',null,'Action dialog closed');}
-createRoot(document.getElementById('root')).render(React.createElement(Fixture));
-</script></body></html>

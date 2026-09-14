@@ -1,7 +1,0 @@
-<!doctype html><html><meta charset="utf-8"><div id="root"></div><script type="module">
-import React from 'react';import{createRoot}from'react-dom/client';import{AuditTableRow,AuditMobileRow}from'/src/features/operations/AuditLogPanel.tsx';import'/src/index.css';import'/src/lib/i18n.ts';
-window.fetch=async()=>Response.json([]);
-const row={action:'users.password',user:'review-admin',ip:'127.0.0.1',success:1,created_at:'2026-09-10T16:00:00Z',detail:JSON.stringify({kind:'user-change',version:1,resource:{id:'deleted-account',name:'former-operator'},changes:[{label:'Password',before:'Previous credential',after:'Replaced'},{label:'Sessions',before:'Previous sessions',after:'Revoked'}]})};
-const legacy={...row,action:'users.totp.disable',detail:JSON.stringify({kind:'user-change',version:1,resource:{id:'deleted-account',name:'former-operator'},changes:[{label:'MFA',before:'Enabled',after:'Disabled'}]})};
-createRoot(document.getElementById('root')).render(React.createElement('main',{style:{padding:24}},React.createElement('h1',null,'Account audit verification'),React.createElement('table',{style:{width:'100%',marginBottom:24}},React.createElement('tbody',null,React.createElement(AuditTableRow,{row}),React.createElement(AuditTableRow,{row:legacy}))),React.createElement('section',{style:{width:320,border:'1px solid #555'}},React.createElement(AuditMobileRow,{row}))));
-</script></html>

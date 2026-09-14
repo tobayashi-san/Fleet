@@ -32,13 +32,15 @@ describe("UI refactor contract", () => {
     expect(css).toContain("input::placeholder, textarea::placeholder { color: hsl(var(--muted-foreground)); }");
   });
 
-  it("uses one compact rectangular switch treatment throughout the app", () => {
+  it("keeps compact switch defaults and supports rounded shadcn switches", () => {
     const uiSwitch = source("components/ui/switch.tsx");
     const hostDialog = source("components/CreateServerDialog.tsx");
     const css = source("index.css");
     expect(uiSwitch).toContain("h-5 w-10");
-    expect(uiSwitch).toContain("rounded-[6px]");
-    expect(uiSwitch).toContain("h-3.5 w-3.5 rounded-[3px]");
+    expect(uiSwitch).toContain("rounded-[var(--radius-switch,6px)]");
+    expect(uiSwitch).toContain("h-3.5 w-3.5 rounded-[var(--radius-switch-thumb,3px)]");
+    expect(css).toContain("--radius-switch: 9999px");
+    expect(css).toContain("--radius-switch-thumb: 9999px");
     expect(uiSwitch).toContain("data-[state=checked]:translate-x-[22px]");
     expect(uiSwitch).toContain("data-[state=unchecked]:translate-x-[2px]");
     expect(css).toContain('main button:not([role="switch"])');

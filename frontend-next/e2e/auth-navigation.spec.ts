@@ -349,6 +349,32 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 });
 
+test('shadcn looks round panels and controls without changing console themes', async ({ page }, testInfo) => {
+  test.setTimeout(60_000);
+  await loginForIsolatedTest(page);
+  for (const [name, mode, panelRadius, controlRadius] of [
+    ['shadcn Light', 'light', '12px', '6px'],
+    ['shadcn Dark', 'dark', '12px', '6px'],
+    ['Cloud', 'light', '3px', '0px'],
+  ] as const) {
+    await page.goto('/profile');
+    await page.getByRole('button', { name: 'More themes' }).click();
+    await page.getByRole('button', { name: `${name} theme, ${mode} mode` }).click();
+    await expect(page.locator('main .rounded-panel').first()).toHaveCSS('border-top-left-radius', panelRadius);
+    await page.goto('/operations');
+    await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
+    const add = page.getByRole('button', { name: 'Add maintenance window', exact: true });
+    await expect(add).toHaveCSS('border-top-left-radius', controlRadius);
+    await add.click();
+    const dialog = page.getByRole('dialog', { name: /schedule maintenance window/i });
+    await expect(dialog).toHaveCSS('border-top-left-radius', panelRadius);
+    await expect(dialog.getByLabel('Name', { exact: true })).toHaveCSS('border-top-left-radius', controlRadius);
+    await expect(dialog.getByLabel('Timezone', { exact: true })).toHaveCSS('border-top-left-radius', controlRadius);
+    await page.screenshot({ path: testInfo.outputPath(`${name.replaceAll(' ', '-')}-rounded.png`) });
+    await dialog.getByRole('button', { name: 'Close dialog' }).click();
+  }
+});
+
 test('agent feature visibility follows the setting immediately', async ({ page }) => {
   await loginForIsolatedTest(page);
   await page.goto('/settings/system');

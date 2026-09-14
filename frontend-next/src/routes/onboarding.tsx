@@ -39,7 +39,7 @@ function Stepper({ current }: { current: number }) {
           const complete = index < current;
           const active = index === current;
           return (
-            <li key={label} className={`flex items-center gap-3 rounded-[3px] border px-3 py-2.5 ${active ? 'border-primary/35 bg-primary/10 text-foreground' : 'border-transparent text-muted-foreground'}`} aria-current={active ? 'step' : undefined}>
+            <li key={label} className={`flex items-center gap-3 rounded-panel border px-3 py-2.5 ${active ? 'border-primary/35 bg-primary/10 text-foreground' : 'border-transparent text-muted-foreground'}`} aria-current={active ? 'step' : undefined}>
               <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-[2px] border ${complete ? 'border-emerald-500/35 bg-emerald-500/10 text-emerald-500' : active ? 'border-primary/35 bg-background text-primary' : 'border-border-strong/70 bg-background/50'}`}>
                 {complete ? <Check className="h-3.5 w-3.5" /> : <Icon className="h-3.5 w-3.5" />}
               </span>
@@ -106,10 +106,10 @@ export function OnboardingPage() {
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-[hsl(var(--surface-1))] p-3 sm:p-6">
-      <main className="grid w-full max-w-5xl overflow-hidden rounded-[3px] border border-border-strong bg-card shadow-xl lg:min-h-[620px] lg:grid-cols-[18rem_minmax(0,1fr)]">
+      <main className="grid w-full max-w-5xl overflow-hidden rounded-panel border border-border-strong bg-card shadow-xl lg:min-h-[620px] lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="border-b border-border-strong/80 bg-[hsl(var(--surface-2))] p-4 lg:border-b-0 lg:border-r lg:p-5">
           <div className="flex items-center gap-3 border-b border-border-strong/70 pb-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-[3px] border border-primary/25 bg-primary/10 text-primary"><Anchor className="h-4 w-4" /></div>
+            <div className="flex h-9 w-9 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><Anchor className="h-4 w-4" /></div>
             <div className="min-w-0"><div className="truncate font-mono text-[12px] font-bold tracking-[0.12em]">{branding.appName.toUpperCase()}</div><div className="truncate text-xs text-muted-foreground">{branding.appTagline}</div></div>
           </div>
           <div className="mt-4 hidden lg:block">
@@ -117,7 +117,7 @@ export function OnboardingPage() {
             <Stepper current={step} />
           </div>
           <div className="mt-4 lg:hidden"><Stepper current={step} /></div>
-          <div className="mt-5 hidden rounded-[3px] border border-border-strong/70 bg-background/40 p-3 text-xs leading-5 text-muted-foreground lg:block">
+          <div className="mt-5 hidden rounded-panel border border-border-strong/70 bg-background/40 p-3 text-xs leading-5 text-muted-foreground lg:block">
             Configuration is saved as each section is completed. Optional sections can be changed later in Administration.
           </div>
         </aside>
@@ -159,10 +159,10 @@ function WelcomeStep({ onNext, NavRow }: { onNext: () => void; NavRow: NavRowCom
   const { t } = useTranslation();
   return (
     <>
-      <div className="flex h-10 w-10 items-center justify-center rounded-[3px] border border-primary/25 bg-primary/10 text-primary"><ServerCog className="h-5 w-5" /></div>
+      <div className="flex h-10 w-10 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><ServerCog className="h-5 w-5" /></div>
       <h2 className="mt-4 text-2xl font-semibold tracking-tight">{t('ob.welcome')}</h2>
       <p className="mt-2 max-w-xl text-sm leading-6 text-muted-foreground">{t('ob.welcomeDesc')}</p>
-      <div className="mt-5 rounded-[3px] border border-border-strong/80 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">{t('ob.setupHelper')}</div>
+      <div className="mt-5 rounded-panel border border-border-strong/80 bg-muted/15 p-4 text-sm leading-6 text-muted-foreground">{t('ob.setupHelper')}</div>
       <NavRow onNext={onNext} nextLabel={t('ob.letsGo')} />
     </>
   );
@@ -200,9 +200,9 @@ function PasswordStep({ onNext, onPrev, NavRow }: { onNext: () => void; onPrev: 
 
   return (
     <>
-      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[3px] border border-primary/25 bg-primary/10 text-primary"><Lock className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.passwordStep')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.passwordHint')}</p></div></div>
+      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><Lock className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.passwordStep')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.passwordHint')}</p></div></div>
 
-      <div className="mt-5 grid gap-4 rounded-[3px] border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
+      <div className="mt-5 grid gap-4 rounded-panel border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="ob-user">{t('ob.username')}</Label>
           <Input id="ob-user" autoFocus value={username} onChange={(e) => setUsername(e.target.value)} />
@@ -219,7 +219,7 @@ function PasswordStep({ onNext, onPrev, NavRow }: { onNext: () => void; onPrev: 
           <Label htmlFor="ob-pw2">{t('login.confirmPassword')}</Label>
           <Input id="ob-pw2" type="password" autoComplete="new-password" value={pw2} onChange={(e) => setPw2(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submit(); }} />
         </div>
-        {error && <p className="rounded-[3px] border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive sm:col-span-2">{error}</p>}
+        {error && <p className="rounded-panel border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive sm:col-span-2">{error}</p>}
       </div>
 
       <NavRow onPrev={onPrev} onNext={submit} nextDisabled={busy} nextLabel={t('login.setPassword')} />
@@ -263,9 +263,9 @@ function AppearanceStep({
 
   return (
     <>
-      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[3px] border border-primary/25 bg-primary/10 text-primary"><Palette className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.appearance')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.appearanceHint')}</p></div></div>
+      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><Palette className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.appearance')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.appearanceHint')}</p></div></div>
 
-      <div className="mt-5 grid gap-4 rounded-[3px] border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
+      <div className="mt-5 grid gap-4 rounded-panel border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="ob-name">{t('set.appName')}</Label>
           <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shipyard" />
@@ -348,9 +348,9 @@ function SshStep({ onNext, onPrev, onSkip, NavRow }: { onNext: () => void; onPre
 
   return (
     <>
-      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[3px] border border-primary/25 bg-primary/10 text-primary"><Key className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.sshStep')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.sshDesc')}</p></div></div>
+      <div className="flex items-start gap-3"><div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><Key className="h-4 w-4" /></div><div><h2 className="text-xl font-semibold tracking-tight">{t('ob.sshStep')}</h2><p className="mt-1 text-sm text-muted-foreground">{t('ob.sshDesc')}</p></div></div>
 
-      <div className="mt-5 rounded-[3px] border border-border-strong/80 bg-muted/10 p-4">
+      <div className="mt-5 rounded-panel border border-border-strong/80 bg-muted/10 p-4">
         {state === 'checking' && <div className="flex items-center gap-2 text-sm text-muted-foreground"><span className="h-2 w-2 animate-pulse rounded-full bg-primary" />{t('ob.checkingKey')}</div>}
         {state === 'exists' && (
           <div className="rounded-sm border border-emerald-500/30 bg-emerald-500/10 p-3 text-sm">
@@ -388,7 +388,7 @@ function DoneStep({ onFinish }: { onFinish: () => void }) {
   const { t } = useTranslation();
   return (
     <div className="mx-auto max-w-lg text-center">
-      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-[3px] border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"><Check className="h-6 w-6" /></div>
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-panel border border-emerald-500/30 bg-emerald-500/10 text-emerald-500"><Check className="h-6 w-6" /></div>
       <h2 className="mt-5 text-2xl font-semibold tracking-tight">{t('ob.done')}</h2>
       <p className="mt-2 text-sm leading-6 text-muted-foreground">{t('ob.doneDesc')}</p>
       <div className="mt-6 border-t border-border-strong/70 pt-4"><Button onClick={onFinish} className="mx-auto">

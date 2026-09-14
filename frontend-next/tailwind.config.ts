@@ -59,6 +59,7 @@ export default {
         info: 'hsl(var(--info))',
       },
       borderRadius: {
+        panel: 'var(--radius-panel, 3px)',
         lg: 'var(--radius)',
         md: 'calc(var(--radius) - 2px)',
         sm: 'calc(var(--radius) - 4px)',

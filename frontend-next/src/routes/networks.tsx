@@ -939,7 +939,7 @@ function IpamSourcesContent({
                       return (
                         <section
                           key={source.id}
-                          className="min-w-0 overflow-hidden rounded-[3px] border border-border-strong/70 bg-card"
+                          className="min-w-0 overflow-hidden rounded-panel border border-border-strong/70 bg-card"
                         >
                           <div className="flex flex-col gap-3 px-4 py-3 sm:flex-row sm:items-start sm:justify-between">
                             <div className="min-w-0">

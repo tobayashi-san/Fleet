@@ -133,7 +133,7 @@ export function LoginPage() {
 
   return (
     <div className="flex min-h-svh items-center justify-center bg-[hsl(var(--surface-1))] p-4 sm:p-6">
-      <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-[3px] border border-border-strong bg-card shadow-xl md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
+      <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-panel border border-border-strong bg-card shadow-xl md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
         <aside className="relative flex h-48 min-h-0 flex-col justify-between overflow-hidden text-white md:h-auto">
           <img src="/login-infrastructure.webp" alt="" className="absolute inset-0 h-full w-full object-cover" />
           <div className="absolute inset-0 bg-slate-950/55 md:bg-slate-950/45" />

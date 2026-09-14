@@ -22,7 +22,7 @@ export function ActiveFilterChips({
   if (filters.length === 0) return null;
 
   return (
-    <div className={cn('flex flex-wrap items-center gap-1.5 rounded-[3px] border border-border/70 bg-muted/10 px-3 py-2', className)} aria-label="Active filters">
+    <div className={cn('flex flex-wrap items-center gap-1.5 rounded-panel border border-border/70 bg-muted/10 px-3 py-2', className)} aria-label="Active filters">
       <span className="mr-1 text-[11px] font-semibold text-muted-foreground">Active filters</span>
       {filters.map((filter) => (
         <button

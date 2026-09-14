@@ -389,7 +389,7 @@ export function OperationsPage() {
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
       />}
-      <nav className="flex gap-1 overflow-x-auto rounded-[3px] border bg-card p-1" aria-label="Operations sections">
+      <nav className="flex gap-1 overflow-x-auto rounded-panel border bg-card p-1" aria-label="Operations sections">
         <Button asChild size="sm" variant={activeSection === "tasks" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Activity</Link></Button>
         {canViewMaintenance && <Button asChild size="sm" variant={activeSection === "maintenance" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "maintenance" }}>Maintenance</Link></Button>}
         {canViewAudit && <Button asChild size="sm" variant={activeSection === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
@@ -614,7 +614,7 @@ function OperationsContext({
       : "None scheduled";
   return (
     <section
-      className={`overflow-hidden rounded-[3px] border bg-card ${active ? "border-amber-500/35" : ""}`}
+      className={`overflow-hidden rounded-panel border bg-card ${active ? "border-amber-500/35" : ""}`}
       aria-label="Operating status"
     >
       <div className="flex flex-wrap items-stretch">

@@ -1,6 +1,7 @@
 import { expect, test, type Page, type Route } from '@playwright/test';
 import http from 'node:http';
 import https from 'node:https';
+import { withFreshOnboardingApi } from './fixtures/onboarding-api';
 
 // Test-only self-signed material for the isolated mock Proxmox API below.
 // The application is intentionally configured with `insecure: true` for this
@@ -14,6 +15,7 @@ test.describe.configure({ mode: 'serial' });
 async function loginForIsolatedTest(page: Page) {
   await page.goto('/login');
   const setupButton = page.getByRole('button', { name: /let'?s go|los geht'?s/i });
+  await expect(setupButton.or(page.getByRole('button', { name: /sign in|anmelden/i }))).toBeVisible();
   if (await setupButton.isVisible()) {
     await setupButton.click();
     await page.getByLabel(/username|benutzername/i).fill('e2e-admin');
@@ -40,33 +42,36 @@ async function openPlatformInventory(page: Page, name: string) {
 }
 
 test('onboarding is public only until the first admin exists', async ({ page }) => {
-  await page.goto('/onboarding');
-  await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
+  await withFreshOnboardingApi(page, async () => {
+    await page.goto('/onboarding');
+    await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
 
-  const token = await page.evaluate(async () => {
-    const response = await fetch('/api/auth/setup', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username: 'e2e-admin', password: 'E2e-password-2026!' }),
+    const token = await page.evaluate(async () => {
+      const response = await fetch('/api/auth/setup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username: 'e2e-admin', password: 'E2e-password-2026!' }),
+      });
+      if (!response.ok) throw new Error(`Setup failed: ${response.status}`);
+      return (await response.json()).token as string;
     });
-    if (!response.ok) throw new Error(`Setup failed: ${response.status}`);
-    return (await response.json()).token as string;
+
+    await page.evaluate(() => localStorage.removeItem('shipyard_token'));
+    await page.goto('/onboarding');
+    await expect(page).toHaveURL(/\/login$/);
+    await expect(page.getByRole('button', { name: /sign in|anmelden/i })).toBeVisible();
+
+    await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
+    await page.goto('/onboarding');
+    await expect(page).toHaveURL(/\/$/);
+    await page.evaluate(() => localStorage.removeItem('shipyard_token'));
   });
-
-  await page.evaluate(() => localStorage.removeItem('shipyard_token'));
-  await page.goto('/onboarding');
-  await expect(page).toHaveURL(/\/login$/);
-  await expect(page.getByRole('button', { name: /sign in|anmelden/i })).toBeVisible();
-
-  await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
-  await page.goto('/onboarding');
-  await expect(page).toHaveURL(/\/$/);
-  await page.evaluate(() => localStorage.removeItem('shipyard_token'));
 });
 
 test('initial setup, login and protected console navigation work end-to-end', async ({ page }) => {
   await page.goto('/login');
   const setupButton = page.getByRole('button', { name: /let'?s go|los geht'?s/i });
+  await expect(setupButton.or(page.getByRole('button', { name: /sign in|anmelden/i }))).toBeVisible();
   const performedSetup = await setupButton.isVisible();
   if (performedSetup) {
     await expect(page.getByRole('heading', { name: /welcome|willkommen/i })).toBeVisible();
@@ -289,7 +294,7 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   await expect(dialog.getByLabel('Start')).toHaveAttribute('type', 'datetime-local');
   await expect(dialog.getByLabel('Start')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
   await expect(dialog.getByLabel('End')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  await expect(dialog.getByLabel('Timezone')).toHaveValue('Europe/Zurich');
+  await expect(dialog.getByLabel('Timezone', { exact: true })).toHaveValue('Europe/Zurich');
 });
 
 test('console themes apply their coordinated light and dark modes immediately', async ({ page }) => {
@@ -543,7 +548,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     if (!assignment.ok) throw new Error(`Could not assign playbook host group: ${assignment.status}`);
     const playbook = await fetch('/api/playbooks', {
       method: 'POST', headers,
-      body: JSON.stringify({ filename, content: '---\n- name: Browser test\n  hosts: all\n  gather_facts: false\n  tasks:\n    - ansible.builtin.debug:\n        msg: browser-test\n' }),
+      body: JSON.stringify({ filename, revision: null, content: '---\n- name: Browser test\n  hosts: all\n  gather_facts: false\n  tasks:\n    - ansible.builtin.debug:\n        msg: browser-test\n' }),
     });
     if (!playbook.ok) throw new Error(`Could not create playbook fixture: ${playbook.status}`);
     return groupRow.id;
@@ -562,10 +567,11 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await page.getByRole('button', { name: /add variable/i }).click();
     await page.getByLabel('Key', { exact: true }).fill(variableKey);
     await page.getByLabel('Value', { exact: true }).fill(secretValue);
-    await page.getByRole('switch', { name: 'Secret value' }).click();
+    await expect(page.getByRole('switch', { name: 'Secret value' })).toBeChecked();
     await page.getByRole('button', { name: 'Save', exact: true }).click();
-    await expect(page.getByText(variableKey, { exact: true })).toBeVisible();
-    await expect(page.getByText('••••••••', { exact: true })).toBeVisible();
+    const secretRow = page.getByRole('row').filter({ hasText: variableKey });
+    await expect(secretRow).toBeVisible();
+    await expect(secretRow).toContainText('••••••••');
     await expect(page.getByText(secretValue, { exact: true })).toHaveCount(0);
 
     const returnedSecret = await page.evaluate(async (variableKey) => {
@@ -790,9 +796,14 @@ test('a Shipyard host can be assigned to a folder through the resource list', as
   await firstBulkRow.locator('input[type="checkbox"]').check();
   await secondBulkRow.locator('input[type="checkbox"]').check();
   await page.getByLabel(/move selected hosts to folder|ausgewählte hosts in ordner verschieben/i).selectOption('__root__');
+  await page.getByRole('button', { name: 'Move', exact: true }).click();
+  const moveReview = page.getByRole('dialog');
+  await expect(moveReview).toContainText('Move 2 hosts?');
+  await expect(moveReview).toContainText('e2e-move-host');
+  await expect(moveReview).toContainText('e2e-bulk-host');
   await Promise.all([
     page.waitForResponse(response => response.url().includes('/api/servers/group/bulk') && response.request().method() === 'PUT'),
-    page.getByRole('button', { name: 'Move', exact: true }).click(),
+    moveReview.getByRole('button', { name: 'Move hosts', exact: true }).click(),
   ]);
   await expect(page.getByText('2 hosts removed from folders.', { exact: true })).toBeVisible();
 
@@ -1018,9 +1029,9 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     await expect(page.getByText('VM adopted as a host.', { exact: true })).toBeVisible();
     const inventoryTree = page.locator('aside');
     await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
-    const managedVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
-    await expect(managedVmLink).toHaveAttribute('href', /\/servers\//);
-    await expect(inventoryTree.getByRole('link', { name: 'Open Proxmox virtual machine e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
+    const inventoryVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
+    await expect(inventoryVmLink).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
+    await expect(inventoryTree.getByRole('link', { name: /^Open host .* linked to e2e-import-vm$/ })).toHaveAttribute('href', /\/servers\//);
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -1051,7 +1062,9 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
       { type: 'qemu', node: 'hierarchy-node', vmid: 208, name: 'hierarchy-vm', status: 'running', maxcpu: 2, mem: 1024, maxmem: 2048 },
       { type: 'lxc', node: 'hierarchy-node', vmid: 210, name: 'hierarchy-ct', status: 'running', maxcpu: 1, mem: 512, maxmem: 1024 },
     ]);
-    if (url.pathname === '/api2/json/nodes/hierarchy-node/storage') return send([]);
+    if (url.pathname === '/api2/json/nodes/hierarchy-node/storage') return send([
+      { storage: 'local-zfs', type: 'zfspool', active: 1, enabled: 1, total: 107374182400, used: 21474836480, avail: 85899345920, content: 'images,rootdir', shared: 0 },
+    ]);
     response.statusCode = 404;
     response.end(JSON.stringify({ data: null }));
   });
@@ -1089,8 +1102,9 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     expect(updateTableWidth.table).toBeGreaterThanOrEqual(updateTableWidth.container - 2);
     await platformUpdatesTable.getByRole('button', { name: 'Add to Shipyard' }).click();
     const addFleetDialog = page.getByRole('dialog', { name: 'Add host' });
-    await expect(addFleetDialog.getByLabel(/(?:host|server) name/i)).toHaveValue('hierarchy-node');
-    await expect(addFleetDialog.getByLabel('IP Address')).toHaveValue('10.250.0.10');
+    await expect(addFleetDialog.getByLabel(/^Display name/)).toHaveValue('hierarchy-node');
+    await expect(addFleetDialog.getByLabel(/^SSH address/)).toHaveValue('10.250.0.10');
+    await addFleetDialog.getByText('Advanced options', { exact: true }).click();
     await expect(addFleetDialog.getByLabel('Hostname')).toHaveValue('hierarchy-node');
     const [createdFleetResponse] = await Promise.all([
       page.waitForResponse(response => response.url().endsWith('/api/servers') && response.request().method() === 'POST' && response.ok()),
@@ -1100,7 +1114,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
     const hierarchyTree = page.locator('aside');
     await expect(hierarchyTree.getByText('hierarchy-node', { exact: true })).toHaveCount(1);
-    const managedNodeLink = hierarchyTree.getByRole('link', { name: 'Open managed host hierarchy-node' });
+    const managedNodeLink = hierarchyTree.getByRole('link', { name: 'Open host hierarchy-node linked to node hierarchy-node' });
     await expect(managedNodeLink).toBeVisible();
     await managedNodeLink.click();
     await expect(page).toHaveURL(/\/servers\//);
@@ -1111,7 +1125,8 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await page.getByRole('tab', { name: /nodes 1/i }).click();
     await page.locator('main').getByRole('link', { name: 'hierarchy-node', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'hierarchy-node', exact: true })).toBeVisible();
-    await expect(page.getByText(/^(primary ZFS datastore|primärer ZFS-datastore)$/i)).toBeVisible();
+    await expect(page.getByText('Primary datastore', { exact: true })).toBeVisible();
+    await expect(page.getByText('local-zfs · hierarchy-node', { exact: true })).toBeVisible();
     // Detail pages use the same object rows on narrow screens: no horizontal
     // table is required just to inspect the first inventory entries.
     await page.setViewportSize({ width: 390, height: 844 });
@@ -1120,7 +1135,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await expect(mobilePreviewVm).toBeVisible();
     await expect(page.locator('main table').first()).toBeHidden();
     await page.setViewportSize({ width: 1280, height: 900 });
-    await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
+    await page.getByRole('tab', { name: 'Inventory', exact: true }).click();
     await expect(page.getByText('E2E Xeon', { exact: true })).toBeVisible();
     await expect(page.getByText('pve-manager/8.4.1', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'vmbr0', exact: true })).toBeVisible();

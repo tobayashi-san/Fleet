@@ -12,6 +12,11 @@ const apiPort = process.env.FLEET_E2E_API_PORT || '3011';
 const webPort = process.env.FLEET_E2E_WEB_PORT || '5175';
 const externalServers = process.env.FLEET_E2E_EXTERNAL_SERVERS === '1';
 const workspaceRoot = path.join(runtimeDir, 'workspaces');
+const playbooksRoot = path.join(runtimeDir, 'playbooks');
+fs.cpSync(path.join(projectRoot, 'server/playbooks'), playbooksRoot, {
+  recursive: true,
+  filter: source => !path.basename(source).startsWith('playbook_e2e_'),
+});
 
 export default defineConfig({
   testDir: './e2e',
@@ -37,7 +42,7 @@ export default defineConfig({
       cwd: '../server',
       url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
-      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', SHIPYARD_KEY_SECRET: 'fleet-browser-e2e-key-secret', PLUGINS_DIR: path.join(projectRoot, 'plugins'), OPENTOFU_WORKSPACE_ROOTS: workspaceRoot, OPENTOFU_INTERNAL_VM_ROOT: path.join(workspaceRoot, 'internal', 'vms') },
+      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', SHIPYARD_KEY_SECRET: 'fleet-browser-e2e-key-secret', SHIPYARD_PLAYBOOKS_DIR: playbooksRoot, SHIPYARD_SSH_DIR: path.join(runtimeDir, 'ssh'), SHIPYARD_GIT_WORKSPACE_DIR: path.join(runtimeDir, 'git'), PLUGINS_DIR: path.join(runtimeDir, 'plugins'), OPENTOFU_WORKSPACE_ROOTS: workspaceRoot, OPENTOFU_INTERNAL_VM_ROOT: path.join(workspaceRoot, 'internal', 'vms') },
     },
     {
       command: `VITE_API_TARGET=http://127.0.0.1:${apiPort} vite --host 127.0.0.1 --port ${webPort}`,

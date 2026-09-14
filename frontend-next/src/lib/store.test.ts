@@ -23,9 +23,9 @@ const communityThemeIds = [
 
 describe('console theme presets', () => {
   it('provides one unique, complete preview contract for every selectable theme', () => {
-    expect(THEME_PRESETS).toHaveLength(33);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(11);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(22);
+    expect(THEME_PRESETS).toHaveLength(35);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(12);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(23);
     expect(new Set(THEME_PRESETS.map(theme => theme.id)).size).toBe(THEME_PRESETS.length);
 
     for (const theme of THEME_PRESETS) {
@@ -47,6 +47,12 @@ describe('console theme presets', () => {
       expect(theme, id).toBeDefined();
       expect(theme?.style, id).toBeTruthy();
     }
+  });
+
+  it('keeps shadcn variants paired and immediately discoverable', () => {
+    expect(resolveThemePreset('dark', 'shadcn-light')).toBe('shadcn-dark');
+    expect(resolveThemePreset('light', 'shadcn-dark')).toBe('shadcn-light');
+    expect(THEME_PRESETS.filter(theme => theme.id.startsWith('shadcn-')).every(theme => theme.recommended)).toBe(true);
   });
 
   it('keeps PaperColor variants paired when the color mode changes', () => {

@@ -3,6 +3,7 @@ import { ws } from './ws';
 
 type Theme = 'light' | 'dark' | 'system';
 export type ThemePreset =
+  | 'shadcn-light' | 'shadcn-dark'
   | 'cloud-light' | 'paper-light' | 'slate-light'
   | 'amber-light' | 'mint-light' | 'orchid-light' | 'glacier-light' | 'ink-light'
   | 'midnight-dark' | 'graphite-dark' | 'navy-dark'
@@ -28,6 +29,8 @@ export interface ThemePresetDefinition {
 }
 
 export const THEME_PRESETS: ThemePresetDefinition[] = [
+  { id: 'shadcn-light', name: 'shadcn Light', style: 'Default', description: 'Neutral shadcn/ui light look, without colored accents', mode: 'light', recommended: true, counterpart: 'shadcn-dark', preview: { canvas: '#ffffff', surface: '#ffffff', card: '#ffffff', accent: '#171717' } },
+  { id: 'shadcn-dark', name: 'shadcn Dark', style: 'Default', description: 'Neutral shadcn/ui dark look, without colored accents', mode: 'dark', recommended: true, counterpart: 'shadcn-light', preview: { canvas: '#0a0a0a', surface: '#0a0a0a', card: '#0a0a0a', accent: '#fafafa' } },
   { id: 'cloud-light', name: 'Cloud', description: 'Light, cool console design', mode: 'light', preview: { canvas: '#f7faff', surface: '#ffffff', card: '#ffffff', accent: '#0f6cbd' } },
   { id: 'paper-light', name: 'Paper', description: 'Neutral white with clear contrast', mode: 'light', preview: { canvas: '#faf9f6', surface: '#ffffff', card: '#ffffff', accent: '#26364b' } },
   { id: 'slate-light', name: 'Slate', description: 'Blue-gray management interface', mode: 'light', preview: { canvas: '#f4f7fb', surface: '#ffffff', card: '#ffffff', accent: '#1d4fa3' } },

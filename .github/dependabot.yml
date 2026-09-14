@@ -45,3 +45,18 @@ updates:
       day: "monday"
       time: "09:30"
       timezone: "Europe/Zurich"
+
+  - package-ecosystem: "npm"
+    directory: "/frontend-next"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    groups:
+      npm-frontend-minor-patch:
+        patterns: ["*"]
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"

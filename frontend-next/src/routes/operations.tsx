@@ -1023,7 +1023,7 @@ export function MaintenanceWindowDialog({
     initial?.ends_at || new Date(Date.now() + 60 * 60 * 1000).toISOString(),
   );
   const [description, setDescription] = useState(initial?.description || "");
-  const [resourceScope, setResourceScope] = useState<'selected' | 'environment'>(initial && !initial.resource_ids?.length ? 'environment' : 'selected');
+  const [resourceScope, setResourceScope] = useState<'selected' | 'environment'>(!initial || !initial.resource_ids?.length ? 'environment' : 'selected');
   const [resourceIds, setResourceIds] = useState<string[]>(initial?.resource_ids || []);
   const [changeReference, setChangeReference] = useState(initial?.change_reference || "");
   const [repeat, setRepeat] = useState('none');

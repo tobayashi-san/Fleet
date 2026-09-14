@@ -116,6 +116,8 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await page.getByRole('menuitem', { name: 'Delete window' }).click();
   await expect(page.getByRole('dialog', { name: /delete maintenance window/i })).toBeVisible();
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByText('Removed', { exact: true })).toBeVisible();
+  await page.getByRole('button', { name: 'Close', exact: true }).click();
   await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true })).toHaveCount(0);
 
   await page.goto('/settings');
@@ -220,9 +222,9 @@ test('host details keep their originating workspace and desktop activity opens i
     }));
     await page.goto('/operations?section=tasks');
     await page.getByRole('row', { name: /Desktop activity details/ }).click();
-    await expect(page.getByRole('dialog', { name: 'Task details' })).toHaveCount(0);
-    await expect(page.getByText('Task details', { exact: true })).toBeVisible();
-    await expect(page.getByText('Selected task', { exact: true })).toBeVisible();
+    await expect(page).toHaveURL(new RegExp(`/operations/executions/${'desktop-activity'}(?:\\?.*)?$`));
+    await expect(page.getByRole('heading', { name: 'Execution details', exact: true })).toBeVisible();
+    await expect(page.getByText('Execution environment:', { exact: false })).toBeVisible();
   } finally {
     await page.evaluate(async (id) => {
       const token = localStorage.getItem('shipyard_token');
@@ -284,10 +286,10 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390);
   expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
   expect(dialogBox!.y).toBeLessThan(844);
-  await expect(dialog.getByLabel('Start')).toHaveAttribute('type', 'text');
-  await expect(dialog.getByLabel('Start')).toHaveValue(/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/);
-  await expect(dialog.getByLabel('End')).toHaveValue(/^\d{2}\/\d{2}\/\d{4}, \d{2}:\d{2}$/);
-  await expect(dialog.getByText(/24-hour time · Europe\/Zurich/)).toBeVisible();
+  await expect(dialog.getByLabel('Start')).toHaveAttribute('type', 'datetime-local');
+  await expect(dialog.getByLabel('Start')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  await expect(dialog.getByLabel('End')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
+  await expect(dialog.getByLabel('Timezone')).toHaveValue('Europe/Zurich');
 });
 
 test('console themes apply their coordinated light and dark modes immediately', async ({ page }) => {

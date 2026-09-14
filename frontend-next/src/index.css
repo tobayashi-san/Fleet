@@ -118,6 +118,35 @@
 
   /* Console palettes. They only redefine semantic tokens, so every shadcn
      component, table and dialog keeps the same visual language. */
+  /* Neutral shadcn palette in the HSL format used by this Tailwind 3 app.
+     Operational status tokens remain shared with the accessible console. */
+  :root[data-console-theme='shadcn-light'] {
+    --surface-1: 0 0% 100%; --surface-2: 0 0% 100%; --surface-3: 0 0% 96.1%;
+    --background: 0 0% 100%; --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%; --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%; --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%; --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%; --secondary-foreground: 0 0% 9%;
+    /* Slightly darker helper text retains AA on muted table headers. */
+    --muted: 0 0% 96.1%; --muted-foreground: 0 0% 43.8%;
+    --accent: 0 0% 96.1%; --accent-foreground: 0 0% 9%;
+    --border: 0 0% 89.8%; --border-strong: 0 0% 80%; --input: 0 0% 89.8%; --ring: 0 0% 3.9%;
+    --radius: 0.5rem;
+  }
+
+  :root.dark[data-console-theme='shadcn-dark'] {
+    --surface-1: 0 0% 3.9%; --surface-2: 0 0% 3.9%; --surface-3: 0 0% 14.9%;
+    --background: 0 0% 3.9%; --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%; --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%; --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%; --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%; --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%; --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%; --accent-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%; --border-strong: 0 0% 24%; --input: 0 0% 14.9%; --ring: 0 0% 83.1%;
+    --radius: 0.5rem;
+  }
+
   :root[data-console-theme='cloud-light'] {
     --surface-1: 210 25% 98%; --surface-2: 0 0% 100%; --surface-3: 0 0% 100%;
     --background: 210 25% 98%; --foreground: 222.2 84% 4.9%;
@@ -498,6 +527,10 @@
      surface hierarchy. This keeps shared controls calm in dense admin work
      while allowing the brand accent to remain reserved for action and state. */
   :root { --radius: 0.25rem; }
+
+  :root[data-console-theme^='shadcn-'] body {
+    background-image: none;
+  }
 
   /* Native controls otherwise fall back to browser-specific system fonts in
      some engines. They deliberately inherit the same Inter metrics as the

@@ -297,14 +297,14 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   await expect(dialog.getByLabel('Timezone', { exact: true })).toHaveValue('Europe/Zurich');
 });
 
-test('console themes apply their coordinated light and dark modes immediately', async ({ page }) => {
+test('console themes apply their coordinated light and dark modes immediately', async ({ page }, testInfo) => {
   await loginForIsolatedTest(page);
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(4);
+  await expect(themeChoices).toHaveCount(6);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(33);
+  await expect(themeChoices).toHaveCount(35);
 
   const requestedThemes = [
     ['Tokyo Night', 'tokyo-night-dark', 'dark'],
@@ -324,6 +324,8 @@ test('console themes apply their coordinated light and dark modes immediately', 
     ['PaperColor Light', 'papercolor-light', 'light'],
     ['PaperColor Dark', 'papercolor-dark', 'dark'],
     ['Palenight', 'palenight-dark', 'dark'],
+    ['shadcn Light', 'shadcn-light', 'light'],
+    ['shadcn Dark', 'shadcn-dark', 'dark'],
   ] as const;
 
   for (const [name, id, mode] of requestedThemes) {
@@ -332,10 +334,18 @@ test('console themes apply their coordinated light and dark modes immediately', 
     await expect(page.locator('html')).toHaveAttribute('data-console-theme', id);
     await expect(page.locator('html')).toHaveClass(mode === 'dark' ? /\bdark\b/ : /^(?!.*\bdark\b)/);
     await expect(choice).toHaveAttribute('aria-pressed', 'true');
+    if (id.startsWith('shadcn-')) {
+      await expect(page.locator('body')).toHaveCSS('background-image', 'none');
+      await expect(page.locator('body')).toHaveCSS('background-color', mode === 'light' ? 'rgb(255, 255, 255)' : 'rgb(10, 10, 10)');
+      const primary = await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--primary').trim());
+      expect(primary).toBe(mode === 'light' ? '0 0% 9%' : '0 0% 98%');
+      await choice.scrollIntoViewIfNeeded();
+      await page.screenshot({ path: testInfo.outputPath(`${id}.png`) });
+    }
   }
 
   await page.reload();
-  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'palenight-dark');
+  await expect(page.locator('html')).toHaveAttribute('data-console-theme', 'shadcn-dark');
   await expect(page.locator('html')).toHaveClass(/\bdark\b/);
 });
 

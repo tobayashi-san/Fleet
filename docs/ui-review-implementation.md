@@ -2,7 +2,10 @@
 
 Aktuelle priorisierte Restliste und vollständige Abnahmeanforderungen: [Review-Abschlussmatrix](ui-review-closure.md).
 
-Source: artifacts/ui-review-2026-09-09/report/review.json
+Source: [Archived review data](https://github.com/tobayashi-san/Shipyard/blob/0e6490dfb646cce5a05dfda54755f0feaa3635f6/artifacts/ui-review-2026-09-09/report/review.json).
+
+Historical record: evidence links point to a fixed Git revision. See the
+[documentation index](README.md#historical-review-records) for archive access.
 
 Status: in progress. No item is complete until implementation and verification evidence are recorded.
 

@@ -1,110 +1,140 @@
 #!/bin/sh
-# Runs as root:
-#   1. Generate self-signed certificate if none is provided
-#   2. Fix data-volume ownership
-#   3. Drop privileges to the non-root "shipyard" user
+# Initialize persistent storage, then run the application without root privileges.
+set -eu
 
-CERT_DIR="/app/server/data/certs"
+fail() { echo "[INIT] $*" >&2; exit 1; }
+
+[ "$(id -u)" = 0 ] || fail "Start the container as root; the entrypoint drops to shipyard after initialization."
+[ -n "${JWT_SECRET:-}" ] || fail "JWT_SECRET must be set."
+[ -n "${SHIPYARD_KEY_SECRET:-}" ] || fail "SHIPYARD_KEY_SECRET must be set."
+[ "$JWT_SECRET" != "$SHIPYARD_KEY_SECRET" ] || fail "JWT_SECRET and SHIPYARD_KEY_SECRET must be different."
+
+case "${SHIPYARD_RENEW_CERT:-0}" in 0|1) ;; *) fail "SHIPYARD_RENEW_CERT must be 0 or 1." ;; esac
+if { [ -n "${SSL_KEY:-}" ] && [ -z "${SSL_CERT:-}" ]; } ||
+   { [ -z "${SSL_KEY:-}" ] && [ -n "${SSL_CERT:-}" ]; }; then
+  fail "Set SSL_KEY and SSL_CERT together, or leave both unset."
+fi
+if [ -n "${SSL_KEY:-}" ] && [ "${SHIPYARD_RENEW_CERT:-0}" = 1 ]; then
+  fail "SHIPYARD_RENEW_CERT only renews generated certificates; manage custom certificates externally."
+fi
+
+# Only explicitly configured workspace roots need ownership repair. Never use
+# the application-writable legacy tofu-workspace-paths.txt as a root command list.
+repair_workspaces() {
+  roots=${OPENTOFU_WORKSPACE_ROOTS:-/workspaces}
+  previous_ifs=$IFS
+  IFS=,
+  set -f
+  root_count=0
+  for configured_root in $roots; do
+    workspace_root=$(printf '%s' "$configured_root" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+    [ -n "$workspace_root" ] || fail "Workspace roots cannot be empty."
+    case "$workspace_root" in /*) ;; *) fail "Workspace roots must be absolute paths." ;; esac
+    workspace_root=$(realpath -m -- "$workspace_root")
+    case "$workspace_root" in
+      /|/app|/app/*|/etc|/etc/*|/usr|/usr/*|/var|/var/*|/home|/home/*|/root|/root/*|/proc|/proc/*|/sys|/sys/*|/dev|/dev/*|/bin|/sbin|/lib|/lib64|/tmp|/mnt|/media|/opt|/srv)
+        fail "Refusing ownership repair of protected workspace root: $workspace_root" ;;
+    esac
+    mkdir -p -- "$workspace_root"
+    # Do not follow symlinks inside a workspace into unrelated mounted paths.
+    chown -hR shipyard:shipyard -- "$workspace_root"
+    root_count=$((root_count + 1))
+  done
+  set +f
+  IFS=$previous_ifs
+  [ "$root_count" -gt 0 ] || fail "At least one workspace root is required."
+}
+repair_workspaces
+
+CERT_DIR=/app/server/data/certs
 DEFAULT_KEY="$CERT_DIR/shipyard.key"
 DEFAULT_CERT="$CERT_DIR/shipyard.crt"
+cert_temp=
+cleanup() {
+  if [ -n "$cert_temp" ]; then rm -rf -- "$cert_temp"; fi
+}
+trap cleanup EXIT
+trap 'exit 1' HUP INT TERM
 
-if [ -z "$SSL_KEY" ] || [ -z "$SSL_CERT" ]; then
-  mkdir -p "$CERT_DIR"
+validate_certificate() {
+  openssl x509 -in "$1" -noout -checkend 0 >/dev/null || fail "Certificate is unreadable or expired. Renew it before starting."
+  openssl x509 -in "$1" -noout -pubkey -out "$cert_temp/cert.pub"
+  openssl pkey -in "$2" -passin pass: -pubout -out "$cert_temp/key.pub"
+  cmp -s "$cert_temp/cert.pub" "$cert_temp/key.pub" || fail "TLS certificate and private key do not match."
+}
 
-  # Regenerate if cert exists but lacks SANs (pre-v1.0.2 certs)
-  if [ -f "$DEFAULT_CERT" ] && ! openssl x509 -in "$DEFAULT_CERT" -noout -ext subjectAltName 2>/dev/null | grep -q "IP\|DNS"; then
-    echo "[HTTPS] Existing certificate lacks SANs, regenerating..."
-    rm -f "$DEFAULT_KEY" "$DEFAULT_CERT"
-  fi
-
-  if [ ! -f "$DEFAULT_KEY" ] || [ ! -f "$DEFAULT_CERT" ]; then
-    echo "[HTTPS] Generating self-signed certificate..."
-    # Collect SANs: hostname, container IPs, localhost, and user-provided extras
+mkdir -p "$CERT_DIR"
+cert_temp=$(mktemp -d "$CERT_DIR/.prepare.XXXXXX")
+if [ -z "${SSL_KEY:-}" ]; then
+  renew=${SHIPYARD_RENEW_CERT:-0}
+  if [ "$renew" = 1 ] || { [ ! -e "$DEFAULT_KEY" ] && [ ! -e "$DEFAULT_CERT" ]; }; then
     SANS="DNS:shipyard,DNS:localhost,IP:127.0.0.1"
-    HOSTNAME_FQDN=$(hostname -f 2>/dev/null || hostname)
-    HOSTNAME_SHORT=$(hostname -s 2>/dev/null || hostname)
-    [ -n "$HOSTNAME_FQDN" ] && SANS="$SANS,DNS:$HOSTNAME_FQDN"
-    [ -n "$HOSTNAME_SHORT" ] && [ "$HOSTNAME_SHORT" != "$HOSTNAME_FQDN" ] && SANS="$SANS,DNS:$HOSTNAME_SHORT"
-    for ip in $(hostname -I 2>/dev/null); do
-      case "$ip" in *:*) continue ;; esac  # skip IPv6
-      SANS="$SANS,IP:$ip"
-    done
-    # User-provided SANs via CERT_SANS env var (e.g. "IP:10.30.1.10,DNS:myhost.local")
-    # Required for agent push mode so managed servers can verify the certificate.
-    [ -n "$CERT_SANS" ] && SANS="$SANS,$CERT_SANS"
+    # Keep generated names stable across container recreation. Add all addresses
+    # used by agents explicitly through CERT_SANS instead of container IPs.
+    [ -z "${CERT_SANS:-}" ] || SANS="$SANS,$CERT_SANS"
+    echo "[HTTPS] Generating self-signed certificate"
     openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
-      -keyout "$DEFAULT_KEY" -out "$DEFAULT_CERT" \
-      -subj "/CN=shipyard" \
-      -addext "subjectAltName=$SANS" 2>/dev/null
-    chmod 600 "$DEFAULT_KEY"
-    echo "[HTTPS] Certificate saved to $CERT_DIR (SANs: $SANS)"
+      -keyout "$cert_temp/shipyard.key" -out "$cert_temp/shipyard.crt" \
+      -subj /CN=shipyard -addext "subjectAltName=$SANS"
+    chmod 600 "$cert_temp/shipyard.key"
+    validate_certificate "$cert_temp/shipyard.crt" "$cert_temp/shipyard.key"
+    if [ -e "$DEFAULT_KEY" ] || [ -e "$DEFAULT_CERT" ]; then
+      previous_cert=$(mktemp -d "$CERT_DIR/previous.XXXXXX")
+      [ ! -e "$DEFAULT_KEY" ] || cp -p "$DEFAULT_KEY" "$previous_cert/shipyard.key"
+      [ ! -e "$DEFAULT_CERT" ] || cp -p "$DEFAULT_CERT" "$previous_cert/shipyard.crt"
+      echo "[HTTPS] Previous TLS files preserved in $previous_cert"
+    fi
+    mv "$cert_temp/shipyard.key" "$DEFAULT_KEY"
+    mv "$cert_temp/shipyard.crt" "$DEFAULT_CERT"
   fi
-
-  export SSL_KEY="$DEFAULT_KEY"
-  export SSL_CERT="$DEFAULT_CERT"
+  [ -f "$DEFAULT_KEY" ] && [ -f "$DEFAULT_CERT" ] || fail "Incomplete generated TLS pair. Restore it or explicitly set SHIPYARD_RENEW_CERT=1."
+  validate_certificate "$DEFAULT_CERT" "$DEFAULT_KEY"
+  openssl x509 -in "$DEFAULT_CERT" -noout -ext subjectAltName > "$cert_temp/sans"
+  grep -Eq 'DNS:|IP Address:' "$cert_temp/sans" || fail "Generated certificate lacks SANs. Set SHIPYARD_RENEW_CERT=1 to renew it."
+  chmod 600 "$DEFAULT_KEY"
+  export SSL_KEY="$DEFAULT_KEY" SSL_CERT="$DEFAULT_CERT"
+else
+  validate_certificate "$SSL_CERT" "$SSL_KEY"
 fi
+cleanup
+cert_temp=
 
-# Ensure writable directories are owned by the shipyard user
-# (Docker volumes are created as root on first use)
-mkdir -p /app/server/data/bin
-chown -R shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
-# A bind mount may already contain deployment directories created by root on
-# the host. Owning only the mount root leaves those children unwritable after
-# privileges are dropped to UID/GID 1001. Repair the complete workspace tree
-# on every start so existing and newly mounted deployments work immediately.
-if [ -d /workspaces ]; then
-  chown -R shipyard:shipyard /workspaces
-fi
+mkdir -p /app/server/data/bin /app/server/playbooks /app/plugins
+chown -hR shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
 
-# OpenTofu became a built-in server feature. Remove only its obsolete bundled
-# plugin copy; workspaces and state live outside this directory and are retained.
-if [ -d /app/plugins/opentofu ]; then
-  echo "[migration] Removing obsolete OpenTofu plugin copy"
-  rm -rf /app/plugins/opentofu
-fi
+# Retire old installations without deleting operator files. Archival is a
+# one-time move; subsequent starts find no legacy source to move again.
+archive_legacy() {
+  legacy_source=$1
+  if [ -e "$legacy_source" ] || [ -L "$legacy_source" ]; then
+    mkdir -p /app/server/data/legacy-migrations
+    legacy_archive=$(mktemp -d /app/server/data/legacy-migrations/startup.XXXXXX)
+    mv -- "$legacy_source" "$legacy_archive/"
+    chown -hR shipyard:shipyard "$legacy_archive"
+    echo "[migration] Preserved $legacy_source in $legacy_archive"
+  fi
+}
+archive_legacy /app/plugins/opentofu
+archive_legacy /app/server/playbooks/system
 
-# System playbooks (agent deploy, internal polling) live exclusively in
-# /app/bundled-playbooks and are never copied into the user-facing mount.
-# On first run, seed the user playbooks directory with starter playbooks.
-if [ -d /app/bundled-playbooks ] && [ -d /app/server/playbooks ]; then
-  # Remove legacy system/ directory from user mount (pre-v1.0.3 installs)
-  rm -rf /app/server/playbooks/system
-
-  # Seed starter playbooks if directory is empty (first run)
-  yml_count=$(find /app/server/playbooks -maxdepth 1 -name '*.yml' -o -name '*.yaml' 2>/dev/null | wc -l)
-  if [ "$yml_count" = "0" ]; then
-    echo "[INIT] Seeding starter playbooks into ./playbooks/"
+# Internal playbooks run exclusively from the image's bundled-playbooks tree.
+if [ -d /app/bundled-playbooks ]; then
+  yml_count=$(find /app/server/playbooks -maxdepth 1 -type f \( -name '*.yml' -o -name '*.yaml' \) | wc -l)
+  if [ "$yml_count" -eq 0 ]; then
+    echo "[INIT] Seeding starter playbooks"
     for f in /app/bundled-playbooks/*.yml /app/bundled-playbooks/*.yaml; do
       [ -f "$f" ] || continue
       bn=$(basename "$f")
-      # Skip internal system playbooks — they run from bundled-playbooks only
       case "$bn" in update.yml|gather-docker.yml|check-image-updates.yml|reboot.yml|setup-ssh.yml) continue ;; esac
-      cp "$f" "/app/server/playbooks/$bn"
+      cp -n "$f" "/app/server/playbooks/$bn"
     done
-    chown -R shipyard:shipyard /app/server/playbooks
   fi
-
-  # Older installs intentionally skipped update.yml during seeding, which
-  # leaves the user-facing playbooks mount without the server update playbook.
-  # Backfill it when missing so it shows up consistently in mounted playbooks.
-  if [ ! -f /app/server/playbooks/update.yml ] && [ -f /app/bundled-playbooks/update.yml ]; then
-    echo "[INIT] Restoring missing starter playbook: update.yml"
+  if [ ! -e /app/server/playbooks/update.yml ] && [ ! -L /app/server/playbooks/update.yml ] && [ -f /app/bundled-playbooks/update.yml ]; then
     cp /app/bundled-playbooks/update.yml /app/server/playbooks/update.yml
-    chown shipyard:shipyard /app/server/playbooks/update.yml
   fi
+  chown -hR shipyard:shipyard /app/server/playbooks
 fi
 
-# Fix ownership of registered OpenTofu workspace directories.
-TOFU_PATHS="/app/server/data/tofu-workspace-paths.txt"
-if [ -f "$TOFU_PATHS" ]; then
-  while IFS= read -r wspath; do
-    [ -z "$wspath" ] && continue
-    if [ -d "$wspath" ]; then
-      chown -R shipyard:shipyard "$wspath"
-      echo "[tofu] Fixed ownership: $wspath"
-    fi
-  done < "$TOFU_PATHS"
-fi
-
-# Drop from root to shipyard and start the server
+gosu shipyard test -r "$SSL_KEY" || fail "TLS key must be readable by UID 1001."
+gosu shipyard test -r "$SSL_CERT" || fail "TLS certificate must be readable by UID 1001."
 exec gosu shipyard node server/index.js

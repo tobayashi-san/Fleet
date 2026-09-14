@@ -3,6 +3,79 @@
 This document defines how changes move from local development to a published
 Shipyard release.
 
+## Runtime and local setup
+
+Use Node.js 24 for local development and CI; the root `.nvmrc` records this
+version. Follow the local setup below to install all three packages and load
+the development environment.
+
+The Dockerfile pins Node.js 24 images by digest for its build and runtime
+stages, matching the major version in CI, `.nvmrc`, and package `engines`.
+Runtime upgrades must update both stages and validate native SQLite installation,
+the frontend build, and container startup/restart checks before publication.
+
+After building a candidate image, run the disposable-container checks:
+
+```bash
+docker build -t shipyard:config-check .
+node tools/test-container.mjs shipyard:config-check
+# With Podman: CONTAINER_ENGINE=podman node tools/test-container.mjs <image>
+```
+
+These checks cover failed configuration, non-root startup, legacy-file archival,
+workspace ownership boundaries, restart stability, and certificate renewal.
+They use test credentials and anonymous container storage and remove their
+containers and anonymous volumes on completion.
+
+Generated UI-review evidence belongs in ignored `artifacts/` or CI artifacts.
+Historical reports and pinned evidence links are listed in the
+[documentation index](README.md#historical-review-records).
+
+## Local development
+
+Install Node.js 24 and npm. Git, OpenSSL, OpenSSH client tools, and Ansible are
+needed for their corresponding host-management features. Building the native
+SQLite dependency from source also requires Python 3, Make, and a C/C++ toolchain.
+
+Run these commands from the repository root:
+
+```bash
+npm ci
+npm --prefix server ci
+npm --prefix frontend-next ci
+```
+
+Create a private `.env` with both secrets using the
+[first-install instructions](../README.md#2-create-your-configuration). Keep an
+existing development `.env` rather than overwriting it. Local Node processes do
+not automatically load this file; in Bash, load your own trusted configuration
+before starting both development servers:
+
+```bash
+set -a
+. ./.env
+set +a
+npm run dev
+```
+
+Open **http://localhost:5174**. Vite proxies API and WebSocket requests to the
+backend on port 3001. Local development uses HTTP unless you configure backend
+TLS variables; the production Docker deployment uses HTTPS by default.
+
+```bash
+# From the repository root: lint, types, unit tests, and frontend build
+npm run check
+
+# Browser tests; install browser and OS dependencies once
+cd frontend-next
+npx playwright install --with-deps firefox
+npm run test:e2e
+```
+
+The root `npm run dev:server` and `npm --prefix server run dev` use the same
+backend command. Plugins default to the repository's `plugins/` directory;
+set `PLUGINS_DIR` explicitly if you need a different location.
+
 ## Development Flow
 
 1. Create a feature or fix branch from the latest `main`.

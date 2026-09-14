@@ -69,6 +69,43 @@ environment:
 `CERT_SANS` is especially important for agent push mode: managed hosts must be
 able to verify Shipyard's certificate name or IP address.
 
+### Renewing a generated certificate
+
+Changing `CERT_SANS` does not silently replace an existing certificate. To
+explicitly renew Shipyard's generated certificate, set the new `CERT_SANS` and
+`SHIPYARD_RENEW_CERT=1` in `.env`, then run `docker compose up -d --wait`.
+After successful renewal, set `SHIPYARD_RENEW_CERT=0` and run the same command
+again. Leaving renewal enabled would generate a new key on every container start.
+
+The previous generated key/certificate pair is retained under
+`/app/server/data/certs/previous.*`. A failed generation leaves the current
+pair intact. Renewal changes the self-signed certificate's identity: update
+browser and managed-agent trust as needed. Old certificates without SANs,
+expired certificates, and incomplete or mismatched pairs stop startup with a
+diagnostic instead of being silently replaced.
+
+Custom certificates are never renewed by this setting. Set both `SSL_CERT` and
+`SSL_KEY`, mount the files read-only, and make them readable by container UID
+1001. Setting only one path or combining custom TLS with generated-certificate
+renewal stops startup.
+
+### Runtime settings
+
+The supplied Compose file forwards MFA policy, both SSH terminal time limits,
+plugin trust policy/digests, and the renewal flag from `.env` to the application.
+Changes require `docker compose up -d --wait` to recreate the container; a plain
+restart does not reload its environment. `.env.example` lists these settings.
+Compose uses `.env` for interpolation, not as an automatic container env file.
+Additional application variables require explicit `environment` entries.
+
+Startup repairs ownership of `/workspaces` by default. For custom container
+paths, mount the directories and explicitly set `OPENTOFU_WORKSPACE_ROOTS` in
+the service environment to their comma-separated absolute paths. Use dedicated
+paths such as `/mnt/shipyard-workspaces`; system paths are rejected. Symlinks
+inside a workspace are not followed during recursive ownership repair. The old
+application-written `tofu-workspace-paths.txt` is no longer used for root-level
+ownership changes.
+
 ## Persistent data and backups
 
 The named `shipyard-data` volume contains the SQLite database, TLS material,
@@ -78,6 +115,21 @@ the separate `shipyard-workspaces` volume. The container automatically repairs
 workspace ownership on startup, including when `/workspaces` is replaced with
 a writable bind mount. The local `./playbooks` and `./plugins` directories are
 also mounted and should be backed up if you customize them.
+
+On upgrades, obsolete `/app/plugins/opentofu` and the old user-mounted
+`playbooks/system` directory are moved into
+`/app/server/data/legacy-migrations/startup.*`. Their contents are preserved for
+manual inspection and recovery rather than deleted. Do not copy an obsolete
+plugin back into the active plugin directory; restore only reviewed custom
+content. These archives are part of the data volume and should be included in
+its backup.
+
+Shipyard also provides [encrypted database exports](database-backup.md) and an
+[offline application recovery package](application-backup.md). Database exports
+do not include all deployment files. Preserve the original deployment secrets
+separately and consult the recovery guide for package coverage and activation
+limits. The volume command below archives only `shipyard-data`; workspaces,
+custom playbooks, plugins, and external configuration need separate coverage.
 
 For a consistent volume backup, stop Shipyard first, then archive the named
 volume. Replace `shipyard_shipyard-data` with the volume name shown by

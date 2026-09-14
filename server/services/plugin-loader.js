@@ -4,7 +4,7 @@ const path = require('path');
 const {pluginDigest,scheme:digestScheme}=require('../utils/plugin-digest');
 const log  = require('../utils/logger').child('plugins');
 
-const PLUGINS_DIR  = process.env.PLUGINS_DIR || '/app/plugins';
+const PLUGINS_DIR  = process.env.PLUGINS_DIR || path.resolve(__dirname, '../../plugins');
 const PLUGIN_ID_RE = /^[a-z0-9][a-z0-9_-]*$/;
 const PUBLIC_UI_DIRS = new Set(['assets', 'dist', 'public', 'src']);
 const PUBLIC_UI_EXTENSIONS = new Set([

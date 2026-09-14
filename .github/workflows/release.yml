@@ -169,6 +169,9 @@ jobs:
           done
           exit 1
 
+      - name: Check container configuration and recovery
+        run: node tools/test-container.mjs shipyard:release-check
+
   release-rc:
     name: Publish RC release
     if: needs.validate.outputs.is_rc == 'true'

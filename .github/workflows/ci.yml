@@ -128,3 +128,6 @@ jobs:
             sleep 1
           done
           exit 1
+
+      - name: Check container configuration and recovery
+        run: node tools/test-container.mjs shipyard:ci

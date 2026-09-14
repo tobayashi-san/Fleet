@@ -1,15 +1,15 @@
 # Dependencies
 node_modules/
-frontend/node_modules/
-server/node_modules/
 
 # Build output
-frontend/dist/
 frontend-next/dist/
 frontend-next/playwright-report/
 frontend-next/test-results/
 test-results/
 server/playbooks/playbook_e2e_*.yml
+
+# Generated review evidence (historical files remain available in Git history)
+/artifacts/
 
 # Runtime data — never commit
 server/data/
@@ -17,8 +17,15 @@ server/git-workspace/
 
 # Environment & local secrets
 .env
-.env.local
+.env.*
+!.env.example
 docker-compose.override.yml
+
+# Operator-managed Compose bind mounts, not bundled source playbooks/plugins
+/playbooks/
+/plugins/
+coverage/
+*.tsbuildinfo
 
 # Claude Code
 .claude/

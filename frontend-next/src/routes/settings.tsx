@@ -137,7 +137,7 @@ function AdminSettingsPage() {
             ))}
           </select>
         </label>
-        <nav className="shrink-0 lg:w-60 lg:rounded-[3px] lg:border lg:border-border-strong/80 lg:bg-card lg:p-2 lg:shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-label="Administration">
+        <nav className="shrink-0 lg:w-60 lg:rounded-panel lg:border lg:border-border-strong/80 lg:bg-card lg:p-2 lg:shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-label="Administration">
           <div className="hidden px-2 pb-2 pt-1 text-xs font-semibold text-muted-foreground lg:block">Administration</div>
           <div className="hidden lg:flex lg:flex-col lg:gap-3">
             {sections.map(section => {

@@ -329,7 +329,7 @@ export function DashboardPage() {
       )}
 
       {!isError && hasAttention && (
-        <section className="overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-labelledby="attention-heading">
+        <section className="overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)]" aria-labelledby="attention-heading">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b px-4 py-3">
             <div className="flex items-center gap-2">
               <Activity className="h-4 w-4 text-warning" />
@@ -371,7 +371,7 @@ function OverviewStatusBar({ loading, criticalHosts, offlineHosts, updates, unkn
 }) {
   const { t } = useTranslation();
   return (
-    <section className="grid overflow-hidden rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label={t('dash.currentEnvironmentStatus')}>
+    <section className="grid overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label={t('dash.currentEnvironmentStatus')}>
       <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical hosts" value={loading ? '—' : criticalHosts} to="/servers" search={{ severity: 'critical' }} tone={criticalHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} description={unknownUpdateHosts ? 'Reported results · incomplete checks' : 'Reported OS, image and custom updates'} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
@@ -410,7 +410,7 @@ function OverviewStatusItem({ icon, label, description, value, to, search, tone 
 function HealthySummary({ totalHosts, onlineHosts }: { totalHosts: number; onlineHosts: number }) {
   const { t } = useTranslation();
   return (
-    <section className="flex flex-wrap items-center gap-3 rounded-[3px] border border-border-strong/70 bg-card px-4 py-3" aria-label={t('dash.environmentHealthy')}>
+    <section className="flex flex-wrap items-center gap-3 rounded-panel border border-border-strong/70 bg-card px-4 py-3" aria-label={t('dash.environmentHealthy')}>
       <CheckCircle2 className="h-5 w-5 text-success" />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium">{t('dash.noActionRequired')}</div>

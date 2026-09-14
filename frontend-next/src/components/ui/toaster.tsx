@@ -38,7 +38,7 @@ export function Toaster() {
             <div
               key={t.id}
               className={cn(
-                'pointer-events-auto relative flex items-start gap-3 rounded-[3px] border bg-popover p-3',
+                'pointer-events-auto relative flex items-start gap-3 rounded-panel border bg-popover p-3',
                 'animate-slide-up transition-all duration-200'
               )}
               role="status"

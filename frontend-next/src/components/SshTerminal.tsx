@@ -287,7 +287,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
         aria-modal="true"
         aria-label={t('term.dialogLabel', { name: serverName || hostname || 'server' })}
         className={cn(
-          'flex w-full flex-col overflow-hidden rounded-[3px] border shadow-xl',
+          'flex w-full flex-col overflow-hidden rounded-panel border shadow-xl',
           expanded ? 'h-[calc(100dvh-1rem)] max-w-none' : 'h-[calc(100dvh-8rem)] max-h-[48rem] max-w-[1100px]',
           isDark ? 'border-[#30363d] bg-[#0d1117]' : 'border-border-strong bg-card'
         )}

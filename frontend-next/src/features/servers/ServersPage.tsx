@@ -1684,7 +1684,7 @@ export function ServersPage() {
 
       {/* Bulk bar */}
       {selectedIds.size > 0 && (
-        <div className="flex flex-wrap items-center gap-3 rounded-[3px] border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-[0_1px_2px_hsl(var(--foreground)/0.045)] animate-in fade-in slide-in-from-top-1 duration-200">
+        <div className="flex flex-wrap items-center gap-3 rounded-panel border border-primary/25 bg-primary/[0.04] px-4 py-2.5 shadow-[0_1px_2px_hsl(var(--foreground)/0.045)] animate-in fade-in slide-in-from-top-1 duration-200">
           <CheckCircle2 className="h-4 w-4 text-primary" />
           <span className="text-sm font-medium">
             {t("srv.selected", { count: selectedIds.size })}
@@ -1765,7 +1765,7 @@ export function ServersPage() {
       {/* Filters are intentionally secondary: search remains the default tool. */}
       {filtersOpen && (
         <div
-          className="flex flex-wrap items-center gap-2 rounded-[3px] border border-border-strong/80 bg-card px-3 py-2.5"
+          className="flex flex-wrap items-center gap-2 rounded-panel border border-border-strong/80 bg-card px-3 py-2.5"
           aria-label={t("srv.filterTags")}
         >
           <span className="section-label mr-1 flex items-center gap-1.5">

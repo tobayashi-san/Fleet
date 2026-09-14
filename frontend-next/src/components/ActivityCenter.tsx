@@ -235,7 +235,7 @@ function EnvironmentActivityCenter({
   return (
     <div ref={panelRef} className={cn('z-40 flex flex-col items-end', placement === 'header' ? 'relative' : 'fixed bottom-4 right-4')}>
       {open && (
-        <div className={cn('w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-[3px] border border-border-strong bg-popover text-popover-foreground shadow-xl', placement === 'header' ? 'fixed inset-x-3 top-12 md:absolute md:inset-x-auto md:right-0 md:top-9' : 'mb-2')}>
+        <div className={cn('w-[min(420px,calc(100vw-2rem))] overflow-hidden rounded-panel border border-border-strong bg-popover text-popover-foreground shadow-xl', placement === 'header' ? 'fixed inset-x-3 top-12 md:absolute md:inset-x-auto md:right-0 md:top-9' : 'mb-2')}>
           <div className="flex items-center justify-between border-b px-3 py-2">
             <div>
               <div className="text-sm font-semibold">{t('activity.title')}</div>

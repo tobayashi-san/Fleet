@@ -20,7 +20,7 @@ function Section({ icon: Icon, title, children, className }: {
   className?: string;
 }) {
   return (
-    <div className={cn('rounded-[3px] border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]', className)}>
+    <div className={cn('rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.04)]', className)}>
       <div className="flex items-center gap-3 border-b px-4 py-3">
         <div className="flex h-7 w-7 items-center justify-center rounded-sm border border-primary/15 bg-primary/10 text-primary">
           <Icon className="h-4 w-4" />

@@ -135,7 +135,7 @@ export function CommandPalette() {
           <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
           <DialogPrimitive.Content
             className={cn(
-              'fixed left-1/2 top-[10%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-[3px] border border-border-strong bg-popover shadow-2xl sm:top-[16%]',
+              'fixed left-1/2 top-[10%] z-50 w-[calc(100vw-2rem)] max-w-xl -translate-x-1/2 overflow-hidden rounded-panel border border-border-strong bg-popover shadow-2xl sm:top-[16%]',
               'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95'
             )}
           >
@@ -322,7 +322,7 @@ function ShortcutsDialog({ open, onClose }: { open: boolean; onClose: () => void
     <DialogPrimitive.Root open={open} onOpenChange={v => !v && onClose()}>
       <DialogPrimitive.Portal>
         <DialogPrimitive.Overlay className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
-        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[3px] border border-border-strong bg-popover p-4 shadow-2xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
+        <DialogPrimitive.Content className="fixed left-1/2 top-1/2 z-50 w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-panel border border-border-strong bg-popover p-4 shadow-2xl data-[state=open]:animate-in data-[state=open]:zoom-in-95">
           <DialogPrimitive.Title className="text-base font-semibold mb-4">{t('cmd.shortcutsTitle')}</DialogPrimitive.Title>
           <div className="space-y-4">
             {groups.map(g => (

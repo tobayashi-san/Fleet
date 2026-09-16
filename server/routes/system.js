@@ -375,7 +375,7 @@ router.get('/settings', adminOnly, (req, res) => {
       theme:                raw.ui_theme        || 'auto',
       timeFormat:           raw.ui_time_format  || '24h',
       schedulerTimezone:    raw.scheduler_timezone || scheduler.getSchedulerTimezone(),
-      agentEnabled:         raw.agent_enabled   === '1',
+      agentEnabled:         false,
       webhookUrl:           raw.webhook_url     || '',
       webhookSecret:        raw.webhook_secret  ? '••••••••' : '',
       smtpHost:             raw.smtp_host       || '',
@@ -417,7 +417,7 @@ router.put('/settings', adminOnly, (req, res) => {
       if (!isValidTimeZone(schedulerTimezone)) return res.status(400).json({ error: 'Invalid schedulerTimezone' });
     }
     if (agentEnabled !== undefined) {
-      if (typeof agentEnabled !== 'boolean') return res.status(400).json({ error: 'agentEnabled must be a boolean' });
+      if (agentEnabled !== false) return res.status(400).json({ error: 'Agent support has been removed. Use SSH collection.' });
     }
     if (notifPlaybookFailed !== undefined) {
       if (typeof notifPlaybookFailed !== 'boolean') return res.status(400).json({ error: 'notifPlaybookFailed must be a boolean' });
@@ -457,7 +457,7 @@ router.put('/settings', adminOnly, (req, res) => {
         db.settings.set('scheduler_timezone', schedulerTimezone.trim());
       }
       if (agentEnabled !== undefined) {
-        db.settings.set('agent_enabled', agentEnabled ? '1' : '0');
+        db.settings.set('agent_enabled', '0');
       }
       if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl.trim());
       if (webhookSecret !== undefined && webhookSecret !== '••••••••') setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
@@ -522,11 +522,6 @@ router.post('/smtp-test', adminOnly, async (req, res) => {
   } catch (error) {
     serverError(res, error, 'smtp test');
   }
-});
-
-router.get('/agent-overview', adminOnly, (req,res) => {
-  res.set('Cache-Control','no-store');
-  res.json(require('../utils/agent-overview').agentOverview(db.servers.getAll(),db.agentConfig.getAll(),db.settings.get('agent_enabled')==='1'));
 });
 
 // Runtime observation only: does not start checks or change configuration.

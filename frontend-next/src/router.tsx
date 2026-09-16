@@ -25,7 +25,6 @@ const OperationsPage = lazy(() => import('@/routes/operations').then(module => (
 const NetworksPage = lazy(() => import('@/routes/networks').then(module => ({ default: module.NetworksPage })));
 const IpamSourcesPage = lazy(() => import('@/routes/ipam-sources').then(module => ({ default: module.IpamSourcesPage })));
 const NetworkDetailPage = lazy(() => import('@/routes/network-detail').then(module => ({ default: module.NetworkDetailPage })));
-const PluginHostPage = lazy(() => import('@/routes/_legacy/plugins').then(module => ({ default: module.PluginHostPage })));
 const LazyPage = ({ children }: { children: ReactNode }) => <Suspense fallback={<div className="p-6 text-sm text-muted-foreground">Loading console…</div>}>{children}</Suspense>;
 const PermissionGate = ({ allow, children }: { allow: (profile: Profile) => boolean; children: ReactNode }) => {
   const { data: profile, isPending } = useProfile();
@@ -155,13 +154,11 @@ const operationExecutionRoute = createRoute({ getParentRoute: () => protectedLay
 const networksRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworksPage /></LazyPage></PermissionGate> });
 const ipamSourcesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/sources', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><IpamSourcesPage /></LazyPage></PermissionGate> });
 const networkDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/$id', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworkDetailPage /></LazyPage></PermissionGate> });
-// Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
-// notifications, git, plugins, users-roles, audit, danger.
+// Settings is the single page that hosts: appearance, ssh, system,
+// notifications, git, users-roles, audit, danger.
 // Tab is selected via the optional :tab path segment (default = system).
 const settingsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',     component: () => <PermissionGate allow={profile => profile.role === 'admin'}><LazyPage><SettingsPage /></LazyPage></PermissionGate> });
 const settingsTabRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/settings/$tab', component: () => <PermissionGate allow={profile => profile.role === 'admin'}><LazyPage><SettingsPage /></LazyPage></PermissionGate> });
-// Plugin host route: dynamically loaded plugin UIs (sidebar entries link here).
-const pluginHostRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/plugins/$id',  component: () => <LazyPage><PluginHostPage /></LazyPage> });
 
 const routeTree = rootRoute.addChildren([
   loginRoute,
@@ -187,7 +184,6 @@ const routeTree = rootRoute.addChildren([
     networkDetailRoute,
     settingsRoute,
     settingsTabRoute,
-    pluginHostRoute,
   ]),
 ]);
 

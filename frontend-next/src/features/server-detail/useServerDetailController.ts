@@ -19,7 +19,6 @@ import { showToast } from "@/lib/toast";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import type {
-  AgentStatus,
   ContainerRow,
   CustomTask,
   HistoryRow,
@@ -52,8 +51,6 @@ export function useServerDetailController() {
     proj: string;
     dir: string;
   } | null>(null);
-  const [confirmAgentInstall, setConfirmAgentInstall] = useState(false);
-  const [confirmAgentRemove, setConfirmAgentRemove] = useState(false);
   const [confirmRestartContainer, setConfirmRestartContainer] = useState<
     string | null
   >(null);
@@ -61,7 +58,6 @@ export function useServerDetailController() {
   const actionSequence = useRef(0);
   const { data: profile } = useProfile();
   const { data: settings } = useSettings();
-  const agentEnabled = !!(settings as Record<string, unknown>)?.agentEnabled;
   const timeFormat = useUi((s) => s.timeFormat);
   const hour12 = timeFormat === "12h";
   // Do not start detail sub-queries until the primary host exists. Besides
@@ -231,12 +227,6 @@ export function useServerDetailController() {
   // Older installations returned an object for an empty task list. Keep the
   // detail view usable while those instances are being upgraded.
   const customTaskList = Array.isArray(customTasks) ? customTasks : [];
-  const { data: agentStatus, refetch: refetchAgent } = useQuery({
-    queryKey: ["server", id, "agent"],
-    queryFn: () => api.getAgentStatus(id) as unknown as Promise<AgentStatus>,
-    enabled: !!server && agentEnabled && profile?.role === "admin",
-    staleTime: 30_000,
-  });
   // ── Image update cache ──────────────────────────────────────
   const [imageCatalogRevision, setImageCatalogRevision] = useState(0);
   const [imageCatalog, setImageCatalog] = useState<{ updated_at?: string | null; source?: string; stale?: boolean } | null>(null);
@@ -814,82 +804,6 @@ export function useServerDetailController() {
     };
   }, [id]);
   
-  // ── Agent mutations ─────────────────────────────────────────
-  const [agentUrl, setAgentUrl] = useState("");
-  const [agentCa, setAgentCa] = useState("");
-  useEffect(() => {
-    if (agentStatus?.shipyardUrl) setAgentUrl(agentStatus.shipyardUrl);
-    else setAgentUrl(window.location.origin);
-  }, [agentStatus]);
-  
-  const agentInstallMut = useMutation({
-    mutationFn: () =>
-      api.installAgent(id, {
-        mode: "push",
-        interval: 30,
-        shipyard_url: agentUrl,
-        shipyard_ca_cert_pem: agentCa,
-      }),
-    onSuccess: () => {
-      showToast(t("det.agentInstallStarted"), "success");
-      void refetchAgent();
-    },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
-  });
-  const agentUpdateMut = useMutation({
-    mutationFn: () => api.updateAgent(id),
-    onSuccess: () => {
-      showToast(t("det.agentUpdateStarted"), "success");
-      void refetchAgent();
-    },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
-  });
-  const agentConfigMut = useMutation({
-    mutationFn: () =>
-      api.configureAgent(id, {
-        mode: agentStatus?.mode || "push",
-        interval: agentStatus?.interval || 30,
-        shipyard_url: agentUrl,
-        shipyard_ca_cert_pem: agentCa,
-      }),
-    onSuccess: () => {
-      showToast(t("det.agentConfigureStarted"), "success");
-      void refetchAgent();
-    },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
-  });
-  const agentRotateMut = useMutation({
-    mutationFn: () =>
-      api.rotateAgentToken(id, {
-        shipyard_url: agentUrl,
-        shipyard_ca_cert_pem: agentCa,
-      }),
-    onSuccess: () => {
-      showToast(t("det.agentTokenRotated"), "success");
-      void refetchAgent();
-    },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
-  });
-  const agentRemoveMut = useMutation({
-    mutationFn: () => api.removeAgent(id),
-    onSuccess: () => {
-      showToast(t("det.agentRemoved"), "success");
-      void refetchAgent();
-    },
-    onError: (e: Error) =>
-      showToast(t("common.errorPrefix", { msg: e.message }), "error"),
-  });
-  const agentBusy =
-    agentInstallMut.isPending ||
-    agentUpdateMut.isPending ||
-    agentConfigMut.isPending ||
-    agentRotateMut.isPending ||
-    agentRemoveMut.isPending;
-  
   // ── Derived ─────────────────────────────────────────────────
   const ramPct = info?.ram_total_mb
     ? Math.round(((info.ram_used_mb ?? 0) / info.ram_total_mb) * 100)
@@ -985,17 +899,12 @@ export function useServerDetailController() {
     setConfirmDeleteTask,
     confirmComposeDown,
     setConfirmComposeDown,
-    confirmAgentInstall,
-    setConfirmAgentInstall,
-    confirmAgentRemove,
-    setConfirmAgentRemove,
     confirmRestartContainer,
     setConfirmRestartContainer,
     actionRun,
     setActionRun,
     profile,
     settings,
-    agentEnabled,
     timeFormat,
     hour12,
     serverKnown,
@@ -1033,8 +942,6 @@ export function useServerDetailController() {
     customTasksFailed,
     refetchCustomTasks,
     customTaskList,
-    agentStatus,
-    refetchAgent,
     imageUpdates,
     setImageUpdates,
     imageCatalog,
@@ -1087,16 +994,6 @@ export function useServerDetailController() {
     setLatencyMs,
     latencyCheckedAt,
     infoHistory,
-    agentUrl,
-    setAgentUrl,
-    agentCa,
-    setAgentCa,
-    agentInstallMut,
-    agentUpdateMut,
-    agentConfigMut,
-    agentRotateMut,
-    agentRemoveMut,
-    agentBusy,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,

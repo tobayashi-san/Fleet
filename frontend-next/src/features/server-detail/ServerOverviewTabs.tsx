@@ -99,7 +99,6 @@ import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
-  type AgentStatus,
   type ContainerRow,
   type CustomTask,
   type HistoryRow,
@@ -143,17 +142,12 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     setConfirmDeleteTask,
     confirmComposeDown,
     setConfirmComposeDown,
-    confirmAgentInstall,
-    setConfirmAgentInstall,
-    confirmAgentRemove,
-    setConfirmAgentRemove,
     confirmRestartContainer,
     setConfirmRestartContainer,
     actionRun,
     setActionRun,
     profile,
     settings,
-    agentEnabled,
     timeFormat,
     hour12,
     serverKnown,
@@ -184,8 +178,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     customTaskList,
     customTasksLoading,
     customTasksFailed,
-    agentStatus,
-    refetchAgent,
     imageUpdates,
     imageCatalog,
     setImageUpdates,
@@ -236,16 +228,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
     setLatencyMs,
     latencyCheckedAt,
     infoHistory,
-    agentUrl,
-    setAgentUrl,
-    agentCa,
-    setAgentCa,
-    agentInstallMut,
-    agentUpdateMut,
-    agentConfigMut,
-    agentRotateMut,
-    agentRemoveMut,
-    agentBusy,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,
@@ -389,7 +371,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                 </div>
                 <div className="mt-3 space-y-3">
                   <p className="text-[11px] text-muted-foreground">
-                    Measured {formatDate(info?.updated_at, hour12)} · {info?._source === "agent" ? "Shipyard Agent" : "SSH"}{info?._cached ? " · cached while refresh runs" : ""}
+                    Measured {formatDate(info?.updated_at, hour12)} · SSH{info?._cached ? " · cached while refresh runs" : ""}
                   </p>
                   <CapacitySummary
                     label={t("det.cpu")}
@@ -482,9 +464,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                       title={managementSummary}
                     >
                       {managementSummary}
-                      {agentEnabled && agentStatus?.installed
-                        ? " · Agent installed; reachability not confirmed"
-                        : ""}
+
                     </dd>
                   </div>
                   {server.group_name && (
@@ -648,14 +628,11 @@ export function ServerOverviewTabs({ controller }: { controller: ServerDetailCon
                             {hasVmRoute ? (
                               <Button variant="outline" size="sm" asChild>
                                 <Link
-                                  to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
-                                  params={{
-                                    clusterId: deployment.cluster_id!,
-                                    nodeName: deployment.vm!.node_name!,
-                                    vmId: String(deployment.vm!.vm_id),
-                                  }}
+                                  to="/servers/$id"
+                                  params={{ id: String(server.id) }}
+                                  hash="tab=vm"
                                 >
-                                  Open Proxmox VM
+                                  Virtual machine
                                 </Link>
                               </Button>
                             ) : (

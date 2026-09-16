@@ -4,10 +4,8 @@ const fs = require('fs');
 const log = require('./utils/logger');
 const db = require('./db');
 const sshManager = require('./services/ssh-manager');
-const pluginLoader = require('./services/plugin-loader');
 const scheduler = require('./services/scheduler');
 const ansibleRunner = require('./services/ansible-runner');
-const manifestService = require('./services/agent-manifest');
 const { createApp } = require('./app');
 const { createWebSocketHub } = require('./ws');
 
@@ -56,15 +54,10 @@ function start({ server, allowedOrigins, isHttps, setBroadcast }) {
 
     try { db.auditLog.pruneOlderThan(90); } catch {}
 
-    if (!db.settings.get('agent_enabled') && db.agentConfig.getAll().length > 0) {
-      db.settings.set('agent_enabled', '1');
-    }
 
     scheduler.init(broadcast);
     scheduler.startPolling();
-    pluginLoader.loadAll({ db, broadcast, sshManager, ansibleRunner, scheduler });
 
-    try { manifestService.ensureSeeded(); } catch (e) { log.warn({ err: e }, 'Failed to seed agent manifest'); }
   });
 
   function shutdown(signal) {

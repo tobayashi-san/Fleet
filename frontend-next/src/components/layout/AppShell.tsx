@@ -56,7 +56,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     if (!id || id === environmentId) return;
     setEnvironmentId(id);
     queryClient.removeQueries({
-      predicate: (query) => !['profile', 'settings', 'plugins', 'environments'].includes(String(query.queryKey[0] || '')),
+      predicate: (query) => !['profile', 'settings', 'environments'].includes(String(query.queryKey[0] || '')),
     });
     void navigate({ to: '/' });
   };
@@ -171,7 +171,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-background text-foreground">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-11 shrink-0 items-center border-b border-border-strong/80 bg-[hsl(var(--surface-2))] shadow-[0_1px_2px_hsl(var(--foreground)/0.06)]">
         <div style={{ width: collapsed ? undefined : `${sidebarWidth}px` }} className={cn('hidden h-full max-w-[28vw] shrink-0 items-center border-r border-border-strong/70 px-4 lg:flex', collapsed ? 'w-16 justify-center px-2' : '')}>
           {!collapsed && <span className="truncate font-mono text-[12px] font-bold tracking-[0.15em] text-foreground">{(appName || 'Shipyard').toUpperCase()}</span>}
@@ -309,7 +309,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <div className="flex min-h-0 flex-1">
       {mobileNavOpen && <button className="fixed inset-0 z-40 bg-black/50 lg:hidden" aria-label={t('shell.closeNavigation')} onClick={() => setMobileNavOpen(false)} />}
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-      <main className="min-w-0 flex-1 overflow-auto bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 lg:px-6 lg:py-5">{children}<footer className="mt-6 border-t pt-3 text-xs text-muted-foreground">Times shown in Europe/Zurich. Hover over a timestamp for its relative age.</footer></main>
+      <main className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 lg:px-6 lg:py-5">{children}</main>
       </div>
       <CommandPalette />
       <ContextHelp open={guideOpen} onClose={() => setGuideOpen(false)} />

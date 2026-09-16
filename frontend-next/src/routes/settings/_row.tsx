@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import * as Tooltip from '@radix-ui/react-tooltip';
+import { CircleHelp } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface SettingsRowProps {
@@ -24,8 +27,11 @@ export function SettingsRow({ label, hint, children, align = 'center', noBorder,
       )}
     >
       <div className="flex min-w-0 flex-col gap-0.5 text-sm">
-        {label && <span id={labelId} className="font-medium text-foreground">{label}</span>}
-        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
+        <div className="flex items-center gap-1.5">
+          {label && <span id={labelId} className="font-medium text-foreground">{label}</span>}
+          {typeof hint === 'string' && <SettingHelp label={typeof label === 'string' ? label : 'setting'}>{hint}</SettingHelp>}
+        </div>
+        {hint && typeof hint !== 'string' && <div className="text-[13px] text-muted-foreground">{hint}</div>}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>
@@ -49,8 +55,11 @@ export function SettingsSection({ title, description, icon, headerRight, childre
         <header className="flex flex-wrap items-start gap-3 border-b border-border/60 px-4 py-3.5 sm:flex-nowrap">
           {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
           <div className="min-w-0 flex-1">
-            {title && <h3 className="text-sm font-semibold">{title}</h3>}
-            {description && <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
+            <div className="flex items-center gap-1.5">
+              {title && <h3 className="text-sm font-semibold">{title}</h3>}
+              {typeof description === 'string' && <SettingHelp label={typeof title === 'string' ? title : 'section'}>{description}</SettingHelp>}
+            </div>
+            {description && typeof description !== 'string' && <div className="mt-1 text-sm text-muted-foreground">{description}</div>}
           </div>
           {headerRight && <div className="flex flex-wrap items-center gap-2">{headerRight}</div>}
         </header>
@@ -58,4 +67,12 @@ export function SettingsSection({ title, description, icon, headerRight, childre
       <div className="px-4">{children}</div>
     </section>
   );
+}
+
+function SettingHelp({ label, children }: { label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return <Tooltip.Provider delayDuration={200}><Tooltip.Root open={open} onOpenChange={setOpen}>
+    <Tooltip.Trigger asChild><button type="button" onClick={event => { event.preventDefault(); setOpen(true); }} aria-label={`Help: ${label}`} className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"><CircleHelp className="h-3.5 w-3.5" /></button></Tooltip.Trigger>
+    <Tooltip.Portal><Tooltip.Content sideOffset={4} collisionPadding={8} className="z-[110] max-w-xs rounded-md border bg-popover px-3 py-2 text-sm text-popover-foreground shadow-md">{children}</Tooltip.Content></Tooltip.Portal>
+  </Tooltip.Root></Tooltip.Provider>;
 }

@@ -152,7 +152,6 @@ export function PlaybooksPage() {
       {/* Header + Git widget */}
       <PageHeader
         title={t("pb.title")}
-        description={t("pb.subtitle")}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
             {isAdmin && playbookTabs.value === "templates" && <div className="hidden sm:block"><GitWidget onGoSettings={() => navigate({ to: "/settings/$tab", params: { tab: "git" } })} /></div>}

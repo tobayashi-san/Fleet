@@ -86,10 +86,10 @@ describe("UI refactor contract", () => {
     expect(tree).toContain("const open = searching || !collapsed.has");
     expect(tree).toContain('to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"');
     expect(tree).toContain("!platformServerIds.has(server.id)");
-    expect(tree).toContain('to="/servers/$id"');
+    expect(tree).toContain('to={vm.fleet_server_id ? "/servers/$id"');
     expect(tree).not.toContain("{vm.fleet_server_id ? (");
-    expect(tree).toContain('aria-label={`Open host ${linkedHostName || vm.fleet_server_id} linked to ${vm.name || vmId}`}');
-    expect(tree).toContain('title={`Open host operations: ${linkedHostName || vm.fleet_server_id}`}');
+    expect(tree).toContain('aria-label={`Open VM ${vm.name || vmId}`}');
+    expect(tree).toContain('title="VM details"');
     expect(tree).toContain("showInfrastructureVmIds");
     expect(tree).toContain("{showVmIds && <span");
   });
@@ -119,12 +119,6 @@ describe("UI refactor contract", () => {
     expect(overview).not.toContain("Verwaltungsmodus");
   });
 
-  it("renders plugin paths as code pills instead of raw HTML copy", () => {
-    const locale = source("locales/en.json");
-    const plugins = source("routes/settings/tabs/plugins.tsx");
-    expect(locale).not.toContain("<code style=");
-    expect(plugins).toContain("<code>{t('set.pluginsPath')}</code>");
-  });
 
   it("keeps comfortable density and flexible navigation user-configurable", () => {
     const store = source("lib/store.ts");
@@ -145,7 +139,7 @@ describe("UI refactor contract", () => {
     const servers = source("features/servers/ServersPage.tsx");
     const router = source("router.tsx");
     expect(dashboard).toContain("dataUpdatedAt");
-    expect(dashboard).toContain("search={{ status: 'offline' }}");
+    expect(dashboard).toContain('label="Hosts"');
     expect(dashboard).toContain("search={{ updates: true }}");
     expect(dashboard).toContain("search={{ scope: 'active' }}");
     expect(dashboard).toContain("search={{ scope: 'failed' }}");
@@ -256,9 +250,9 @@ describe("UI refactor contract", () => {
     const servers = source("features/servers/ServersPage.tsx");
 
     expect(button).toContain("icon: 'h-10 w-10 min-h-9 min-w-9'");
-    expect(menu).toContain("['ArrowDown', 'ArrowUp', 'Home', 'End']");
-    expect(menu).toContain("triggerRef.current?.focus()");
-    expect(menu).toContain('role="separator"');
+    expect(menu).toContain("<DropdownMenu.Portal>");
+    expect(menu).toContain("<DropdownMenu.Trigger asChild>");
+    expect(menu).toContain("<DropdownMenu.Separator");
     expect(menu).toContain("flex min-h-9 w-full");
     expect(host).toContain('aria-label={t("common.back")}');
     expect(docker).toContain('aria-label={t("common.refresh")}');

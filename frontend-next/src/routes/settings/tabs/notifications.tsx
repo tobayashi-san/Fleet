@@ -46,7 +46,11 @@ export function NotificationsTab() {
   return (
     <div className="space-y-4">
       {settingsQuery.isError && <QueryErrorState compact title="Notification settings could not be refreshed" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
-      <section aria-label="Notification overview" className="rounded-md border p-4 text-sm"><h2 className="font-semibold">This installation · saved notification configuration</h2><p>Webhook: {wl.webhookUrl ? 'Configured' : 'Not configured'} · Email: {wl.smtpHost && wl.smtpTo ? 'Configured' : 'Not configured'}</p><p>Enabled events: {[wl.notifPlaybookFailed !== false && 'Playbook failures',wl.notifUpdateFailed !== false && 'Update failures'].filter(Boolean).join(', ') || 'None'}. Events use the configured global channels, subject to suppression rules.</p>{!wl.webhookUrl && !(wl.smtpHost && wl.smtpTo) && <p className="mt-2 text-warning">Configure a channel to deliver notifications.</p>}<p className="text-xs text-muted-foreground">Configured does not mean tested. Review channel tests and delivery history below.</p></section>
+      <section aria-label="Notification overview" className="flex flex-wrap gap-x-4 gap-y-1 rounded-md border px-4 py-3 text-sm">
+        <h2 className="font-semibold">Channels</h2>
+        <span>Webhook: {wl.webhookUrl ? 'Configured' : 'Not configured'}</span>
+        <span>Email: {wl.smtpHost && wl.smtpTo ? 'Configured' : 'Not configured'}</span>
+      </section>
       <fieldset disabled={settingsQuery.isError} className="min-w-0 space-y-4">
       <WebhookForm wl={wl} />
       <SmtpForm wl={wl} />
@@ -247,7 +251,6 @@ function NotificationToggles({ wl }: { wl: WhiteLabel }) {
       ['notifPlaybookFailed','Playbook failures','Send failed playbook execution events to configured channels.'],
       ['notifUpdateFailed','Update failures','Send failed update execution events to configured channels.'],
     ] as const).map(([key,label,hint])=><SettingsRow key={key} label={label} hint={hint}><Switch aria-label={label} checked={values[key]} onCheckedChange={value=>setDraft({...values,[key]:value})}/></SettingsRow>)}
-    <p className="py-2 text-xs text-muted-foreground">Resource monitoring alerts are unavailable in this build.</p>
     {dirty && <p role="status" className="text-sm">Unsaved changes</p>}
     {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
     <SettingsRow noBorder><Button disabled={!dirty} onClick={()=>save.mutate()}>Save notification preferences</Button><Button variant="outline" disabled={!dirty} onClick={()=>setDraft(null)}>Discard changes</Button></SettingsRow>

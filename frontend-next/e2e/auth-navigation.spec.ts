@@ -377,22 +377,8 @@ test('shadcn looks round panels and controls without changing console themes', a
   }
 });
 
-test('agent feature visibility follows explicitly saved settings', async ({ page }) => {
+test('host management works without agent controls', async ({ page }) => {
   await loginForIsolatedTest(page);
-  await page.goto('/settings/collection');
-  await page.getByText('Agents — configuration and affected hosts', {exact:true}).click();
-  const agentToggle = page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i });
-  await expect(agentToggle).toHaveAttribute('data-state', 'unchecked');
-  const switchBox = await agentToggle.boundingBox();
-  expect(switchBox).not.toBeNull();
-  expect(switchBox!.width).toBe(40);
-  expect(switchBox!.height).toBe(20);
-  await expect(agentToggle).toHaveCSS('border-radius', '6px');
-
-  const enabledSave = page.waitForResponse(response => response.url().includes('/api/system/settings') && response.request().method() === 'PUT' && response.status() === 200);
-  await agentToggle.click();
-  await page.getByRole('button',{name:'Save agent settings'}).click();
-  await enabledSave;
   const serverId = await page.evaluate(async () => {
     const token = localStorage.getItem('shipyard_token');
     const response = await fetch('/api/servers', {
@@ -403,7 +389,6 @@ test('agent feature visibility follows explicitly saved settings', async ({ page
     if (!response.ok) throw new Error(`Could not create test host: ${response.status}`);
     return String((await response.json()).id);
   });
-  await expect(agentToggle).toHaveAttribute('data-state', 'checked');
   await page.goto(`/servers/${serverId}`);
   await expect(page.getByRole('tab', { name: 'System', exact: true })).toBeVisible();
   await expect(page.getByRole('tab', { name: 'Access', exact: true })).toBeVisible();
@@ -417,30 +402,10 @@ test('agent feature visibility follows explicitly saved settings', async ({ page
   await terminalDialog.getByRole('button', { name: /close/i }).click();
   await expect(terminalDialog).toHaveCount(0);
 
-  const hostTools = page.getByRole('button', { name: 'Host tools' });
-  await hostTools.click();
-  const hostToolsMenu = page.getByRole('menu', { name: 'Host tools' });
-  await expect(hostToolsMenu.getByRole('menuitem', { name: /agent/i })).toBeVisible();
-  await page.keyboard.press('Escape');
-  await page.getByRole('tab', { name: 'Activity', exact: true }).click();
-  await expect(page).toHaveURL(/#tab=history$/);
-  await page.reload();
-  await expect(page.getByRole('tab', { name: 'Activity', exact: true })).toHaveAttribute('data-state', 'active');
-  await page.goBack();
-  await expect(page.getByRole('tab', { name: 'Access', exact: true })).toHaveAttribute('data-state', 'active');
-  await page.goBack();
-  await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
-
-  await page.goto('/settings/collection');
-  await page.getByText('Agents — configuration and affected hosts', {exact:true}).click();
-  const disabledSave = page.waitForResponse(response => response.url().includes('/api/system/settings') && response.request().method() === 'PUT' && response.status() === 200);
-  await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
-  await page.getByRole('button',{name:'Save agent settings'}).click();
-  await disabledSave;
-  await page.goto(`/servers/${serverId}`);
   await expect(page.getByRole('button', { name: 'Host tools' })).toHaveCount(0);
-  await page.goto('/settings');
-  await expect(page.getByText(/agent manifest/i, { exact: true })).toHaveCount(0);
+  await page.goto('/settings/collection');
+  await expect(page.getByRole('switch', { name: /enable agent feature/i })).toHaveCount(0);
+  await expect(page.getByText(/agent manifest/i, {exact:true})).toHaveCount(0);
   await page.evaluate(async (id) => {
     const token = localStorage.getItem('shipyard_token');
     await fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
@@ -1016,7 +981,8 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
   }
 });
 
-test('a discovered Proxmox VM can be adopted through the browser without changing its inventory identity', async ({ page }) => {
+test('an adopted VM and its host share one detail page and preserve VM tabs', async ({ page }, testInfo) => {
+  test.setTimeout(60000);
   const proxmox = https.createServer({ key: PROXMOX_E2E_KEY, cert: PROXMOX_E2E_CERT }, (request, response) => {
     const url = new URL(request.url || '/', 'https://127.0.0.1');
     const send = (data: unknown) => {
@@ -1029,6 +995,8 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     if (url.pathname === '/api2/json/nodes/e2e-node/qemu/207/agent/network-get-interfaces') {
       return send({ result: [{ name: 'lo', 'ip-addresses': [{ 'ip-address': '127.0.0.1', 'ip-address-type': 'ipv4' }] }, { name: 'ens18', 'ip-addresses': [{ 'ip-address': '10.250.0.207', 'ip-address-type': 'ipv4' }] }] });
     }
+    if (url.pathname === '/api2/json/nodes/e2e-node/qemu/207/config') return send({cores:2,memory:2048,ostype:'l26',bios:'ovmf'});
+    if (url.pathname === '/api2/json/nodes/e2e-node/qemu/207/snapshot') return send([]);
     response.statusCode = 404;
     response.end(JSON.stringify({ data: null }));
   });
@@ -1072,8 +1040,31 @@ test('a discovered Proxmox VM can be adopted through the browser without changin
     const inventoryTree = page.locator('aside');
     await expect(inventoryTree.getByText('e2e-import-vm', { exact: true })).toHaveCount(1);
     const inventoryVmLink = inventoryTree.getByRole('link').filter({ hasText: 'e2e-import-vm' });
-    await expect(inventoryVmLink).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
-    await expect(inventoryTree.getByRole('link', { name: /^Open host .* linked to e2e-import-vm$/ })).toHaveAttribute('href', /\/servers\//);
+    await expect(inventoryVmLink).toHaveAttribute('href', /\/servers\//);
+    await expect(inventoryTree.getByRole('link', { name: 'Open VM e2e-import-vm' })).toHaveAttribute('href', /\/infrastructure\/.*\/vms\/207/);
+    const oldVmUrl = await inventoryTree.getByRole('link', {name:'Open VM e2e-import-vm'}).getAttribute('href');
+    await inventoryVmLink.click();
+    await expect(page.getByRole('tab', {name:'System',exact:true})).toBeVisible();
+    await page.getByRole('tab', {name:'Virtual machine',exact:true}).click();
+    const vmTabs = page.getByRole('tablist', {name:'VM sections'});
+    await vmTabs.getByRole('tab', {name:'Configuration',exact:true}).click();
+    await expect(page.getByText('Hardware & virtual machine', {exact:true})).toBeVisible();
+    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=vm&vmTab=configuration$/);
+    await page.reload();
+    await expect(vmTabs.getByRole('tab',{name:'Configuration',exact:true})).toHaveAttribute('data-state','active');
+    await expect(page.getByRole('heading', {level:1})).toHaveCount(1);
+    await page.screenshot({path:testInfo.outputPath('unified-host-vm.png')});
+    await page.setViewportSize({width:390,height:844});
+    await expect.poll(() => page.locator('aside').evaluate(el => el.getBoundingClientRect().right)).toBeLessThanOrEqual(1);
+    expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+    await page.screenshot({path:testInfo.outputPath('unified-host-vm-mobile.png')});
+    await page.setViewportSize({width:1440,height:900});
+    await page.getByRole('tab', {name:'System',exact:true}).click();
+    await page.goBack();
+    await expect(page.getByRole('tab',{name:'Virtual machine',exact:true})).toHaveAttribute('data-state','active');
+    await page.goto(`${oldVmUrl}#tab=tasks`);
+    await expect(page).toHaveURL(/\/servers\/[^#]+#tab=vm&vmTab=tasks$/);
+    await expect(vmTabs.getByRole('tab',{name:'Tasks',exact:true})).toHaveAttribute('data-state','active');
     await page.goto('/servers');
     const row = page.getByRole('row', { name: /e2e-import-vm/i });
     await expect(row).toBeVisible();
@@ -1156,7 +1147,7 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await expect(platformUpdatesTable.getByText('Ready through Shipyard', { exact: true })).toBeVisible();
     const hierarchyTree = page.locator('aside');
     await expect(hierarchyTree.getByText('hierarchy-node', { exact: true })).toHaveCount(1);
-    const managedNodeLink = hierarchyTree.getByRole('link', { name: 'Open host hierarchy-node linked to node hierarchy-node' });
+    const managedNodeLink = hierarchyTree.getByRole('link').filter({ hasText: 'hierarchy-node' }).first();
     await expect(managedNodeLink).toBeVisible();
     await managedNodeLink.click();
     await expect(page).toHaveURL(/\/servers\//);

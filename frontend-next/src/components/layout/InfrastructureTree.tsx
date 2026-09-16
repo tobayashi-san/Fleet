@@ -831,10 +831,10 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                       {nodeVms.length > 0 ? (nodeOpen ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />) : null}
                     </button>
                     <Link
-                      to="/infrastructure/$clusterId/nodes/$nodeName"
-                      params={{ clusterId, nodeName }}
+                      to={node.fleet_server_id ? "/servers/$id" : "/infrastructure/$clusterId/nodes/$nodeName"}
+                      params={node.fleet_server_id ? { id: node.fleet_server_id } : { clusterId, nodeName }}
                       onClick={onNavigate}
-                      aria-current={nodeCurrent ? "page" : undefined}
+                      aria-current={nodeHostCurrent || (!node.fleet_server_id && nodeCurrent) ? "page" : undefined}
                       className={cn(
                         "flex min-w-0 flex-1 items-center gap-2 rounded-sm px-1.5 py-1.5 text-xs transition-colors",
                         nodeCurrent || nodeHostCurrent ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
@@ -842,19 +842,19 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     >
                       <StatusDot status={node.status} />
                       <Server className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] font-mono">{nodeName}{hostNames.get(node.fleet_server_id || "") && hostNames.get(node.fleet_server_id || "") !== nodeName && <span className="block truncate font-sans text-xs font-normal text-muted-foreground">Host: {hostNames.get(node.fleet_server_id || "")}</span>}</span>
+                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] font-mono">{hostNames.get(node.fleet_server_id || "") || nodeName}</span>
                       {!compact && <span className="shrink-0 text-xs" title={`${nodeVms.length} VM/CT guests${searching ? " shown by the current filter" : " on this node"}`}>{nodeVms.length} VM/CT</span>}
                     </Link>
                     {node.fleet_server_id && (
                       <Link
-                        to="/servers/$id"
-                        params={{ id: node.fleet_server_id }}
+                        to="/infrastructure/$clusterId/nodes/$nodeName"
+                        params={{ clusterId, nodeName }}
                         onClick={onNavigate}
-                        aria-label={`Open host ${hostNames.get(node.fleet_server_id) || node.fleet_server_id} linked to node ${nodeName}`}
-                        title={`Open host operations: ${hostNames.get(node.fleet_server_id) || node.fleet_server_id}`}
+                        aria-label={`Open Proxmox node ${nodeName}`}
+                        title="Proxmox node"
                         className="mr-0.5 rounded-sm p-1 text-primary/80 hover:bg-accent hover:text-primary"
                       >
-                        <Server className="h-3 w-3" />
+                        <Box className="h-3 w-3" />
                       </Link>
                     )}
                   </div>
@@ -881,28 +881,28 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                           >
 
                               <Link
+                                to={vm.fleet_server_id ? "/servers/$id" : "/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"}
+                                params={vm.fleet_server_id ? { id: vm.fleet_server_id } : { clusterId, nodeName, vmId }}
+                                onClick={onNavigate}
+                                aria-current={vmHostCurrent || (!vm.fleet_server_id && vmCurrent) ? "page" : undefined}
+                                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
+                              >
+                                <StatusDot status={vm.status} />
+                                {vm.fleet_server_id ? <Server className="h-3.5 w-3.5 shrink-0" /> : <Box className="h-3 w-3 shrink-0" />}
+                                {showVmIds && <span className="shrink-0 font-mono text-xs text-muted-foreground">{vmId}</span>}
+                                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{linkedHostName || vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}</span>
+                              </Link>
+                            {vm.fleet_server_id && (
+                              <Link
                                 to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId"
                                 params={{ clusterId, nodeName, vmId }}
                                 onClick={onNavigate}
                                 aria-current={vmCurrent ? "page" : undefined}
-                                className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-[11px]"
-                              >
-                                <StatusDot status={vm.status} />
-                                <Box className="h-3 w-3 shrink-0" />
-                                {showVmIds && <span className="shrink-0 font-mono text-xs text-muted-foreground">{vmId}</span>}
-                                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]" title={`${vm.name || vmId}${linkedHostName ? ` · Host: ${linkedHostName}` : ""}`}>{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}{linkedHostName && linkedHostName !== vm.name && <span className="block truncate text-xs font-normal text-muted-foreground">Host: {linkedHostName}</span>}</span>
-                              </Link>
-                            {vm.fleet_server_id && (
-                              <Link
-                                to="/servers/$id"
-                                params={{ id: vm.fleet_server_id }}
-                                onClick={onNavigate}
-                                aria-current={vmHostCurrent ? "page" : undefined}
-                                aria-label={`Open host ${linkedHostName || vm.fleet_server_id} linked to ${vm.name || vmId}`}
-                                title={`Open host operations: ${linkedHostName || vm.fleet_server_id}`}
+                                aria-label={`Open VM ${vm.name || vmId}`}
+                                title="VM details"
                                 className="mr-0.5 shrink-0 rounded-sm border border-transparent p-1 text-muted-foreground hover:border-border hover:bg-background hover:text-foreground"
                               >
-                                <Server className="h-3 w-3" />
+                                <Box className="h-3 w-3" />
                               </Link>
                             )}
                           </div>

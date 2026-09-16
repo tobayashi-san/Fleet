@@ -1,3 +1,4 @@
+const { collectionQueue } = require('../services/collection-queue');
 const { hostAuditDetail } = require('../utils/host-audit');
 const { validHistoryRange, matchesHistoryRange } = require('../utils/history-date-range');
 const { compareHistory } = require('../utils/history-order');
@@ -823,16 +824,6 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
 
   const cached = db.serverInfo.get(req.params.id);
   const force = req.query.force === '1';
-  const agentCfg = db.agentConfig.getByServerId(req.params.id);
-  const hasActiveAgent = !!(agentCfg && agentCfg.mode && agentCfg.mode !== 'legacy');
-
-  // Agent-managed servers use cached metrics from the runner as the source of truth.
-  // Do not overwrite them with classic SSH polling on read.
-  if (hasActiveAgent && cached) {
-    resourceAlerts.evaluateServer(req.params.id);
-    return res.json({ ...cached, _source: 'agent' });
-  }
-
   // Serve cache immediately, refresh in background
   if (cached && !force) {
     const isOnline = server.status === 'online';
@@ -845,7 +836,8 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       payload.uptime_seconds = null;
     }
     res.json(payload);
-    systemInfo.getSystemInfo(server)
+    if (!collectionQueue.due('info', server, {active:true})) return;
+    collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {priority:1,baseMs:require('../services/scheduler').getPollingConfig().info.intervalMs})
       .then(info => {
         db.serverInfo.upsert(server.id, info);
         db.servers.updateStatus(server.id, 'online');
@@ -856,7 +848,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       })
       .catch(err => {
         log.debug({ err, server: server.name }, 'Background info refresh failed');
-        try { db.servers.updateStatus(server.id, 'offline'); } catch (updateErr) {
+        try { if (!['COLLECTION_QUEUE_FULL', 'SSH_QUEUE_FULL', 'SSH_QUEUE_TIMEOUT'].includes(err.code)) db.servers.updateStatus(server.id, 'offline'); } catch (updateErr) {
           log.warn({ err: updateErr, server: server.name }, 'Failed to update server status to offline');
         }
         resourceAlerts.evaluateServer(server.id);
@@ -866,7 +858,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
 
   // No cache yet (first visit) or forced refresh – wait for real data
   try {
-    const info = await systemInfo.getSystemInfo(server);
+    const info = await collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {priority:2,baseMs:require('../services/scheduler').getPollingConfig().info.intervalMs});
     db.serverInfo.upsert(server.id, info);
     db.servers.updateStatus(server.id, 'online');
     resourceAlerts.evaluateServer(server.id);
@@ -875,6 +867,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
     }
     res.json({ ...db.serverInfo.get(server.id), _source: 'ssh' });
   } catch (error) {
+    if (['COLLECTION_QUEUE_FULL', 'SSH_QUEUE_FULL', 'SSH_QUEUE_TIMEOUT'].includes(error.code)) return res.status(503).json({error:error.message});
     db.servers.updateStatus(req.params.id, 'offline');
     resourceAlerts.evaluateServer(req.params.id);
     if (error.message && error.message.includes('SSH connection failed')) {
@@ -922,7 +915,8 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
 
   if (cached && !force) {
     respond(cached, true);
-    systemInfo.getAvailableUpdates(server)
+    if (!collectionQueue.due('updates', server)) return;
+    collectionQueue.run('updates', server, () => systemInfo.getAvailableUpdates(server), {priority:1,baseMs:require('../services/scheduler').getPollingConfig().updates.intervalMs})
       .then(updates => {
         db.updatesCache.set(server.id, updates);
         resourceAlerts.evaluateServer(server.id);
@@ -932,7 +926,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
   }
 
   try {
-    const updates = await systemInfo.getAvailableUpdates(server);
+    const updates = await collectionQueue.run('updates', server, () => systemInfo.getAvailableUpdates(server), {priority:2,baseMs:require('../services/scheduler').getPollingConfig().updates.intervalMs});
     db.updatesCache.set(server.id, updates);
     resourceAlerts.evaluateServer(server.id);
     respond(updates, false);
@@ -1139,24 +1133,21 @@ router.get('/:id/docker/image-updates/cached', guardServerAccess, guard('canView
 router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'), async (req, res) => {
   const server = req.server;
   try {
-    const result = await ansibleRunner.runPlaybook(
-      'check-image-updates.yml',
-      server.name,
-      {},
-      null,
-      { environmentId: server.environment_id || 'default' },
-    );
-    const report = parseImageUpdateReport(result.stdout);
-    if (!result.success || !report.complete) {
-      db.checkAttempts.failed(server.id, 'images', 'Image check returned no complete result. Check container runtime and registry access.');
-      log.warn({ server: server.name, exitCode: result.code }, 'Image update check returned no complete result');
-      return res.status(502).json({ error: 'Image update check did not complete. Existing results were kept.' });
-    }
+    const report = await collectionQueue.run('imageUpdates', server, async () => {
+      const result = await ansibleRunner.runPlaybook(
+        'check-image-updates.yml', server.name, {}, null,
+        { environmentId: server.environment_id || 'default' },
+      );
+      const report = parseImageUpdateReport(result.stdout);
+      if (!result.success || !report.complete) throw Object.assign(new Error('Image update check did not complete. Existing results were kept.'), {code:'IMAGE_CHECK_INCOMPLETE'});
+      return report;
+    }, {priority:2,baseMs:require('../services/scheduler').getPollingConfig().imageUpdates.intervalMs});
     db.dockerImageUpdatesCache.set(server.id, report.results);
     resourceAlerts.evaluateServer(server.id);
     res.json(report.results);
   } catch (error) {
     db.checkAttempts.failed(server.id, 'images', 'Image check failed. Check host connectivity, container runtime and registry access.');
+    if (error.code === 'IMAGE_CHECK_INCOMPLETE') return res.status(502).json({error:error.message});
     serverError(res, error, 'get docker image updates');
   }
 });

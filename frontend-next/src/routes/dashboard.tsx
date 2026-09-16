@@ -88,7 +88,6 @@ interface HistoryEntry {
 interface DashboardData {
   summary: Summary;
   servers: ServerInfo[];
-  agentEnabled?: boolean;
   alerts?: AlertInfo[];
   recentHistory: HistoryEntry[];
 }
@@ -226,7 +225,6 @@ export function DashboardPage() {
   }, [canViewUpdates, canViewOperations, data?.servers, refetch, operationsQuery.refetch, t]);
 
   const isBusy = isFetching || refreshing;
-  const agentEnabled = data?.agentEnabled === true;
 
   const servers = useMemo(() => {
     const allServers = asArray<ServerInfo>(data?.servers);
@@ -238,31 +236,14 @@ export function DashboardPage() {
 
   const orderedHosts = useMemo(() => [...servers].sort(compareAttentionHosts), [servers]);
   const attentionHosts = useMemo(() => orderedHosts.filter(needsAttention), [orderedHosts]);
-  const ackAlert = useMutation({
-    mutationFn: (id: string) => api.acknowledgeAlert(id),
-    onSuccess: () => void qc.invalidateQueries({ queryKey: ['dashboard'] }),
-    onError: (e: Error) => showToast(t('common.errorPrefix', { msg: e.message }), 'error'),
-  });
-
-  // Alerts are returned with the global dashboard payload. The cockpit itself
-  // is environment-scoped, therefore its attention queue must not surface a
-  // condition from a different environment just because the user switched
-  // context in the shell.
-  const activeAlerts = useMemo(() => {
-    const serverIds = new Set(servers.map(server => String(server.id)));
-    return asArray<AlertInfo>(data?.alerts).filter(alert =>
-      alert.status === 'active' && !alert.acknowledged_at && serverIds.has(String(alert.server_id))
-    );
-  }, [data?.alerts, servers]);
   const actionableHistory = useMemo(() => recentHistory.filter(item => item.status === 'failed' || item.status === 'running' || item.status === 'queued'), [recentHistory]);
   const runningTaskCount = canViewOperations && !operationsQuery.isError ? operationsData?.counts?.active ?? null : null;
-  const criticalHostCount = servers.filter(host => attentionPriority(host) === 2).length;
   const unknownUpdateHosts = servers.filter(server => server.check_quality?.some(check => !['current', 'not_applicable'].includes(check.state))).length;
   const updateCount = servers.reduce((total, server) => total
     + (canViewUpdates ? (server.updates_count ?? 0) : 0)
     + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
     + (canViewCustomUpdates ? (server.custom_updates_count ?? 0) : 0), 0);
-  const hasAttention = activeAlerts.length > 0 || actionableHistory.length > 0 || attentionCount > 0 || (runningTaskCount ?? 0) > 0 || (summary.failedOperations ?? 0) > 0;
+  const hasAttention = actionableHistory.length > 0 || attentionCount > 0 || (runningTaskCount ?? 0) > 0 || (summary.failedOperations ?? 0) > 0;
   const dataAge = dataUpdatedAt ? Math.max(0, freshnessNow - dataUpdatedAt) : 0;
   const freshness = dataUpdatedAt ? formatDashboardFreshness(dataUpdatedAt, freshnessNow, t) : t('dash.notUpdatedYet');
 
@@ -281,8 +262,7 @@ export function DashboardPage() {
 
       <OverviewStatusBar
         loading={isLoading}
-        criticalHosts={criticalHostCount}
-        offlineHosts={summary.offline}
+        totalHosts={summary.total}
         updates={updateCount}
         unknownUpdateHosts={unknownUpdateHosts}
         runningTasks={runningTaskCount}
@@ -290,7 +270,7 @@ export function DashboardPage() {
         canViewOperations={canViewOperations}
       />
 
-      {!isLoading && !isError && unknownUpdateHosts > 0 && <p role="status" className="rounded-md border border-warning/30 p-3 text-sm">Checks need attention on {unknownUpdateHosts} host{unknownUpdateHosts === 1 ? '' : 's'}. Update totals include reported results only. <a href="#data-quality" className="text-primary underline">Inspect affected checks and causes</a></p>}
+      {!isLoading && !isError && unknownUpdateHosts > 0 && <p role="status" className="rounded-md border border-warning/30 p-3 text-sm">Incomplete checks: {unknownUpdateHosts} hosts. <a href="#data-quality" className="text-primary underline">Details</a></p>}
 
 
 
@@ -341,15 +321,13 @@ export function DashboardPage() {
             </div>
             <Button asChild size="sm" variant="ghost"><Link to="/operations">{t('dash.openOperations')}</Link></Button>
           </div>
-          {activeAlerts.length > 0 && <ActiveAlertsSection alerts={activeAlerts} acknowledgingId={ackAlert.isPending ? ackAlert.variables : undefined} onAcknowledge={id => ackAlert.mutate(id)} />}
           <RecentTasksSection history={actionableHistory} />
           {attentionHosts.length > 0 && (
-            <AttentionHostsSection
+            <details className="border-t px-4 py-3"><summary className="cursor-pointer text-sm">Host checks · {attentionCount}</summary><AttentionHostsSection
               hosts={attentionHosts}
               total={attentionCount}
-              agentEnabled={agentEnabled}
               t={t}
-            />
+            /></details>
           )}
         </section>
       )}
@@ -361,14 +339,9 @@ export function DashboardPage() {
 
 // ---- sub-components ----
 
-function alertTone(alert: AlertInfo): 'danger' | 'warning' | 'muted' {
-  return alert.severity === 'critical' || alert.severity === 'error' ? 'danger' : alert.severity === 'warning' ? 'warning' : 'muted';
-}
-
-function OverviewStatusBar({ loading, criticalHosts, offlineHosts, updates, unknownUpdateHosts, runningTasks, failedOperations, canViewOperations }: {
+function OverviewStatusBar({ loading, totalHosts, updates, unknownUpdateHosts, runningTasks, failedOperations, canViewOperations }: {
   loading: boolean;
-  criticalHosts: number;
-  offlineHosts: number;
+  totalHosts: number;
   updates: number;
   unknownUpdateHosts: number;
   runningTasks: number | null;
@@ -377,12 +350,11 @@ function OverviewStatusBar({ loading, criticalHosts, offlineHosts, updates, unkn
 }) {
   const { t } = useTranslation();
   return (
-    <section className="grid overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 xl:grid-cols-5" aria-label={t('dash.currentEnvironmentStatus')}>
-      <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical hosts" value={loading ? '—' : criticalHosts} to="/servers" search={{ severity: 'critical' }} tone={criticalHosts > 0 ? 'danger' : 'neutral'} />
-      <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
-      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} description={unknownUpdateHosts ? 'Reported results · incomplete checks' : 'Reported OS, image and custom updates'} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
+    <section className="grid overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 xl:grid-cols-4" aria-label={t('dash.currentEnvironmentStatus')}>
+      <OverviewStatusItem icon={<Server className="h-4 w-4" />} label="Hosts" value={loading ? '—' : totalHosts} to="/servers" tone="neutral" />
+      <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} description={unknownUpdateHosts ? 'Reported results · incomplete checks' : 'Available updates'} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
       {canViewOperations && <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Active operations" description="Running and queued" value={loading || runningTasks === null ? '—' : runningTasks} to="/operations" search={{ scope: 'active' }} tone={(runningTasks ?? 0) > 0 ? 'info' : 'neutral'} />}
-      {canViewOperations && <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Unacknowledged failures" description="All retained history" value={loading || failedOperations === null ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={(failedOperations ?? 0) > 0 ? 'danger' : 'neutral'} />}
+      {canViewOperations && <OverviewStatusItem icon={<Clock className="h-4 w-4" />} label="Unacknowledged failures" description="Run history" value={loading || failedOperations === null ? '—' : failedOperations} to="/operations" search={{ scope: 'failed' }} tone={(failedOperations ?? 0) > 0 ? 'danger' : 'neutral'} />}
     </section>
   );
 }
@@ -438,25 +410,6 @@ function DashboardSectionHeader({ icon, title, count, action }: { icon: React.Re
   );
 }
 
-function ActiveAlertsSection({ alerts, acknowledgingId, onAcknowledge }: { alerts: AlertInfo[]; acknowledgingId?: string; onAcknowledge: (id: string) => void }) {
-  const { t } = useTranslation();
-  const displayed = alerts.slice(0, 4);
-  return <div className="border-b">
-    <DashboardSectionHeader icon={<Bell className="h-3.5 w-3.5" />} title={t('dash.openAlerts')} count={alerts.length} />
-    <div className="divide-y">
-      {displayed.map(alert => <div key={alert.id} className="flex items-start gap-3 px-4 py-3">
-        <StatusBadge tone={alertTone(alert)} dot className="mt-0.5 shrink-0">{t(alert.severity === 'critical' ? 'dash.critical' : alert.severity === 'warning' ? 'dash.warning' : 'dash.info')}</StatusBadge>
-        <div className="min-w-0 flex-1">
-          <Link to="/servers/$id" params={{ id: alert.server_id }} className="block truncate text-sm font-medium hover:text-primary hover:underline">{alert.server_name || t('dash.openHost')}</Link>
-          <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted-foreground" title={alert.message}>{alert.message}</p>
-        </div>
-        <Button type="button" size="sm" variant="ghost" className="h-7 shrink-0 px-2 text-xs" disabled={acknowledgingId === alert.id} onClick={() => onAcknowledge(alert.id)}>{t('det.acknowledge')}</Button>
-      </div>)}
-      {alerts.length > displayed.length && <div className="px-4 py-2.5 text-xs text-muted-foreground">{t('dash.moreAlerts', { count: alerts.length - displayed.length })}</div>}
-    </div>
-  </div>;
-}
-
 function RecentTasksSection({ history }: { history: HistoryEntry[] }) {
   const { t } = useTranslation();
   if (history.length === 0) return null;
@@ -490,7 +443,7 @@ function RecentTaskCard({ item }: { item: HistoryEntry }) {
   return <div className="flex items-center gap-3 px-4 py-3"><span className={`h-2 w-2 shrink-0 rounded-full ${item.status === 'success' ? 'bg-emerald-500' : item.status === 'failed' ? 'bg-destructive' : 'bg-muted-foreground'}`} /><div className="min-w-0 flex-1"><div className="truncate font-medium">{item.server_name || '—'}</div><div className="truncate text-xs text-muted-foreground">{item.id != null ? <Link to="/operations/executions/$id" params={{ id: `host-${item.id}` }} search={{ environment: environmentId }} className="text-primary hover:underline">{actionLabel(t, item.action)}</Link> : actionLabel(t, item.action)} · {formatRelativeTime(item.started_at, t)}</div></div><StatusBadge tone={taskTone(item.status)}>{statusLabel(t, item.status)}</StatusBadge></div>;
 }
 
-function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: ServerInfo[]; total: number; agentEnabled: boolean; t: TFunction }) {
+function AttentionHostsSection({ hosts, total, t }: { hosts: ServerInfo[]; total: number; t: TFunction }) {
   const [expanded, setExpanded] = useState(false);
   const visibleHosts = expanded ? hosts : hosts.slice(0, 6);
 
@@ -505,8 +458,8 @@ function AttentionHostsSection({ hosts, total, agentEnabled, t }: { hosts: Serve
       <p className="px-4 pb-2 text-xs text-muted-foreground">Critical hosts first, then warnings; sorted by name within each severity.</p>
       <div className="table-scroll hidden md:block">
         <table className="w-full text-sm" data-density="compact">
-          <thead><tr><th>{t('servers.host')}</th><th className="w-[120px]">{t('common.status')}</th><th>{t('dash.reason')}</th>{agentEnabled && <th className="w-[150px]">{t('dash.agentMode')}</th>}<th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
-          <tbody>{visibleHosts.map(server => <ServerRow key={server.id} s={server} t={t} agentEnabled={agentEnabled} />)}</tbody>
+          <thead><tr><th>{t('servers.host')}</th><th className="w-[120px]">{t('common.status')}</th><th>{t('dash.reason')}</th><th className="w-[100px]">{t('dash.colUptime')}</th></tr></thead>
+          <tbody>{visibleHosts.map(server => <ServerRow key={server.id} s={server} t={t} />)}</tbody>
         </table>
       </div>
       <div className="divide-y md:hidden">{visibleHosts.map(server => <AttentionHostMobileRow key={server.id} server={server} />)}</div>
@@ -535,22 +488,7 @@ function AttentionHostMobileRow({ server }: { server: ServerInfo }) {
   );
 }
 
-function AgentBadge({ s }: { s: ServerInfo }) {
-  const { t } = useTranslation();
-  if ((s.agent_mode || 'legacy') === 'legacy') return null;
-  const st = s.agent_state || 'legacy';
-  const cls = st === 'ok' ? 'bg-emerald-500/10 text-emerald-600' :
-    st === 'warning' ? 'bg-amber-500/10 text-amber-600' : 'bg-muted text-muted-foreground';
-  const label = st === 'ok' ? t('dash.agentOk') : st === 'warning' ? t('dash.agentDelayed') : t('dash.agentStale');
-  return (
-    <span className={`ml-1 inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium ${cls}`}
-      title={`${t('dash.agentMode')}: ${s.agent_mode} · ${label}`}>
-      <Bot className="h-3 w-3" /> {s.agent_mode}
-    </span>
-  );
-}
-
-function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => string; agentEnabled: boolean }) {
+function ServerRow({ s, t }: { s: ServerInfo; t: (k: string) => string }) {
   const navigate = useNavigate();
   const hostStatus = s.status === 'online' ? t('common.online') : s.status === 'offline' ? t('common.offline') : t('common.unknown');
   return (
@@ -564,7 +502,6 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
       </td>
       <td className="px-2 py-2.5"><StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} dot>{hostStatus}</StatusBadge></td>
       <td className="px-2 py-2.5"><div className="flex flex-wrap gap-1"><AttentionReasonChips s={s} /></div></td>
-      {agentEnabled && <td className="px-2 py-2.5"><AgentBadge s={s} /><span className="text-xs text-muted-foreground">{s.agent_mode === 'legacy' ? 'SSH' : t('dash.agentMode')}</span></td>}
       <td className="px-4 py-2.5">
         <span className={`font-mono text-xs ${!s.uptime_seconds ? 'text-muted-foreground' : ''}`}>
           {formatUptime(s.uptime_seconds)}

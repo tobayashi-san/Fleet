@@ -181,3 +181,36 @@ it('encrypted replacement validates separately and keeps the old key on wrong pa
   assert.equal(sshManager.getPrivateKeyExport(),previous);assert.equal(sshManager.getKeyInfo().privateKeyPath,active.privateKeyPath);
  }finally {delete process.env.SHIPYARD_KEY_SECRET;}
 });
+
+it('counts concurrent handshakes, waits for capacity and coalesces connection requests', async () => {
+  const { NodeSSH } = require('node-ssh');
+  const original = { connect:NodeSSH.prototype.connect, dispose:NodeSSH.prototype.dispose, isConnected:NodeSSH.prototype.isConnected };
+  sshManager.closeAll();
+  resetKeys();sshManager.generateKey('queue-test');
+  const handshakes=[]; let peak=0;
+  NodeSSH.prototype.connect=function() { peak=Math.max(peak,sshManager.opening); return new Promise(resolve => handshakes.push(()=>resolve(this))); };
+  NodeSSH.prototype.dispose=function() {};
+  NodeSSH.prototype.isConnected=function() { return true; };
+  try {
+    const hosts=Array.from({length:25},(_,i)=>({id:`queue-${i}`,ip_address:`192.0.2.${i+1}`,ssh_port:22}));
+    const jobs=hosts.map(host=>sshManager.getConnection(host));
+    const duplicate=sshManager.getConnection(hosts[0]);
+    await new Promise(resolve=>setImmediate(resolve));
+    assert.equal(handshakes.length,20);
+    assert.equal(sshManager.opening,20);
+    assert.equal(sshManager.slotWaiters.length,5);
+    handshakes.splice(0).forEach(resolve=>resolve());
+    const first=await jobs[0];assert.equal(await duplicate,first);
+    // New connections are pinned until consumers have resumed, then idle slots can be reused.
+    const deadline=Date.now()+2000;
+    while (handshakes.length<5 && Date.now()<deadline) await new Promise(resolve=>setTimeout(resolve,30));
+    assert.equal(handshakes.length,5);
+    handshakes.splice(0).forEach(resolve=>resolve());
+    await Promise.all(jobs);
+    assert.ok(peak<=20);assert.ok(sshManager.connections.size<=20);assert.equal(sshManager.opening,0);
+    await new Promise(resolve=>setImmediate(resolve));
+  } finally {
+    sshManager.closeAll();
+    Object.assign(NodeSSH.prototype,original);
+  }
+});

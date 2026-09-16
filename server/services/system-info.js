@@ -86,7 +86,7 @@ class SystemInfoService {
         docker_detected: results.docker_detected,
       };
     } catch (error) {
-      throw new Error(`Failed to gather system info: ${error.message}`);
+      throw Object.assign(new Error(`Failed to gather system info: ${error.message}`), {code:error.code});
     }
   }
 

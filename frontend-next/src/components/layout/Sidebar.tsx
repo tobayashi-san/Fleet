@@ -25,11 +25,8 @@ import {
   canAccessInfrastructure,
   canAccessNetworks,
   canAccessOperations,
-  canSeePlugin,
   hasCap,
-  usePlugins,
   useProfile,
-  type PluginInfo,
 } from "@/lib/queries";
 import { InfrastructureTree } from "./InfrastructureTree";
 
@@ -112,9 +109,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const location = useRouterState({ select: (state) => state.location });
   const path = location.pathname;
   const { data: profile } = useProfile();
-  const { data: pluginData } = usePlugins();
   const previousPath = useRef(path);
-  const plugins = Array.isArray(pluginData) ? pluginData : [];
   const canViewServers = hasCap(profile, "canViewServers");
   const canViewPlaybooks = hasCap(profile, "canViewPlaybooks");
   const canManageConsole = profile?.role === "admin";
@@ -122,7 +117,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const canViewInfrastructure = canAccessInfrastructure(profile);
   const canViewNetworks = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
-  const otherPlugins = plugins.filter((plugin) => plugin.enabled && plugin.hasUi !== false && canSeePlugin(profile, plugin.id));
 
   useEffect(() => {
     if (path.startsWith("/infrastructure") || path.startsWith("/networks")) {
@@ -185,7 +179,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-50 flex h-screen w-[min(85vw,18rem)] -translate-x-full flex-col border-r border-border-strong/70 bg-[hsl(var(--surface-2))] shadow-2xl transition-[width,transform] duration-200 lg:max-w-[28vw] lg:sticky lg:top-11 lg:z-auto lg:h-[calc(100vh-2.75rem)] lg:translate-x-0 lg:shadow-none",
+        "fixed inset-y-0 left-0 z-50 flex h-dvh w-[min(85vw,18rem)] -translate-x-full flex-col border-r border-border-strong/70 bg-[hsl(var(--surface-2))] shadow-2xl transition-[width,transform] duration-200 lg:max-w-[28vw] lg:relative lg:top-0 lg:z-auto lg:h-full lg:translate-x-0 lg:shadow-none",
         mobileOpen && "translate-x-0",
         collapsed && "lg:w-16",
       )}
@@ -216,14 +210,6 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
             {canViewServers && <NavItem to="/servers" label={t("nav.managedHosts")} icon={Server} active={path === "/servers" || path.startsWith("/servers/")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewDeployments && <NavItem to="/deployments" label={t("nav.managedVirtualMachines")} icon={Monitor} active={path === "/deployments" || path.startsWith("/deployments/")} collapsed={collapsed} onNavigate={onMobileClose} />}
             {canViewPlaybooks && <NavItem to="/playbooks" label={t("nav.playbooks")} icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
-            {otherPlugins.length > 0 && (
-              <section className="space-y-1 border-t pt-2">
-                {!collapsed && <div className="section-label px-2.5 pb-1">{t("nav.integrations")}</div>}
-                {otherPlugins.map((plugin: PluginInfo) => (
-                  <NavItem key={plugin.id} to="/plugins/$id" params={{ id: plugin.id }} label={plugin.sidebar?.label || plugin.name || plugin.id} icon={Puzzle} active={path === `/plugins/${plugin.id}`} collapsed={collapsed} onNavigate={onMobileClose} />
-                ))}
-              </section>
-            )}
           </>
         ) : (
           <>

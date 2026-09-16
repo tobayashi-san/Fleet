@@ -1,7 +1,6 @@
 import { platformCapacity } from '@/features/infrastructure/platform-capacity';
 import { Timestamp } from '@/components/ui/timestamp';
 import { uptime, statusLabel, preferredDatastores, datastoreCapacityState, datastoreStatus } from '@/features/infrastructure/detail-model';
-import { platformHostIds } from '@/lib/resource-model';
 import { useEffect, useMemo, useState } from "react";
 import { Link, useSearch } from "@tanstack/react-router";
 import {
@@ -181,33 +180,6 @@ export function InfrastructurePage() {
       ),
     [environmentId, hostsQuery.data],
   );
-  // An adopted VM already belongs to the Proxmox inventory below. Rendering it
-  // again as a host makes the console look as if it contained two
-  // resources. Keep this section exclusively for standalone VPS/bare-metal
-  // hosts, just as vCenter separates inventory objects from standalone hosts.
-  const adoptedFleetHostIds = useMemo(() => platformHostIds(clusters), [clusters]);
-  const standaloneHosts = useMemo(
-    () => hosts.filter((host) => !adoptedFleetHostIds.has(host.id)),
-    [adoptedFleetHostIds, hosts],
-  );
-  const totals = useMemo(
-    () =>
-      clusters.reduce(
-        (result, cluster) => ({
-          clusters: result.clusters + 1,
-          nodes: result.nodes + cluster.nodes.length,
-          vms: result.vms + cluster.vms.length,
-          online:
-            result.online +
-            cluster.vms.filter((vm) => vm.status === "running").length,
-          onlineNodes:
-            result.onlineNodes +
-            cluster.nodes.filter((node) => node.status === "online").length,
-        }),
-        { clusters: 0, nodes: 0, vms: 0, online: 0, onlineNodes: 0 },
-      ),
-    [clusters],
-  );
   const serverRefreshing = !inventoryQuery.isError && inventoryQuery.data?.refreshing === true;
   const refreshing =
     inventoryQuery.isFetching || serverRefreshing ||
@@ -230,11 +202,7 @@ export function InfrastructurePage() {
     <div className="space-y-5">
       <PageHeader
         title="Infrastructure"
-        description={
-          clusters.length
-            ? `${totals.clusters} platform${totals.clusters === 1 ? "" : "s"} · ${totals.onlineNodes} / ${totals.nodes} nodes reachable · ${totals.online} / ${totals.vms} virtual machines running${standaloneHosts.length ? ` · ${standaloneHosts.length} standalone hosts` : ""}`
-            : "Read-only platform inventory for connected clusters, nodes, datastores, VMs, and LXC containers."
-        }
+        description={`${hosts.length} ${hosts.length === 1 ? "host" : "hosts"} · ${clusters.length} ${clusters.length === 1 ? "platform" : "platforms"}`}
         actions={
           <>
             <Button
@@ -327,8 +295,26 @@ export function InfrastructurePage() {
               />
             </Card>
           ) : null}
-          {clusters.length > 0 && <PlatformInventory clusters={clusters} />}
-          {standaloneHosts.length > 0 && <ManagedHostsReference count={standaloneHosts.length} />}
+          {hosts.length > 0 && <Card>
+            <CardHeader className="flex-row items-center justify-between">
+              <CardTitle>Hosts</CardTitle>
+              <Button asChild size="sm" variant="outline"><Link to="/servers">All hosts</Link></Button>
+            </CardHeader>
+            <CardContent className="max-h-[60dvh] overflow-auto">
+              {hosts.map(host => <div key={host.id} className="flex flex-wrap items-center gap-3 border-b py-3 last:border-0">
+                <Server className="h-4 w-4 shrink-0 text-muted-foreground" />
+                <Link to="/servers/$id" params={{id:host.id}} className="min-w-0 flex-1 break-words font-medium hover:underline">{host.name}</Link>
+                <span className="text-xs text-muted-foreground">{host.ip_address}</span>
+                {clusters.flatMap(cluster => cluster.vms.filter(vm => vm.fleet_server_id === host.id).map(vm =>
+                  <Button key={`${cluster.id}:${vm.node_name}:${vm.vm_id}`} asChild size="sm" variant="ghost"><Link to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId:cluster.id,nodeName:vm.node_name,vmId:String(vm.vm_id)}}>VM details</Link></Button>
+                ))}
+              </div>)}
+            </CardContent>
+          </Card>}
+          {clusters.length > 0 && <details id="infrastructure-platform-panel" className="rounded-md border p-4" open={routeSearch.section ? true : undefined}>
+            <summary className="cursor-pointer text-sm font-medium">Platforms · {clusters.length}</summary>
+            <div className="mt-4"><PlatformInventory clusters={clusters} /></div>
+          </details>}
         </>
       )}
       <PlatformConnectionsDialog open={connectionsOpen && !connectionDialogOpen && !connectionToDelete} onOpenChange={setConnectionsOpen}>
@@ -640,21 +626,6 @@ export function ProxmoxConnectionsCard({
             </div>
           </>
         )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function ManagedHostsReference({ count }: { count: number }) {
-  return (
-    <Card>
-      <CardContent className="flex flex-wrap items-center gap-3 p-4">
-        <Server className="h-5 w-5 text-muted-foreground" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm font-semibold">{count} standalone host{count === 1 ? "" : "s"}</div>
-          <p className="mt-0.5 text-xs text-muted-foreground">Host health, updates, access, and bulk administration live in Hosts.</p>
-        </div>
-        <Button asChild size="sm" variant="outline"><Link to="/servers">Open hosts</Link></Button>
       </CardContent>
     </Card>
   );

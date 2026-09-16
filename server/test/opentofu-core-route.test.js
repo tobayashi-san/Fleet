@@ -63,8 +63,7 @@ test('OpenTofu is served as an integrated API, not an optional plugin', async ()
   const plugins = await request(app)
     .get('/api/plugins')
     .set('Authorization', `Bearer ${setup.body.token}`);
-  assert.equal(plugins.status, 200);
-  assert.equal(plugins.body.some(plugin => plugin.id === 'opentofu'), false);
+  assert.equal(plugins.status, 404);
 
   const legacy = await request(app)
     .get('/api/plugin/opentofu/status')

@@ -357,7 +357,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
           </div>
           <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 shadow-sm">
             <p className="min-w-0 flex-1 text-sm"><strong className="break-all">{selPb || "Select a playbook"}</strong><span className="block text-muted-foreground">{selectedTargets.length} hosts selected · {checkMode ? "Dry run" : "Live run"}</span></p>
-            {(!selPb || selectedTargets.length === 0) && <p className="text-sm text-muted-foreground">Select a playbook and at least one host to continue.</p>}
+            {(!selPb || selectedTargets.length === 0) && <p className="text-sm text-muted-foreground">Choose playbook and hosts.</p>}
             <Button onClick={run} disabled={busy || !selPb || selectedTargets.length === 0}>
               <Play className="h-4 w-4" /> {busy ? (startingRun ? "Starting…" : t("qr.running")) : checkMode ? "Start dry run" : t("qr.run")}
             </Button>
@@ -506,7 +506,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
               <Label>Run-specific variables <span className="font-normal text-muted-foreground">({t("common.optional")})</span></Label>
               <Button type="button" variant="outline" size="sm" onClick={addExtraVariable}><Plus className="h-4 w-4" /> Add variable</Button>
             </div>
-            {extraVars.length === 0 ? <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No run-specific variables. Stored environment variables and encrypted secrets are still supplied automatically.</p> : (
+            {extraVars.length === 0 ? <p className="rounded-md border border-dashed p-3 text-xs text-muted-foreground">No overrides.</p> : (
               <div className="space-y-2">
                 {extraVars.map((row, index) => (
                   <div key={row.id} className="grid gap-2 rounded-md border p-2 sm:grid-cols-[minmax(8rem,1fr)_8rem_minmax(8rem,1.4fr)_2.25rem]">
@@ -520,7 +520,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 ))}
               </div>
             )}
-            <p className="text-xs text-muted-foreground">Values keep the selected type. Run-specific entries override stored environment variables with the same key.</p>
+            <p className="text-xs text-muted-foreground">Overrides environment variables.</p>
             {extraVarsError && <p role="alert" className="text-xs text-destructive">{extraVarsError}</p>}
           </div>
           <label className="flex items-center justify-between gap-3 rounded-md border bg-muted/10 px-3 py-2 text-sm">

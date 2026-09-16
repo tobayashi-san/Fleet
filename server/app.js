@@ -3,16 +3,13 @@ const cors = require('cors');
 const path = require('path');
 const log = require('./utils/logger');
 const db = require('./db');
-const pluginLoader = require('./services/plugin-loader');
 const authMiddleware = require('./middleware/auth');
 const environmentContext = require('./middleware/environment-context');
 const { createCorsOriginValidator, parseAllowedOrigins } = require('./utils/allowed-origins');
 const { apiLimiter, authenticatedApiLimiter, fileReadLimiter } = require('./utils/rate-limiters');
 const { serverError } = require('./utils/http-error');
-const { getPermissions, canAccessPlugin } = require('./utils/permissions');
 
 const { router: authRouter } = require('./routes/auth');
-const agentRouter = require('./routes/agent');
 const usersRouter = require('./routes/users');
 const rolesRouter = require('./routes/roles');
 const resetRouter = require('./routes/reset');
@@ -29,35 +26,12 @@ const scheduleHistoryRouter = require('./routes/schedule-history');
 const ansibleVarsRouter = require('./routes/ansible-vars');
 const adhocRouter = require('./routes/adhoc');
 const gitPlaybooksRouter = require('./routes/git-playbooks');
-const pluginsAdminRouter = require('./routes/plugins-admin');
-const agentAdminRouter = require('./routes/agent-admin');
 const ipamRouter = require('./routes/ipam');
 const maintenanceWindowsRouter = require('./routes/maintenance-windows');
 const operationsRouter = require('./routes/operations');
 const alertsRouter = require('./routes/alerts');
 const fileTransfersRouter = require('./routes/file-transfers');
 const { createOpenTofuRouter } = require('./routes/opentofu');
-
-const PLUGIN_UI_CONTENT_TYPES = {
-  '.css': 'text/css; charset=utf-8',
-  '.gif': 'image/gif',
-  '.ico': 'image/x-icon',
-  '.jpeg': 'image/jpeg',
-  '.jpg': 'image/jpeg',
-  '.js': 'application/javascript; charset=utf-8',
-  '.mjs': 'application/javascript; charset=utf-8',
-  '.png': 'image/png',
-  '.svg': 'image/svg+xml; charset=utf-8',
-  '.ttf': 'font/ttf',
-  '.wasm': 'application/wasm',
-  '.webp': 'image/webp',
-  '.woff': 'font/woff',
-  '.woff2': 'font/woff2',
-};
-
-function pluginUiContentType(ext) {
-  return PLUGIN_UI_CONTENT_TYPES[ext] || 'application/octet-stream';
-}
 
 function createApp({ isHttps = false } = {}) {
   const app = express();
@@ -140,7 +114,7 @@ function createApp({ isHttps = false } = {}) {
 
   // API responses routinely carry infrastructure metadata and authentication
   // material.  Keep browsers and intermediary caches from storing them.
-  // Static frontend and plugin assets retain their existing cache behaviour.
+  // Static frontend assets retain their existing cache behaviour.
   app.use('/api', (req, res, next) => {
     res.setHeader('Cache-Control', 'no-store');
     next();
@@ -157,7 +131,7 @@ function createApp({ isHttps = false } = {}) {
   });
 
   app.use('/api/auth', authRouter);
-  app.use('/api/v1/agent', agentRouter);
+  app.use('/api/v1/agent', (_req, res) => res.status(410).json({ error: 'Agent support has been removed. Use SSH.' }));
 
   app.use('/api/users', authMiddleware, authenticatedApiLimiter, usersRouter);
   app.use('/api/roles', authMiddleware, authenticatedApiLimiter, rolesRouter);
@@ -188,49 +162,10 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/ansible-vars', ansibleVarsRouter);
   app.use('/api/adhoc', adhocRouter);
   app.use('/api/playbooks-git', gitPlaybooksRouter);
-  app.use('/api/plugins', pluginsAdminRouter);
-  app.use('/api/v1', agentAdminRouter);
+  app.use('/api/v1', (_req, res) => res.status(410).json({ error: 'Agent support has been removed. Use SSH.' }));
 
-  app.use('/api/plugin/:pluginId', (req, res, next) => {
-    const { pluginId } = req.params;
-    const pluginRouter = pluginLoader.getRouter(pluginId);
-    if (!pluginRouter) return res.status(404).json({ error: `Plugin '${pluginId}' not found or not enabled` });
-    if (!canAccessPlugin(getPermissions(req.user), pluginId)) {
-      return res.status(403).json({ error: 'Plugin access denied' });
-    }
-    pluginRouter(req, res, next);
-  });
-
-  app.get('/plugins/:pluginId/ui.js', fileReadLimiter, (req, res) => {
-    const { pluginId } = req.params;
-    if (!pluginLoader.isEnabled(pluginId)) {
-      return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
-    }
-    const uiRoot = pluginLoader.getUiRoot(pluginId);
-    if (!uiRoot) {
-      return res.status(404).type('application/javascript').send('// ui.js not found\n');
-    }
-    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile('ui.js', { root: uiRoot });
-  });
-
-  app.get(/^\/plugins\/([a-z0-9][a-z0-9_-]*)\/(.+)$/, fileReadLimiter, (req, res) => {
-    const pluginId = req.params[0];
-    const assetPath = req.params[1];
-    if (!pluginLoader.isEnabled(pluginId)) {
-      return res.status(404).type('application/javascript').send('// Plugin not found or not enabled\n');
-    }
-
-    const asset = pluginLoader.getUiAsset(pluginId, assetPath);
-    if (!asset) {
-      return res.status(404).type('application/javascript').send('// Plugin asset not found\n');
-    }
-
-    res.setHeader('Content-Type', pluginUiContentType(asset.ext));
-    res.setHeader('Cache-Control', 'no-cache');
-    res.sendFile(asset.file, { root: asset.root });
-  });
+  // Retired extension endpoints must not fall through to the SPA.
+  app.use(['/api/plugins', '/api/plugin', '/plugins'], (_req, res) => res.status(404).json({ error: 'Not found' }));
 
   if (process.env.NODE_ENV === 'production') {
     app.use(fileReadLimiter, (req, res, next) => {

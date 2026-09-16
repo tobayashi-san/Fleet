@@ -60,7 +60,7 @@ test('dashboard exposes custom desired-state deviations without exposing executa
   assert.equal('update_command' in host.custom_update_tasks[0], false);
 });
 
-test('dashboard omits agent presentation data while the agent feature is hidden', async () => {
+test('legacy agent settings cannot re-enable agent presentation', async () => {
   const server = db.servers.create({ name: 'hidden-agent-host', hostname: 'hidden-agent-host.local', ip_address: '10.0.0.51' });
   db.servers.updateStatus(server.id, 'online');
   db.agentConfig.upsert({ server_id: server.id, mode: 'push', token: 'test-agent-token', interval: 30 });
@@ -77,9 +77,9 @@ test('dashboard omits agent presentation data while the agent feature is hidden'
   db.settings.set('agent_enabled', '1');
   const visible = await request(app).get('/api/dashboard').set('Authorization', `Bearer ${token}`);
   assert.equal(visible.status, 200);
-  assert.equal(visible.body.agentEnabled, true);
+  assert.equal(visible.body.agentEnabled, false);
   const visibleHost = visible.body.servers.find((item) => item.id === server.id);
-  assert.equal(visibleHost.agent_mode, 'push');
+  assert.equal(visibleHost.agent_mode, 'legacy');
 });
 
 test('single-host minimal role receives no update, container, custom-state, or history metadata', async () => {

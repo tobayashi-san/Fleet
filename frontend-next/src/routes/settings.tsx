@@ -11,10 +11,8 @@ import { QueryErrorState } from '@/components/ui/query-error-state';
 import { AppearanceTab } from './settings/tabs/appearance';
 import { SshTab } from './settings/tabs/ssh';
 import { SystemTab, CollectionTab } from './settings/tabs/system';
-import { AgentManifestTab } from './settings/tabs/agent-manifest';
 import { NotificationsTab } from './settings/tabs/notifications';
 import { GitTab } from './settings/tabs/git';
-import { PluginsTab } from './settings/tabs/plugins';
 import { UsersRolesTab } from './settings/tabs/users-roles';
 import { BackupTab } from './settings/tabs/backup';
 import { DangerTab } from './settings/tabs/danger';
@@ -24,22 +22,18 @@ interface TabDef {
   i18nKey: string;
   Component: React.ComponentType;
   /** Console grouping keeps a growing administration surface scannable. */
-  section: 'Branding' | 'Access & security' | 'Integrations' | 'System' | 'Backup & Recovery';
+  section: 'Branding' | 'Access & security' | 'Integrations' | 'System' | 'Application data';
   label?: string;
-  /** Render only when whitelabel.agentEnabled is true (matches legacy behaviour). */
-  agentOnly?: boolean;
 }
 
 const TABS: TabDef[] = [
-  { id: 'backup', i18nKey: 'set.tabBackup', Component: BackupTab, section: 'Backup & Recovery' },
+  { id: 'backup', i18nKey: 'set.tabBackup', label: 'Application data', Component: BackupTab, section: 'Application data' },
   { id: 'appearance',     i18nKey: 'set.tabAppearance',    Component: AppearanceTab, section: 'Branding' },
   { id: 'system',         i18nKey: 'set.tabSystem',        Component: SystemTab, section: 'System' },
-  { id: 'collection', i18nKey: 'set.polling', label: 'Collection & agents', Component: CollectionTab, section: 'System' },
+  { id: 'collection', i18nKey: 'set.polling', label: 'Collection', Component: CollectionTab, section: 'System' },
   { id: 'ssh',            i18nKey: 'set.tabSsh',           Component: SshTab, section: 'Access & security' },
-  { id: 'agent-manifest', i18nKey: 'set.tabAgentManifest', Component: AgentManifestTab, section: 'System', agentOnly: true },
   { id: 'users-roles',    i18nKey: 'set.userManagement',   Component: UsersRolesTab, section: 'Access & security' },
   { id: 'git',            i18nKey: 'git.title', label: 'Playbook Git',            Component: GitTab, section: 'Integrations' },
-  { id: 'plugins',        i18nKey: 'set.tabPlugins',       Component: PluginsTab, section: 'Integrations' },
   { id: 'notifications',  i18nKey: 'set.notifications',    Component: NotificationsTab, section: 'Integrations' },
   { id: 'danger',         i18nKey: 'set.danger',           Component: DangerTab, section: 'System' },
 ];
@@ -52,7 +46,7 @@ export function SettingsPage() {
   if (profileQuery.isLoading) {
     return (
       <div className="space-y-6">
-        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <PageHeader title={t('set.title')} />
       </div>
     );
   }
@@ -60,7 +54,7 @@ export function SettingsPage() {
   if (profileQuery.isError) {
     return (
       <div className="space-y-6">
-        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <PageHeader title={t('set.title')} />
         <QueryErrorState
           error={profileQuery.error}
           title="Administration access could not be verified"
@@ -73,7 +67,7 @@ export function SettingsPage() {
   if (profile?.role !== 'admin') {
     return (
       <div className="space-y-6">
-        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <PageHeader title={t('set.title')} />
         <EmptyState
           icon={<Lock className="h-5 w-5" />}
           title={t('set.adminOnlyTitle')}
@@ -91,16 +85,10 @@ function AdminSettingsPage() {
   const navigate = useNavigate();
   const params = useParams({ strict: false }) as { tab?: string };
   const settingsQuery = useSettings();
-  const settings = settingsQuery.data;
-
-  const agentEnabled = Boolean(
-    (settings as Record<string, unknown> | undefined)?.agentEnabled
-  );
-
-  const visibleTabs = TABS.filter((tab) => tab.id !== 'danger' && (!tab.agentOnly || agentEnabled));
+  const visibleTabs = TABS.filter((tab) => tab.id !== 'danger');
   const activeId = params.tab === 'danger' ? 'backup' : visibleTabs.find((tab) => tab.id === params.tab)?.id ?? 'system';
   const ActiveComponent = params.tab === 'danger' ? DangerTab : visibleTabs.find((tab) => tab.id === activeId)?.Component;
-  const sections = ['System', 'Access & security', 'Integrations', 'Backup & Recovery', 'Branding'] as const;
+  const sections = ['System', 'Access & security', 'Integrations', 'Application data', 'Branding'] as const;
 
   useEffect(() => {
     if (params.tab === 'audit') void navigate({ to: '/operations', search: {section:'audit'}, replace: true });
@@ -109,7 +97,7 @@ function AdminSettingsPage() {
   if (settingsQuery.isError) {
     return (
       <div className="space-y-5">
-        <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+        <PageHeader title={t('set.title')} />
         <QueryErrorState
           error={settingsQuery.error}
           title="Administration settings could not be loaded"
@@ -121,7 +109,7 @@ function AdminSettingsPage() {
 
   return (
     <div className="space-y-5">
-      <PageHeader title={t('set.title')} description={t('set.subtitle')} />
+      <PageHeader title={t('set.title')} />
 
       <p className="text-xs text-muted-foreground">Administration · settings apply to this installation unless a section explicitly names an environment. Personal preferences are in your profile.</p>
       <div className="flex flex-col gap-5 lg:flex-row">

@@ -1,3 +1,4 @@
+const { collectionContext } = require('./collection-queue');
 const { execCommandWithTimeout } = require('../utils/ssh-command-timeout');
 const { sshKeyMetadata } = require('../utils/ssh-key-metadata');
 const { execFileSync, exec } = require('child_process');
@@ -168,6 +169,8 @@ class SSHManager {
     this.connections = new Map(); // key → NodeSSH
     this.lastUsed    = new Map(); // key → timestamp
     this.connecting  = new Map(); // key → pending connect promise
+    this.opening = 0;
+    this.slotWaiters = [];
     this.refCounts   = new Map(); // key → number of in-flight users (eviction-safe)
     fs.mkdirSync(SSH_DIR, { recursive: true });
 
@@ -185,6 +188,7 @@ class SSHManager {
     if (n <= 0) this.refCounts.delete(key);
     else this.refCounts.set(key, n);
     this.lastUsed.set(key, Date.now());
+    this._drainConnectionQueue();
   }
 
   _isInUse(key) {
@@ -456,6 +460,7 @@ class SSHManager {
         username: sshUser,
         password: password,
         tryKeyboard: true,
+        readyTimeout: 10000,
         hostVerifier: makeHostVerifier({ serverId, out, hostLabel: serverIp }),
       });
 
@@ -505,6 +510,8 @@ class SSHManager {
       const conn = this.connections.get(key);
       if (conn.isConnected()) {
         this.lastUsed.set(key, Date.now());
+        this._refInc(key);
+        setImmediate(() => this._refDec(key));
         return conn;
       }
       this.connections.delete(key);
@@ -516,43 +523,69 @@ class SSHManager {
       return this.connecting.get(key);
     }
 
-    // Enforce connection cap before opening a new one. Only IDLE connections
-    // are evicted; if all slots are in-use, refuse rather than break a stream.
-    if (this.connections.size >= MAX_CONNECTIONS) {
-      const evicted = this._evictLRU();
-      if (!evicted) {
-        throw new Error(`SSH connection pool exhausted (${MAX_CONNECTIONS} active). Try again later.`);
-      }
-    }
+    // Reserve capacity before asynchronous handshakes; queued requests are coalesced by host.
+    const connectPromise = (async () => {
+      await this._waitForSlot();
+      try {
+        const privateKey = readPrivateKey(this.getPrivateKeyPath());
+        const ssh = new NodeSSH();
+        const host = server.ip_address;
+        const verification = {};
 
-    const privateKey = readPrivateKey(this.getPrivateKeyPath());
-    const ssh = new NodeSSH();
-    const host = server.ip_address;
-    const verification = {};
+        return await ssh.connect({
+          host,
+          port: server.ssh_port || 22,
+          username: server.ssh_user || 'root',
+          privateKey,
+          readyTimeout: 10000,
+          hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host, out: verification }),
+        }).then(() => {
+          this._refInc(key);
+          setImmediate(() => this._refDec(key));
+          this.connections.set(key, ssh);
+          this.lastUsed.set(key, Date.now());
+          this.connecting.delete(key);
+          return ssh;
+        }).catch(error => {
+          this.connecting.delete(key);
+          ssh.dispose();
+          if (verification.mismatch) {
+            throw new HostKeyMismatchError(host);
+          }
+          throw new Error(`SSH connection failed to ${host}: ${error.message}`);
+        });
 
-    const connectPromise = ssh.connect({
-      host,
-      port: server.ssh_port || 22,
-      username: server.ssh_user || 'root',
-      privateKey,
-      readyTimeout: 10000,
-      hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host, out: verification }),
-    }).then(() => {
-      this.connections.set(key, ssh);
-      this.lastUsed.set(key, Date.now());
-      this.connecting.delete(key);
-      return ssh;
-    }).catch(error => {
-      this.connecting.delete(key);
-      ssh.dispose();
-      if (verification.mismatch) {
-        throw new HostKeyMismatchError(host);
-      }
-      throw new Error(`SSH connection failed to ${host}: ${error.message}`);
-    });
-
+      } finally { this.opening--; this._drainConnectionQueue(); }
+    })().finally(() => this.connecting.delete(key));
     this.connecting.set(key, connectPromise);
     return connectPromise;
+  }
+
+  _waitForSlot() {
+    if (this.slotWaiters.length >= 1000) return Promise.reject(Object.assign(new Error('SSH connection queue is full'), {code:'SSH_QUEUE_FULL'}));
+    return new Promise((resolve, reject) => {
+      const ticket = { resolve, reject, timer:null };
+      ticket.timer = setTimeout(() => {
+        const index = this.slotWaiters.indexOf(ticket);
+        if (index < 0) return;
+        this.slotWaiters.splice(index, 1);
+        reject(Object.assign(new Error('SSH connection queue timed out. Retry shortly.'), {code:'SSH_QUEUE_TIMEOUT'}));
+        this._drainConnectionQueue();
+      }, 30000);
+      this.slotWaiters.push(ticket);
+      this._drainConnectionQueue();
+    });
+  }
+
+  _drainConnectionQueue() {
+    while (this.slotWaiters.length) {
+      if (this.connections.size + this.opening >= MAX_CONNECTIONS && !this._evictLRU()) return;
+      if (this.connections.size + this.opening >= MAX_CONNECTIONS) return;
+      const ticket = this.slotWaiters.shift();
+      clearTimeout(ticket.timer);
+      this.opening++;
+      ticket.resolve();
+    }
   }
 
   _connectionKey(server) {
@@ -567,7 +600,8 @@ class SSHManager {
     const ssh = await this.getConnection(server);
     this._refInc(key);
     try {
-      const result = options.timeoutMs ? await execCommandWithTimeout(ssh, command, options.timeoutMs) : await ssh.execCommand(command);
+      const timeoutMs = options.timeoutMs ?? (collectionContext.getStore()?.collection ? 120000 : undefined);
+      const result = timeoutMs ? await execCommandWithTimeout(ssh, command, timeoutMs) : await ssh.execCommand(command);
       return {
         stdout: result.stdout,
         stderr: result.stderr,
@@ -902,6 +936,7 @@ class SSHManager {
         username: sshUser,
         password,
         tryKeyboard: true,
+        readyTimeout: 10000,
         hostVerifier: makeHostVerifier({ serverId: null, out: {}, hostLabel: serverIp }),
       });
       const result = await ssh.execCommand('echo "connected"');

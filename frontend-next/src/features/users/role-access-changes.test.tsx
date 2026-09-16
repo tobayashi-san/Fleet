@@ -33,12 +33,12 @@ it('editing migrated roles preserves explicit denial instead of applying the leg
 it('resolves resource names without hiding changes between identically named resources',()=>{
  const labels={servers:{'1':'Production','2':'Production'},groups:{g:'Operations'},plugins:{p:'Inventory'},playbooks:{'a.yml':'Deploy'}};
  const changes=compareRoleAccess({servers:{servers:['1']}},{servers:{servers:['2'],groups:['g']},plugins:['p'],playbooks:['a.yml']},[],labels);
- expect(changes).toHaveLength(3);
+ expect(changes).toHaveLength(2);
  expect(changes[0].before).toContain('"Production" (ID: "1")');
  expect(changes[0].after).toContain('"Production" (ID: "2")');
  expect(changes[0].after).toContain('"Operations"');
  expect(changes[1].after).toContain('"Deploy"');
- expect(changes[2].after).toContain('"Inventory"');
+ expect(changes.some(change => change.label === 'Plugins')).toBe(false);
 });
 it('keeps unresolved selections visible and escapes resource labels when rendered',()=>{
  const html=renderToStaticMarkup(<RoleAccessChanges before={{}} after={{servers:{servers:['missing','known']}}} capabilityKeys={[]} labels={{servers:{known:'<script>unsafe</script>'}}}/>);
@@ -51,7 +51,7 @@ it('keeps unresolved selections visible and escapes resource labels when rendere
 
 it('summarizes specific resources before account creation instead of only selection counts',()=>{
  const html=renderToStaticMarkup(<RoleAccessSummary permissions={{servers:{groups:['ops'],servers:['db']},playbooks:['inspect.yml'],plugins:['audit'],canUseTerminal:true,canRunUpdates:false}} labels={{groups:{ops:'Operations'},servers:{db:'Database host'},plugins:{audit:'Audit viewer'}}} sensitiveCapabilityKeys={['canUseTerminal','canRunUpdates']}/>);
- for (const text of ['Operations','Database host','inspect.yml','Audit viewer','Use Terminal','includes descendants']) expect(html).toContain(text);
+ for (const text of ['Operations','Database host','inspect.yml','Use Terminal','includes descendants']) expect(html).toContain(text);
  expect(html).not.toContain('Run Updates');
 });
 it('does not describe missing permission details as no access',()=>{

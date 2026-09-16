@@ -11,7 +11,7 @@ import { CreateSnapshotDialog } from '@/features/infrastructure/CreateSnapshotDi
 import { OverflowMenu, OverflowItem } from '@/components/ui/overflow-menu';
 import { managementLabel } from '@/lib/resource-model';
 import { useMemo, useState } from "react";
-import { Link, useParams } from "@tanstack/react-router";
+import { Link, Navigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
@@ -44,7 +44,7 @@ import {
 import { EmptyState } from "@/components/ui/empty-state";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { PageHeader } from "@/components/ui/page-header";
+import { PageHeader, type PageHeaderProps } from "@/components/ui/page-header";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge, type StatusTone } from "@/components/ui/status-badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -709,12 +709,26 @@ function VmProtectionSummary({
   );
 }
 
+function VmHeader({ embedded, ...props }: PageHeaderProps & { embedded: boolean }) {
+  if (!embedded) return <PageHeader {...props} />;
+  return <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">{props.badge}{props.description}</div>
+    <div className="flex flex-wrap items-center gap-2">{props.actions}</div>
+  </div>;
+}
+
 export function ProxmoxVmDetailPage() {
   const { clusterId, nodeName, vmId } = useParams({ strict: false }) as {
     clusterId: string;
     nodeName: string;
     vmId: string;
   };
+  return <VmDetailContent clusterId={clusterId} nodeName={nodeName} vmId={vmId} />;
+}
+
+export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false }: {
+  clusterId: string; nodeName: string; vmId: string; embedded?: boolean;
+}) {
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
   const qc = useQueryClient();
@@ -729,7 +743,7 @@ export function ProxmoxVmDetailPage() {
     () => ["overview", "configuration", "snapshots", "tasks"],
     [],
   );
-  const vmTabs = useUrlTab("overview", availableTabs);
+  const vmTabs = useUrlTab("overview", availableTabs, embedded ? "vmTab" : "tab");
   const inventory = useQuery({
     queryKey: ["opentofu", "infrastructure", environmentId],
     queryFn: () =>
@@ -788,6 +802,12 @@ export function ProxmoxVmDetailPage() {
     (vm?.fleet_server_id
       ? { id: vm.fleet_server_id, name: `Linked host ${vm.fleet_server_id}` }
       : null);
+  const linkedHost = useQuery({
+    queryKey: ['vm-linked-host', environmentId, adoptedServer?.id],
+    queryFn: () => apiFetch<{id:string}>(`/servers/${encodeURIComponent(adoptedServer!.id)}`, {environmentId}),
+    enabled: !embedded && Boolean(adoptedServer?.id) && hasCap(profile, 'canViewServers'),
+    retry: false,
+  });
   const configuration = useQuery({
     queryKey: ["proxmox-vm-configuration", environmentId, connectionId, nodeName, vmId],
     queryFn: () => apiFetch<VmConfiguration>(`${apiRoot}/configuration`, {environmentId}),
@@ -828,6 +848,9 @@ export function ProxmoxVmDetailPage() {
     });
   };
 
+  if (!embedded && adoptedServer && linkedHost.isSuccess) {
+    return <Navigate to="/servers/$id" params={{id:String(adoptedServer.id)}} hash={`tab=vm&vmTab=${vmTabs.value}`} replace />;
+  }
   const vmMissing = !cluster || !vm;
   if (vmMissing && (inventory.isLoading || summaryInventory.isLoading))
     return (
@@ -875,8 +898,8 @@ export function ProxmoxVmDetailPage() {
   const isStopped = vm.status === "stopped";
   return (
     <div className="space-y-5">
-      <PageHeader
-        title={vm.name}
+      <VmHeader embedded={embedded}
+        title={embedded ? "Virtual machine" : vm.name}
         eyebrow={vm.guest_type === "lxc" ? "LXC container" : "Virtual machine"}
         badge={
           <StatusBadge tone={tone(vm.status)} dot>
@@ -884,7 +907,7 @@ export function ProxmoxVmDetailPage() {
           </StatusBadge>
         }
         description={`${platformName} · ${vm.node_name} · ${kind}-ID ${vm.vm_id}`}
-        breadcrumbs={
+        breadcrumbs={embedded ? undefined : (
           <>
             <Link
               to="/infrastructure"
@@ -911,8 +934,8 @@ export function ProxmoxVmDetailPage() {
             <span aria-hidden="true">/</span>
             <span className="text-foreground">{vm.name}</span>
           </>
-        }
-        back={
+        )}
+        back={embedded ? undefined : (
           <Button
             asChild
             variant="ghost"
@@ -926,7 +949,7 @@ export function ProxmoxVmDetailPage() {
               <ArrowLeft />
             </Link>
           </Button>
-        }
+        )}
         actions={
           <>
             {canViewAudit && (
@@ -989,14 +1012,14 @@ export function ProxmoxVmDetailPage() {
         title="Full inventory could not be refreshed; showing previously loaded or summary data"
         onRetry={() => void inventory.refetch()}
       />}
-      <VmObjectSummary
+      {!embedded && <VmObjectSummary
         managementState={context.isSuccess ? managementLabel(adoptedServer?.id, Boolean(context.data?.deployments?.length)) : context.isError ? "Management context unavailable" : "Loading management context…"}
         hostName={adoptedServer?.name}
         vm={vm}
         cluster={cluster}
         configuration={configuration.data}
         loading={configuration.isLoading}
-      />
+      />}
       <Tabs value={vmTabs.value} onValueChange={vmTabs.onValueChange} className="space-y-4">
         <TabsList aria-label={`${kind} sections`} className="console-tabs">
           <TabsTrigger value="overview">Overview</TabsTrigger>
@@ -1014,7 +1037,8 @@ export function ProxmoxVmDetailPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="overview" className="mt-0 space-y-4">
-          <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.55fr)]">
+          {embedded && <VmObjectSummary managementState="Managed host" vm={vm} cluster={cluster} configuration={configuration.data} loading={configuration.isLoading} />}
+          {!embedded && <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(20rem,.55fr)]">
             <Card>
               <CardHeader className="border-b py-3">
                 <CardTitle className="flex items-center gap-2 text-base">
@@ -1049,7 +1073,7 @@ export function ProxmoxVmDetailPage() {
                           ? "SSH, updates, and playbooks are available through Shipyard."
                           : `The ${kind} remains in platform inventory until it is explicitly adopted.`}
                       </p>
-                      {adoptedServer && (
+                      {adoptedServer && !embedded && (
                         <Button
                           asChild
                           size="sm"
@@ -1120,7 +1144,7 @@ export function ProxmoxVmDetailPage() {
               canManage={canManageSnapshots}
               onCreate={() => setSnapshotOpen(true)}
             />
-          </div>
+          </div>}
           {canViewAudit && (
             <RecentVmTasks
               events={vmEvents}

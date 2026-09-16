@@ -26,8 +26,6 @@ end-to-end recovery acceptance requirements.
 - [Local setup](DEVELOPMENT_PIPELINE.md#local-development) — dependencies and development servers.
 - [Development pipeline](DEVELOPMENT_PIPELINE.md) — targeted checks, CI gates,
   release candidates, and stable releases.
-- [Plugin template](../plugin-template/README.md) — plugin structure, APIs,
-  permissions, and trust configuration.
 
 ## Historical review records
 

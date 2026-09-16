@@ -73,8 +73,7 @@ npm run test:e2e
 ```
 
 The root `npm run dev:server` and `npm --prefix server run dev` use the same
-backend command. Plugins default to the repository's `plugins/` directory;
-set `PLUGINS_DIR` explicitly if you need a different location.
+backend command.
 
 ## Development Flow
 

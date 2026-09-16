@@ -199,17 +199,6 @@ export interface CustomTask {
   last_attempted_at?: string | null;
 }
 
-export interface AgentStatus {
-  installed?: boolean;
-  mode?: string;
-  lastSeen?: string;
-  runnerVersion?: string;
-  manifestVersion?: number;
-  latestManifestVersion?: number;
-  interval?: number;
-  shipyardUrl?: string;
-}
-
 export interface ManagedDeployment {
   workspace_id: string | null;
   workspace_name: string;

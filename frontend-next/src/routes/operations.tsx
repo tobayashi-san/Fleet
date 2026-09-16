@@ -51,7 +51,6 @@ import { OverflowItem, OverflowMenu } from "@/components/ui/overflow-menu";
 import {
   canAccessDeployments,
   hasCap,
-  usePlugins,
   useProfile,
 } from "@/lib/queries";
 import { useUi } from "@/lib/store";
@@ -186,7 +185,6 @@ export function OperationsPage() {
   const queryClient = useQueryClient();
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
-  const { data: plugins } = usePlugins();
   const canViewDeployments = canAccessDeployments(profile);
   const canViewSchedules = hasCap(profile, "canViewSchedules");
   const canViewAudit = hasCap(profile, "canViewAudit");
@@ -367,7 +365,7 @@ export function OperationsPage() {
     <div className="space-y-5">
       <PageHeader
         title="Operations"
-        description="Activity, maintenance planning, and security-relevant changes for the selected environment."
+        description="Runs and scheduled changes."
         actions={
           <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
             <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
@@ -800,7 +798,7 @@ export function MaintenanceWindowsCard({
             compact
             icon={<CalendarClock className="h-5 w-5" />}
             title="No maintenance windows scheduled"
-            description="Create a time window before performing scheduled changes or restarts."
+            description="Schedule a maintenance window."
           />
         ) : (
           <>

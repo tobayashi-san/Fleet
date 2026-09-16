@@ -59,12 +59,11 @@ test('review status, desktop layout, data quality, search and recovery are under
     expect(await hostLink.evaluate(node=>node.getBoundingClientRect().height / parseFloat(getComputedStyle(node).lineHeight))).toBeLessThanOrEqual(2.1);
     await capture(page,'hosts-1280');
     await page.goto('/settings/notifications');await page.locator('summary').filter({hasText:'Notification events'}).click();
-    await expect(page.getByText('Resource monitoring alerts are unavailable in this build.')).toBeVisible();
+    await expect(page.getByText('Resource monitoring alerts are unavailable in this build.')).toHaveCount(0);
     await expect(page.getByRole('switch',{name:'Monitoring alerts'})).toHaveCount(0);
-    await page.getByText('Resource monitoring alerts are unavailable in this build.').scrollIntoViewIfNeeded();
     await capture(page,'monitoring-status');
     await page.goto('/settings/backup');
-    await expect(page.getByRole('heading',{name:'Backup & Recovery'})).toBeVisible();
+    await expect(page.getByText('Shipyard application data. Infrastructure backups are managed externally.')).toBeVisible();
     await expect(page.getByRole('heading',{name:'Encrypted database backup'})).toBeVisible();
     await capture(page,'backup-recovery');
     await page.goto(`/servers/${host.id}#tab=notes`);

@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { api, apiFetch } from '@/lib/api';
-import { canAccessDeployments, canAccessNetworks, canAccessOperations, useProfile, usePlugins, hasCap, canSeePlugin } from '@/lib/queries';
+import { canAccessDeployments, canAccessNetworks, canAccessOperations, useProfile, hasCap } from '@/lib/queries';
 import { useUi } from '@/lib/store';
 import { useSignOut } from '@/lib/sign-out';
 import { asArray, cn } from '@/lib/utils';
@@ -29,7 +29,6 @@ export function CommandPalette() {
   const signOut = useSignOut();
   const navigate = useNavigate();
   const { data: profile } = useProfile();
-  const { data: plugins = [] } = usePlugins();
   const openTofuAvailable = canAccessDeployments(profile);
   const networksAvailable = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
@@ -123,10 +122,6 @@ export function CommandPalette() {
   const searchReferencesFailed =
     serversQuery.isError || playbooksQuery.isError || ipamQuery.isError || infrastructureQuery.isError;
 
-  const sidebarPlugins = useMemo(
-    () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.hasUi !== false && p.sidebar && canSeePlugin(profile, p.id)),
-    [plugins, profile]
-  );
   const safeServers = hasCap(profile, 'canViewServers') ? commandSearch(asArray<ServerListItem>(servers),search,expanded.hosts ? Infinity : 5,item=>item.name,item=>[item.ip_address || '']) : [];
   const safePlaybooks = hasCap(profile, 'canViewPlaybooks') ? commandSearch(asArray<PlaybookListItem>(playbooks),search,expanded.playbooks ? Infinity : 5,item=>item.filename || item.name || item.id) : [];
 
@@ -243,20 +238,6 @@ export function CommandPalette() {
                     ))}
                     {!expanded.networks && ipamResults.length > 5 && <Command.Item forceMount value="show-network-results" onSelect={() => setExpanded(current => ({...current, networks: true}))} className="cursor-pointer rounded px-2 py-2 text-xs text-primary aria-selected:bg-accent">Show {ipamResults.length} loaded network results</Command.Item>}
                     {expanded.networks && ipamQuery.hasNextPage && <Command.Item forceMount value="load-more-networks" disabled={ipamQuery.isFetchingNextPage} onSelect={() => { void ipamQuery.fetchNextPage(); }} className="cursor-pointer rounded px-2 py-2 text-xs text-primary aria-selected:bg-accent">{ipamQuery.isFetchingNextPage ? 'Loading networks…' : `Load more networks (${ipamResults.length} of ${ipamQuery.data?.pages[0].total})`}</Command.Item>}
-                  </Command.Group>
-                )}
-
-                {sidebarPlugins.length > 0 && (
-                  <Command.Group heading={t('nav.plugins')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {commandSearch(sidebarPlugins, search, expanded.plugins ? Infinity : 5, p => p.sidebar?.label || p.name || p.id).map(p => (
-                      <PaletteItem
-                        key={p.id}
-                        icon={<Puzzle className="h-4 w-4" />}
-                        label={p.sidebar?.label || p.name || p.id}
-                        onSelect={() => go(`/plugins/${p.id}`)}
-                      />
-                    ))}
-                    {more('plugins', commandSearch(sidebarPlugins, search, Infinity, p => p.sidebar?.label || p.name || p.id).length)}
                   </Command.Group>
                 )}
 

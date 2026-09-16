@@ -1,3 +1,4 @@
+const { collectionContext } = require('./collection-queue');
 const {createSecretRedactor,redactSecrets}=require('../utils/secret-redactor');
 const { spawn, execFileSync } = require('child_process');
 const crypto = require('crypto');
@@ -164,7 +165,12 @@ class AnsibleRunner {
   _spawnProcess(binary, args, onOutput, opts = {}) {
     return new Promise((resolve, reject) => {
       const { runId, ...spawnOptions } = opts;
-      const child = spawn(binary, args, { env: this._ansibleEnv, ...spawnOptions });
+      const child = spawn(binary, args, {
+        env: this._ansibleEnv,
+        // Read-only collection must not hold the single heavy-work slot indefinitely.
+        ...(collectionContext.getStore()?.collection ? {timeout:600000, killSignal:'SIGKILL'} : {}),
+        ...spawnOptions,
+      });
       const state = runId ? (this.activeProcesses.get(String(runId)) || { cancelRequested: false }) : null;
       if (runId) {
         state.child = child;

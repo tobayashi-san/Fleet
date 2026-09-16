@@ -254,6 +254,7 @@ export function CreateServerDialog({
               password: sshPassword,
               ssh_port: data.ssh_port,
               environment_id: data.environment_id,
+              server_id: savedServer.id,
             });
             showToast(t("add.transferred"), "success");
           } catch (err) {

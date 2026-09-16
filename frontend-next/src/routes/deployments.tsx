@@ -115,7 +115,7 @@ export function DeploymentsPage() {
   return <div className="space-y-5">
     <PageHeader
       title="VM definitions"
-      description="VM definitions describe desired configuration and have independent plans and run history. Host operations (SSH, updates and playbooks) are linked separately."
+      description="Create and deploy VMs."
       actions={<>
         <Button type="button" variant="outline" onClick={refresh} disabled={vmsQuery.isFetching}><RefreshCw className={vmsQuery.isFetching ? "animate-spin" : undefined} />Refresh</Button>
         {(canManagePlatforms || connections.length > 0) && <Button type="button" variant="outline" onClick={() => setConnectionsOpen(true)}><Settings2 />Platform connections</Button>}

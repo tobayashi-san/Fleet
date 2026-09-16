@@ -1,4 +1,3 @@
-import { AgentOverview } from '@/features/system/AgentOverview';
 import { PollingRuntime } from '@/features/system/PollingRuntime';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -58,13 +57,7 @@ export function CollectionTab() {
         <PollingConfig />
       </SettingsSection>
 
-      <details className="rounded-md border p-3"><summary className="cursor-pointer font-medium">Agents — configuration and affected hosts</summary><SettingsSection
-        icon={<Bot className="h-4 w-4" />}
-        title={t('set.agentFeature')}
-        description={t('set.agentFeatureHint')}
-      >
-        <AgentToggle />
-      </SettingsSection></details></div>;
+    </div>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -396,7 +389,7 @@ function PollingConfig() {
         );
       })}
 
-      <SettingsRow label="Effect of saving" hint="Applies to background polling across environments."><p className="max-w-xl text-xs text-muted-foreground">Shorter intervals increase SSH and API traffic; longer intervals make observations older. Saving reschedules future checks without starting an immediate collection. Disabling a poller stops future scheduled checks; work already running may finish.</p></SettingsRow>
+      <SettingsRow label="Adaptive collection" hint="Intervals are a baseline. Unchanged hosts are checked less often; failed connections pause before retrying. Manual refresh takes priority. Running checks may finish after disabling collection."><span className="text-xs text-muted-foreground">4 checks at once · 1 heavy check</span></SettingsRow>
       {dirty && <p role="status" className="text-sm text-muted-foreground">Unsaved polling changes</p>}
       {invalidInterval && <p role="alert" className="text-sm text-destructive">Polling intervals must be whole numbers from 1 to 9999 minutes.</p>}
       {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
@@ -411,53 +404,5 @@ function PollingConfig() {
         {edited && <Button variant="outline" disabled={save.isPending} onClick={() => setEdited(null)}>Discard polling changes</Button>}
       </SettingsRow>
     </>
-  );
-}
-
-// ─────────────────────────────────────────────────────────────
-// Agent feature toggle
-// ─────────────────────────────────────────────────────────────
-
-function AgentToggle() {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const settingsQuery = useSettings();
-  const { data: settings } = settingsQuery;
-  const agentEnabled = Boolean((settings as Record<string, unknown>)?.agentEnabled);
-  const [draft,setDraft] = useState<boolean|null>(null);
-  const checked = draft ?? agentEnabled;
-  const dirty = checked !== agentEnabled;
-  useUnsavedChanges(dirty);
-
-  const save = useMutation({
-    mutationFn: (v: boolean) => api.saveSettings({ agentEnabled: v }),
-    onSuccess: () => {
-      qc.setQueryData(['settings'],(old:Record<string,unknown>|undefined)=>({...old,agentEnabled:checked}));
-      setDraft(null);
-      showToast(t('set.agentFeatureSaved'), 'success');
-      qc.invalidateQueries({ queryKey: ['settings'] });
-      qc.invalidateQueries({ queryKey: ['dashboard'] });
-      qc.invalidateQueries({ queryKey: ['agent-overview'] });
-    },
-    onError: (err) => {
-      showToast((err as Error).message, 'error');
-    },
-  });
-
-  if (settingsQuery.isError) return <SettingsRow noBorder><QueryErrorState compact title="Agent settings could not be loaded" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} /></SettingsRow>;
-  if (settingsQuery.isPending) return <SettingsRow noBorder><Skeleton className="h-6 w-24" /></SettingsRow>;
-
-  return (
-    <><SettingsRow label={t('set.agentFeatureToggle')} hint="This installation · changes apply after saving." noBorder>
-      <Switch
-        checked={checked}
-        aria-label={t('set.agentFeatureToggle')}
-        onCheckedChange={setDraft}
-        disabled={save.isPending}
-      />
-    </SettingsRow>
-    <p className="py-2 text-sm">{checked ? 'Enable configured agent modes. SSH hosts keep SSH collection; agent paths may fall back to SSH.' : 'Select SSH collection globally. Stored agent modes are retained.'} Review affected hosts below. This does not uninstall agents.</p>
-    {dirty && <p role="status" className="text-sm">Unsaved changes</p>}
-    <div className="flex gap-2"><Button disabled={!dirty || save.isPending} onClick={()=>save.mutate(checked)}>Save agent settings</Button><Button variant="outline" disabled={!dirty || save.isPending} onClick={()=>setDraft(null)}>Discard changes</Button></div><AgentOverview proposedEnabled={dirty ? checked : undefined}/></>
   );
 }

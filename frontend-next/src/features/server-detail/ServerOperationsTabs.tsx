@@ -98,7 +98,6 @@ import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
-  type AgentStatus,
   type ContainerRow,
   type CustomTask,
   type HistoryRow,
@@ -158,17 +157,12 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     setConfirmDeleteTask,
     confirmComposeDown,
     setConfirmComposeDown,
-    confirmAgentInstall,
-    setConfirmAgentInstall,
-    confirmAgentRemove,
-    setConfirmAgentRemove,
     confirmRestartContainer,
     setConfirmRestartContainer,
     actionRun,
     setActionRun,
     profile,
     settings,
-    agentEnabled,
     timeFormat,
     hour12,
     serverKnown,
@@ -200,8 +194,6 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     reloadNotesMut,
     customTasks,
     customTaskList,
-    agentStatus,
-    refetchAgent,
     imageUpdates,
     setImageUpdates,
     notes,
@@ -249,16 +241,6 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     saveComposeMut,
     latencyMs,
     setLatencyMs,
-    agentUrl,
-    setAgentUrl,
-    agentCa,
-    setAgentCa,
-    agentInstallMut,
-    agentUpdateMut,
-    agentConfigMut,
-    agentRotateMut,
-    agentRemoveMut,
-    agentBusy,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,
@@ -498,125 +480,6 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
           )}
         </TabsContent>
 
-        {/* ════ AGENT ════ */}
-        {agentEnabled && profile?.role === "admin" && (
-          <TabsContent value="agent" className="space-y-4">
-            <Card>
-              <CardContent className="px-4 pb-4 pt-4 space-y-4">
-                <p className="text-sm text-muted-foreground">
-                  {t("det.agentDescription")}
-                </p>
-                <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                  <StatCard
-                    icon={<Settings2 className="h-5 w-5" />}
-                    label={t("det.agentMode")}
-                    value={agentStatus?.mode || "legacy"}
-                  />
-                  <Card>
-                    <CardContent className="p-3">
-                      <div className="flex items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground"><Clock className="h-4 w-4" />{t("det.agentLastSeen")}</div>
-                      <div className="mt-1 break-words text-sm">{agentStatus?.lastSeen ? <Timestamp value={agentStatus.lastSeen} hour12={hour12} /> : "No agent report recorded"}</div>
-                      <p className="mt-1 text-xs text-muted-foreground">Last received report; installation alone does not confirm current connectivity.</p>
-                    </CardContent>
-                  </Card>
-                  <StatCard
-                    icon={<Shield className="h-5 w-5" />}
-                    label={t("det.agentRunnerVersion")}
-                    value={agentStatus?.runnerVersion || "—"}
-                  />
-                  <StatCard
-                    icon={<FileText className="h-5 w-5" />}
-                    label={t("det.agentManifestVersion")}
-                    value={String(
-                      agentStatus?.manifestVersion ||
-                        agentStatus?.latestManifestVersion ||
-                        "—",
-                    )}
-                  />
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  {!agentStatus?.installed ? (
-                    <Button
-                      size="sm"
-                      onClick={() => setConfirmAgentInstall(true)}
-                      disabled={agentBusy}
-                    >
-                      <Download className="h-3.5 w-3.5 mr-1" />{" "}
-                      {t("det.agentInstall")}
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => agentUpdateMut.mutate()}
-                        disabled={agentBusy}
-                      >
-                        <RotateCw className="h-3.5 w-3.5 mr-1" />
-                        {t("det.agentUpdate")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => agentConfigMut.mutate()}
-                        disabled={agentBusy}
-                      >
-                        <Sliders className="h-3.5 w-3.5 mr-1" />
-                        {t("det.agentConfigure")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        onClick={() => agentRotateMut.mutate()}
-                        disabled={agentBusy}
-                      >
-                        <Key className="h-3.5 w-3.5 mr-1" />
-                        {t("det.agentRotateToken")}
-                      </Button>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        onClick={() => setConfirmAgentRemove(true)}
-                        disabled={agentBusy}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 mr-1" />
-                        {t("det.agentRemove")}
-                      </Button>
-                    </>
-                  )}
-                </div>
-                {agentStatus?.installed && (
-                  <div className="text-xs text-muted-foreground space-y-1">
-                    <p>
-                      <strong>{t("det.agentUpdate")}:</strong>{" "}
-                      {t("det.agentUpdateHint")}
-                    </p>
-                    <p>
-                      <strong>{t("det.agentConfigure")}:</strong>{" "}
-                      {t("det.agentConfigureHint")}
-                    </p>
-                  </div>
-                )}
-                <div className="space-y-2 max-w-xl">
-                  <Label className="text-xs">{t("det.agentShipyardUrl")}</Label>
-                  <Input
-                    value={agentUrl}
-                    onChange={(e) => setAgentUrl(e.target.value)}
-                    placeholder={t("det.agentUrlPlaceholder")}
-                  />
-                  <Label className="text-xs">{t("det.agentCaPem")}</Label>
-                  <Textarea
-                    value={agentCa}
-                    onChange={(e) => setAgentCa(e.target.value)}
-                    rows={4}
-                    className="font-mono text-xs"
-                    placeholder={t("det.agentCaPemPlaceholder")}
-                  />
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
-        )}
         <Dialog open={Boolean(selectedHistory)} onOpenChange={(open) => !open && setSelectedHistory(null)}>
           <DialogContent className="max-w-3xl">
             <DialogHeader><DialogTitle>Task log</DialogTitle></DialogHeader>

@@ -27,12 +27,6 @@ function permissionDeniedMessage(path: string, method = 'GET'): string {
   if (p.startsWith('/system/audit')) {
     return 'Your role is not allowed to view the audit log.';
   }
-  if (p.startsWith('/plugin/')) {
-    return 'Your role is not allowed to access this plugin.';
-  }
-  if (p.startsWith('/plugins')) {
-    return 'Your role is not allowed to manage plugins.';
-  }
   if (p.startsWith('/adhoc')) {
     return 'Your role is not allowed to run ad-hoc commands.';
   }
@@ -374,25 +368,6 @@ export const api = {
   gitCommit:         (message: string) => apiFetch('/playbooks-git/commit', { method: 'POST', body: { message } }),
   gitPull:           () => apiFetch('/playbooks-git/pull', { method: 'POST' }),
   gitPush:           () => apiFetch('/playbooks-git/push', { method: 'POST' }),
-
-  // Plugins
-  getPlugins:        () => apiFetchArray<AnyObj>('/plugins'),
-  enablePlugin:      (id: string, review: {digest:string;scheme:string}) => apiFetch(`/plugins/${id}/enable`, { method: 'POST', body: review }),
-  disablePlugin:     (id: string) => apiFetch(`/plugins/${id}/disable`, { method: 'POST' }),
-  reloadPlugins:     () => apiFetch<{success:boolean;summary:{loaded:number;failed:{id:string;error:string}[];checkedAt:number}}>('/plugins/reload', { method: 'POST' }),
-
-  // Agent (v1)
-  getAgentStatus:    (serverId: string | number) => apiFetch<AnyObj>(`/v1/servers/${serverId}/agent/status`),
-  installAgent:      (serverId: string | number, data: AnyObj) => apiFetch(`/v1/servers/${serverId}/agent/install`, { method: 'POST', body: data }),
-  updateAgent:       (serverId: string | number) => apiFetch(`/v1/servers/${serverId}/agent/update`, { method: 'POST' }),
-  configureAgent:    (serverId: string | number, data: AnyObj) => apiFetch(`/v1/servers/${serverId}/agent/config`, { method: 'PUT', body: data }),
-  rotateAgentToken:  (serverId: string | number, data: AnyObj = {}) =>
-    apiFetch(`/v1/servers/${serverId}/agent/token-rotate`, { method: 'POST', body: data }),
-  removeAgent:       (serverId: string | number) => apiFetch(`/v1/servers/${serverId}/agent`, { method: 'DELETE' }),
-  getAgentManifest:  () => apiFetch<{ version: number; content: unknown }>('/v1/agent-manifest'),
-  getAgentManifestHistory: (limit = 50) => apiFetchArray<AnyObj>(`/v1/agent-manifest/history?limit=${limit}`),
-  saveAgentManifest: (content: unknown, changelog = '', expectedVersion?: number) =>
-    apiFetch('/v1/agent-manifest', { method: 'PUT', body: { content, changelog, expectedVersion } }),
 
   // Reset / danger
   resetServers: (confirmation: string, environmentId: string, credentials: { password: string; code?: string }) => apiFetch('/reset/servers', { method: 'DELETE', environmentId, body: { ...credentials, confirmation, scope: environmentId } }),

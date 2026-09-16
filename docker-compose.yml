@@ -16,7 +16,6 @@ services:
       - shipyard-data:/app/server/data
       - shipyard-workspaces:/workspaces
       - ./playbooks:/app/server/playbooks
-      - ./plugins:/app/plugins
       # To use a host directory for OpenTofu instead, replace the
       # shipyard-workspaces mount above with:
       # - /path/to/workspaces:/workspaces

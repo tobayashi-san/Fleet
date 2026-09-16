@@ -65,6 +65,12 @@ export function SshTab() {
 
   return (
     <div className="space-y-4">
+      <div className="rounded-md border bg-card p-4">
+        <h2 className="text-sm font-semibold">SSH access</h2>
+        <p className="mt-1 text-sm text-muted-foreground">{isLoading ? 'Checking access…' : isError ? 'Key status unavailable' : data?.publicKey ? 'Shared key ready. Add hosts with a one-time password to set up access.' : 'The shared key is created automatically when connecting your first host.'}</p>
+      </div>
+      <details className="rounded-md border p-4"><summary className="cursor-pointer text-sm font-medium">Advanced: manual SSH setup and recovery</summary>
+      <div className="mt-4 space-y-4">
       <SettingsSection
         icon={<Key className="h-4 w-4" />}
         title={t("set.sshTitle")}
@@ -98,6 +104,7 @@ export function SshTab() {
       >
         <DeployForm />
       </SettingsSection>
+      </div></details>
     </div>
   );
 }

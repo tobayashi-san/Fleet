@@ -1,3 +1,4 @@
+import { VmDetailContent } from '@/routes/proxmox-vm-detail';
 import { ComposeTemplateButton } from './components/ComposeTemplateButton';
 import { OsUpdateImpact } from './components/OsUpdateImpact';
 import { CustomUpdateDialog } from './components/CustomUpdateDialog';
@@ -93,7 +94,6 @@ import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
 import { marked } from "marked";
 import DOMPurify from "dompurify";
 import {
-  type AgentStatus,
   type ContainerRow,
   type CustomTask,
   type HistoryRow,
@@ -148,17 +148,12 @@ export function ServerDetailPage() {
     setConfirmDeleteTask,
     confirmComposeDown,
     setConfirmComposeDown,
-    confirmAgentInstall,
-    setConfirmAgentInstall,
-    confirmAgentRemove,
-    setConfirmAgentRemove,
     confirmRestartContainer,
     setConfirmRestartContainer,
     actionRun,
     setActionRun,
     profile,
     settings,
-    agentEnabled,
     timeFormat,
     hour12,
     serverKnown,
@@ -184,8 +179,6 @@ export function ServerDetailPage() {
     notesData,
     customTasks,
     customTaskList,
-    agentStatus,
-    refetchAgent,
     imageUpdates,
     setImageUpdates,
     notes,
@@ -233,16 +226,6 @@ export function ServerDetailPage() {
     saveComposeMut,
     latencyMs,
     setLatencyMs,
-    agentUrl,
-    setAgentUrl,
-    agentCa,
-    setAgentCa,
-    agentInstallMut,
-    agentUpdateMut,
-    agentConfigMut,
-    agentRotateMut,
-    agentRemoveMut,
-    agentBusy,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,
@@ -261,8 +244,10 @@ export function ServerDetailPage() {
     stacks,
   } = controller;
 
+  const linkedVm = managedDeployments.find(deployment => deployment.cluster_id && deployment.vm?.node_name && deployment.vm.vm_id != null);
   const availableTabs = useMemo(() => {
     const values = ["overview", "configuration"];
+    if (linkedVm) values.push("vm");
     if (hasCap(profile, "canViewDocker") && server?.docker_enabled)
       values.push("docker");
     if (
@@ -276,15 +261,12 @@ export function ServerDetailPage() {
     )
       values.push("updates");
     if (hasCap(profile, "canViewServerHistory")) values.push("history");
-    if (agentEnabled && profile?.role === "admin") values.push("agent");
     if (hasCap(profile, "canViewNotes")) values.push("notes");
     if (hasCap(profile, "canViewFiles") || hasCap(profile, "canUseTerminal"))
       values.push("access");
     return values;
-  }, [agentEnabled, profile, server?.docker_enabled]);
+  }, [profile, server?.docker_enabled, linkedVm]);
   const serverTabs = useUrlTab("overview", availableTabs);
-  const activeToolLabel = serverTabs.value === "agent" ? t("det.tabAgent") : undefined;
-  const hasHostTools = agentEnabled && profile?.role === "admin";
 
   // ── Loading / not found ─────────────────────────────────────
   if (isLoading)
@@ -509,27 +491,6 @@ export function ServerDetailPage() {
               isPending={deleteServerMut.isPending}
             />
             <ConfirmDialog
-              open={confirmAgentInstall}
-              onOpenChange={setConfirmAgentInstall}
-              title={t("det.agentInstall")}
-              description={t("det.agentInstallConfirm")}
-              confirmLabel={t("det.agentInstall")}
-              onConfirm={() => agentInstallMut.mutate()}
-              isPending={agentInstallMut.isPending}
-            />
-            <ConfirmDialog
-              open={confirmAgentRemove}
-              onOpenChange={setConfirmAgentRemove}
-              title={t("det.agentRemove")}
-              description={t("det.agentRemoveConfirm")}
-              confirmLabel={t("det.agentRemove")}
-              variant="destructive"
-              confirmTextValue={server.name}
-              confirmInputLabel={t("det.confirmHostName")}
-              onConfirm={() => agentRemoveMut.mutate()}
-              isPending={agentRemoveMut.isPending}
-            />
-            <ConfirmDialog
               open={!!confirmRestartContainer}
               onOpenChange={(open) => {
                 if (!open) setConfirmRestartContainer(null);
@@ -569,6 +530,7 @@ export function ServerDetailPage() {
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             <TabsTrigger value="configuration">{t("det.tabSystem")}</TabsTrigger>
+            {linkedVm && <TabsTrigger value="vm">Virtual machine</TabsTrigger>}
             {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
               <TabsTrigger value="docker">{t("det.tabWorkloads")}</TabsTrigger>
             )}
@@ -592,15 +554,12 @@ export function ServerDetailPage() {
             )}
           </TabsList>
           </div>
-          {hasHostTools && <div className="shrink-0 pb-1">
-            <OverflowMenu title={t("det.hostTools")} trigger={activeToolLabel ? t("det.toolsActive", { tool: activeToolLabel }) : t("det.tools")}>
-              {agentEnabled && profile?.role === "admin" && (
-                <OverflowItem icon={Bot} onClick={() => serverTabs.onValueChange("agent")}>{t("det.tabAgent")}</OverflowItem>
-              )}
-            </OverflowMenu>
-          </div>}
+
         </div>
 
+        {linkedVm && <TabsContent value="vm" className="space-y-4">
+          <VmDetailContent key={`${linkedVm.cluster_id}:${linkedVm.vm!.node_name}:${linkedVm.vm!.vm_id}`} embedded clusterId={linkedVm.cluster_id!} nodeName={linkedVm.vm!.node_name!} vmId={String(linkedVm.vm!.vm_id)} />
+        </TabsContent>}
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />

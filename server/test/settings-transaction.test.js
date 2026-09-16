@@ -14,7 +14,7 @@ test('invalid later settings never persist earlier branding changes',async()=>{
 test('settings and audit roll back together before scheduler reload',async()=>{
  db.settings.set('scheduler_timezone','UTC');
  db.db.exec("CREATE TRIGGER reject_settings_audit BEFORE INSERT ON audit_log BEGIN SELECT RAISE(ABORT, 'test audit failure'); END");
- try {assert.equal((await request(app).put('/settings').send({appName:'Changed',schedulerTimezone:'Europe/Zurich',agentEnabled:true})).status,500);assert.equal(db.settings.get('wl_app_name'),'Original');assert.equal(db.settings.get('scheduler_timezone'),'UTC');assert.equal(reloads,0);}finally{db.db.exec('DROP TRIGGER reject_settings_audit');}
+ try {assert.equal((await request(app).put('/settings').send({appName:'Changed',schedulerTimezone:'Europe/Zurich',agentEnabled:false})).status,500);assert.equal(db.settings.get('wl_app_name'),'Original');assert.equal(db.settings.get('scheduler_timezone'),'UTC');assert.equal(reloads,0);}finally{db.db.exec('DROP TRIGGER reject_settings_audit');}
  const response=await request(app).put('/settings').send({appName:'',schedulerTimezone:'Europe/Zurich'});assert.equal(response.status,200);assert.equal(db.settings.get('wl_app_name'),'');assert.equal(db.settings.get('scheduler_timezone'),'Europe/Zurich');assert.equal(reloads,1);
  const audit=db.db.prepare("SELECT * FROM audit_log WHERE action='system.settings' ORDER BY rowid DESC LIMIT 1").get();assert.ok(audit);assert.ok(audit.detail.includes('schedulerTimezone'));
 });

@@ -25,7 +25,6 @@ function resourceScopes(permissions: AccessPermissions, labels?: AccessResourceL
   return {
     Hosts: full || servers === 'all' ? 'All hosts' : `Groups: ${list(ids(servers?.groups), labels?.groups)}; individual hosts: ${list(ids(servers?.servers), labels?.servers)}`,
     Playbooks: full || permissions.playbooks === 'all' ? 'All playbooks' : list(ids(permissions.playbooks), labels?.playbooks),
-    Plugins: full || permissions.plugins === 'all' ? 'All plugins' : list(ids(permissions.plugins), labels?.plugins),
   };
 }
 export function compareRoleAccess(before: AccessPermissions, after: AccessPermissions, capabilityKeys: string[], labels?: AccessResourceLabels) {
@@ -33,7 +32,7 @@ export function compareRoleAccess(before: AccessPermissions, after: AccessPermis
   const wasFull = before.full === true, isFull = after.full === true;
   if (wasFull !== isFull) changes.push({label:'Unrestricted administrator access',before:wasFull?'Allowed':'Not allowed',after:isFull?'Allowed':'Not allowed'});
   const oldScopes = resourceScopes(before, labels), newScopes = resourceScopes(after, labels);
-  for (const label of ['Hosts','Playbooks','Plugins'] as const) {
+  for (const label of ['Hosts','Playbooks'] as const) {
     if (oldScopes[label] !== newScopes[label]) changes.push({label,before:oldScopes[label],after:newScopes[label]});
   }
   const keys = [...new Set([...capabilityKeys,...Object.keys(before),...Object.keys(after)].filter(key=>/^can[A-Z]/.test(key) && key !== 'canManageDeployments'))].sort();

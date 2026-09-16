@@ -1,3 +1,4 @@
+import { DataQuality, type CheckQuality } from '@/features/dashboard/DataQuality';
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -26,6 +27,7 @@ import { canAccessOperations, hasCap, useProfile } from '@/lib/queries';
 // ---- types ----
 
 interface ServerInfo {
+  check_quality?: CheckQuality[];
   id: string | number;
   name: string;
   ip_address?: string;
@@ -255,7 +257,7 @@ export function DashboardPage() {
   const actionableHistory = useMemo(() => recentHistory.filter(item => item.status === 'failed' || item.status === 'running' || item.status === 'queued'), [recentHistory]);
   const runningTaskCount = canViewOperations && !operationsQuery.isError ? operationsData?.counts?.active ?? null : null;
   const criticalHostCount = servers.filter(host => attentionPriority(host) === 2).length;
-  const unknownUpdateHosts = servers.filter(server => (canViewUpdates && (server.updates_count == null || server.updates_stale === true)) || (canViewUpdates && canViewDocker && (server.image_updates_count == null || server.image_updates_stale === true)) || (canViewCustomUpdates && server.custom_updates_stale === true)).length;
+  const unknownUpdateHosts = servers.filter(server => server.check_quality?.some(check => !['current', 'not_applicable'].includes(check.state))).length;
   const updateCount = servers.reduce((total, server) => total
     + (canViewUpdates ? (server.updates_count ?? 0) : 0)
     + (canViewUpdates && canViewDocker ? (server.image_updates_count ?? 0) : 0)
@@ -288,7 +290,9 @@ export function DashboardPage() {
         canViewOperations={canViewOperations}
       />
 
-      {!isLoading && !isError && unknownUpdateHosts > 0 && <p role="status" className="rounded-md border p-3 text-sm text-muted-foreground">Update checks are missing or stale for {unknownUpdateHosts} host{unknownUpdateHosts === 1 ? '' : 's'}. The update total includes only reported results; open the hosts to check missing OS, image or custom results and refresh stale results.</p>}
+      {!isLoading && !isError && unknownUpdateHosts > 0 && <p role="status" className="rounded-md border border-warning/30 p-3 text-sm">Checks need attention on {unknownUpdateHosts} host{unknownUpdateHosts === 1 ? '' : 's'}. Update totals include reported results only. <a href="#data-quality" className="text-primary underline">Inspect affected checks and causes</a></p>}
+
+
 
       {canViewOperations && operationsQuery.isError && (
         <QueryErrorState
@@ -349,6 +353,8 @@ export function DashboardPage() {
           )}
         </section>
       )}
+      {!isLoading && !isError && <DataQuality hosts={servers} />}
+
     </div>
   );
 }
@@ -371,7 +377,7 @@ function OverviewStatusBar({ loading, criticalHosts, offlineHosts, updates, unkn
 }) {
   const { t } = useTranslation();
   return (
-    <section className="grid overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 lg:grid-flow-col lg:auto-cols-fr" aria-label={t('dash.currentEnvironmentStatus')}>
+    <section className="grid overflow-hidden rounded-panel border border-border-strong/80 bg-card shadow-[0_1px_2px_hsl(var(--foreground)/0.035)] sm:grid-cols-2 xl:grid-cols-5" aria-label={t('dash.currentEnvironmentStatus')}>
       <OverviewStatusItem icon={<Bell className="h-4 w-4" />} label="Critical hosts" value={loading ? '—' : criticalHosts} to="/servers" search={{ severity: 'critical' }} tone={criticalHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<Server className="h-4 w-4" />} label={t('common.offline')} value={loading ? '—' : offlineHosts} to="/servers" search={{ status: 'offline' }} tone={offlineHosts > 0 ? 'danger' : 'neutral'} />
       <OverviewStatusItem icon={<PackagePlus className="h-4 w-4" />} label={t('dash.updates')} description={unknownUpdateHosts ? 'Reported results · incomplete checks' : 'Reported OS, image and custom updates'} value={loading ? '—' : updates} to="/servers" search={{ updates: true }} tone={updates > 0 ? 'warning' : 'neutral'} />
@@ -400,7 +406,7 @@ function OverviewStatusItem({ icon, label, description, value, to, search, tone 
       )}>{icon}</span>
       <span className="min-w-0">
         <span className={cn('block font-mono text-lg font-semibold leading-5', tone === 'danger' && 'text-destructive', tone === 'warning' && 'text-warning')}>{value}</span>
-        <span className="block truncate text-[13px] text-muted-foreground group-hover:text-foreground">{label}</span>
+        <span className="block text-[13px] text-muted-foreground group-hover:text-foreground">{label}</span>
         {description && <span className="block text-xs text-muted-foreground">{description}</span>}
       </span>
     </Link>
@@ -553,7 +559,7 @@ function ServerRow({ s, t, agentEnabled }: { s: ServerInfo; t: (k: string) => st
       <td className="px-4 py-2.5">
         <div className="flex min-w-0 items-center gap-1.5">
           <Link to="/servers/$id" params={{ id: String(s.id) }} onClick={event => event.stopPropagation()} className="truncate font-medium hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">{s.name}</Link>
-          <span className="truncate font-mono text-[11px] text-muted-foreground">{s.ip_address}</span>
+          <span className="truncate font-mono text-xs text-muted-foreground">{s.ip_address}</span>
         </div>
       </td>
       <td className="px-2 py-2.5"><StatusBadge tone={s.status === 'online' ? 'success' : s.status === 'offline' ? 'danger' : 'muted'} dot>{hostStatus}</StatusBadge></td>

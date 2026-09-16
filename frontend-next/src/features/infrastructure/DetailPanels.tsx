@@ -752,9 +752,8 @@ export function DatastoresCard({
           <HardDrive className="h-4 w-4" />
           Datastores
         </CardTitle>
-        <p className="mt-0.5 text-xs text-muted-foreground">
-          Datastores reported by Proxmox, including inactive stores and directory, LVM and ZFS backends. Stores may share underlying capacity. History records successful inventory refreshes in five-minute buckets, removes observations older than seven days on refresh and offers recent observations or seven-day hourly means; gaps have no samples.
-        </p>
+        <p className="text-xs text-muted-foreground">Source: Proxmox · Stores may share underlying capacity.</p>
+        <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Storage history and collection details</summary><p className="mt-2">Includes inactive stores and directory, LVM and ZFS backends. Successful refreshes are sampled in five-minute buckets; observations older than seven days are removed on refresh. Gaps mean no sample. Recent observations and seven-day hourly means are available.</p></details>
         {sources.map(source => <p key={source.name} className="text-xs text-muted-foreground">
           <span className="font-medium">{source.name}</span>{' · '}
           {source.datastores_status === 'available' ? 'Storage inventory loaded' : source.datastores_status === 'unavailable' ? 'Storage inventory unavailable — refresh and check Proxmox connectivity and API storage permissions.' : 'Storage collection status not recorded — refresh inventory.'}

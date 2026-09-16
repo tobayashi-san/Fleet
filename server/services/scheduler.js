@@ -466,7 +466,7 @@ async function pollSystemInfo() {
             return;
           }
           if (report.state !== 'never') {
-            observation.errors++;
+            pollingObservations.fail(observation,server,'Push agent report is overdue or invalid. Inspect agent status and connectivity.');
             // Agent has reported before but is now overdue — mark offline
             db.servers.updateStatus(server.id, "offline");
             return;
@@ -481,7 +481,7 @@ async function pollSystemInfo() {
             if (report.state === 'recent') {
               db.servers.updateStatus(server.id, "online");
             } else if (!r.report) {
-              observation.errors++;
+              pollingObservations.fail(observation,server,'Pull agent returned no current report. Inspect agent status and connectivity.');
               db.servers.updateStatus(server.id, "offline");
             }
             return;
@@ -493,7 +493,7 @@ async function pollSystemInfo() {
           db.serverInfo.upsert(server.id, info);
           db.servers.updateStatus(server.id, "online");
         } catch (err) {
-          observation.errors++;
+          pollingObservations.fail(observation,server,'System information check failed. Inspect host connectivity and SSH access.');
           log.debug({ err, server: server.name }, "System info poll failed");
           db.servers.updateStatus(server.id, "offline");
         }
@@ -545,7 +545,8 @@ async function pollUpdates() {
           const updates = await systemInfo.getAvailableUpdates(server);
           db.updatesCache.set(server.id, updates);
         } catch (err) {
-          observation.errors++;
+          pollingObservations.fail(observation,server,'Package check failed. Check host connectivity and package manager access.');
+          db.checkAttempts.failed(server.id, 'os', 'Package check failed. Check host connectivity and package manager access.');
           log.debug({ err, server: server.name }, "Updates poll failed");
         }
       }),
@@ -571,7 +572,7 @@ async function pollImageUpdates() {
   imageUpdatesPolling = true;
   const observation = pollingObservations.begin('imageUpdates');
   try {
-    const servers = db.servers.getAll().filter((s) => s.status === "online");
+    const servers = db.servers.getAll().filter((s) => s.status === "online" && s.docker_enabled);
     const outcomes = await Promise.allSettled(
       servers.map(async (server) => {
         try {
@@ -584,13 +585,15 @@ async function pollImageUpdates() {
           );
           const report = parseImageUpdateReport(result.stdout);
           if (!result.success || !report.complete) {
-            observation.errors++;
+            pollingObservations.fail(observation,server,'Image check returned no complete result. Check container runtime and registry access.');
+            db.checkAttempts.failed(server.id, 'images', 'Image check returned no complete result. Check container runtime and registry access.');
             log.warn({ server: server.name, exitCode: result.code }, "Image updates poll returned no complete result; keeping cached status");
             return;
           }
           db.dockerImageUpdatesCache.set(server.id, report.results);
         } catch (err) {
-          observation.errors++;
+          pollingObservations.fail(observation,server,'Image check failed. Check host connectivity, container runtime and registry access.');
+          db.checkAttempts.failed(server.id, 'images', 'Image check failed. Check host connectivity, container runtime and registry access.');
           log.debug({ err, server: server.name }, "Image updates poll failed");
         }
       }),
@@ -721,7 +724,7 @@ async function pollCustomUpdates() {
         await Promise.allSettled(
           tasks.map((task) =>
             checkCustomTask(server, task).catch((err) => {
-              observation.errors++;
+              pollingObservations.fail(observation,server,'Custom update check failed. Inspect task configuration and host connectivity.');
               return log.debug(
                 { err, server: server.name },
                 "Custom task check failed",

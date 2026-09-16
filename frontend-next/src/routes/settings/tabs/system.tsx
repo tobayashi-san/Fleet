@@ -42,6 +42,14 @@ export function SystemTab() {
         <SchedulerTimezone />
       </SettingsSection>
 
+
+    </div>
+  );
+}
+
+export function CollectionTab() {
+  const { t } = useTranslation();
+  return <div className="space-y-4"><p className="text-sm text-muted-foreground">This installation · collection settings apply across environments.</p>
       <SettingsSection
         icon={<Clock className="h-4 w-4" />}
         title={t('set.polling')}
@@ -50,16 +58,13 @@ export function SystemTab() {
         <PollingConfig />
       </SettingsSection>
 
-      <SettingsSection
+      <details className="rounded-md border p-3"><summary className="cursor-pointer font-medium">Agents — configuration and affected hosts</summary><SettingsSection
         icon={<Bot className="h-4 w-4" />}
         title={t('set.agentFeature')}
         description={t('set.agentFeatureHint')}
       >
         <AgentToggle />
-        <AgentOverview />
-      </SettingsSection>
-    </div>
-  );
+      </SettingsSection></details></div>;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -115,7 +120,8 @@ function OpenTofuStatus() {
 
   const installed = Boolean(status.data?.installed);
   const busy = install.isPending || Boolean(status.data?.installing);
-  const isUpdate = installed && Boolean(selectedVersion) && selectedVersion !== status.data?.version;
+  const direction = selectedVersion.localeCompare(status.data?.version || '', undefined, {numeric:true});
+  const action = !installed ? 'Install OpenTofu' : direction < 0 ? 'Downgrade OpenTofu' : direction > 0 ? 'Upgrade OpenTofu' : 'Reinstall OpenTofu';
 
   return (
     <>
@@ -129,6 +135,7 @@ function OpenTofuStatus() {
       <SettingsRow label={t('set.version')}>
         <span className="font-mono text-xs">{status.data?.version || '—'}</span>
       </SettingsRow>
+      <details className="py-3"><summary className="cursor-pointer text-sm font-medium">Advanced: version management</summary>
       <SettingsRow label={t('set.openTofuBinary')} hint={t('set.openTofuBinaryHint')}>
         <span className="break-all font-mono text-xs">{status.data?.binary || t('set.openTofuBinaryMissing')}</span>
       </SettingsRow>
@@ -152,14 +159,11 @@ function OpenTofuStatus() {
             {busy ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
             {busy
               ? t('set.openTofuInstalling')
-              : isUpdate
-                ? t('set.openTofuUpdate')
-                : installed
-                  ? t('set.openTofuReinstall')
-                  : t('set.openTofuInstall')}
+              : action}
           </Button>
         </div>
       </SettingsRow>
+      <p className="text-xs text-muted-foreground">This installation · affects subsequent deployment runs. Current: {status.data?.version || 'not installed'} → target: {selectedVersion || 'unavailable'}.</p></details>
       {!installed && (
         <SettingsRow noBorder>
           <Alert variant="warning" className="w-full">
@@ -420,20 +424,22 @@ function AgentToggle() {
   const settingsQuery = useSettings();
   const { data: settings } = settingsQuery;
   const agentEnabled = Boolean((settings as Record<string, unknown>)?.agentEnabled);
-  const [checked, setChecked] = useState<boolean>(agentEnabled);
-
-  useEffect(() => { setChecked(agentEnabled); }, [agentEnabled]);
+  const [draft,setDraft] = useState<boolean|null>(null);
+  const checked = draft ?? agentEnabled;
+  const dirty = checked !== agentEnabled;
+  useUnsavedChanges(dirty);
 
   const save = useMutation({
     mutationFn: (v: boolean) => api.saveSettings({ agentEnabled: v }),
     onSuccess: () => {
+      qc.setQueryData(['settings'],(old:Record<string,unknown>|undefined)=>({...old,agentEnabled:checked}));
+      setDraft(null);
       showToast(t('set.agentFeatureSaved'), 'success');
       qc.invalidateQueries({ queryKey: ['settings'] });
       qc.invalidateQueries({ queryKey: ['dashboard'] });
       qc.invalidateQueries({ queryKey: ['agent-overview'] });
     },
     onError: (err) => {
-      setChecked((c) => !c); // revert
       showToast((err as Error).message, 'error');
     },
   });
@@ -442,13 +448,16 @@ function AgentToggle() {
   if (settingsQuery.isPending) return <SettingsRow noBorder><Skeleton className="h-6 w-24" /></SettingsRow>;
 
   return (
-    <SettingsRow label={t('set.agentFeatureToggle')} noBorder>
+    <><SettingsRow label={t('set.agentFeatureToggle')} hint="This installation · changes apply after saving." noBorder>
       <Switch
         checked={checked}
         aria-label={t('set.agentFeatureToggle')}
-        onCheckedChange={(v) => { setChecked(v); save.mutate(v); }}
+        onCheckedChange={setDraft}
         disabled={save.isPending}
       />
     </SettingsRow>
+    <p className="py-2 text-sm">{checked ? 'Enable configured agent modes. SSH hosts keep SSH collection; agent paths may fall back to SSH.' : 'Select SSH collection globally. Stored agent modes are retained.'} Review affected hosts below. This does not uninstall agents.</p>
+    {dirty && <p role="status" className="text-sm">Unsaved changes</p>}
+    <div className="flex gap-2"><Button disabled={!dirty || save.isPending} onClick={()=>save.mutate(checked)}>Save agent settings</Button><Button variant="outline" disabled={!dirty || save.isPending} onClick={()=>setDraft(null)}>Discard changes</Button></div><AgentOverview proposedEnabled={dirty ? checked : undefined}/></>
   );
 }

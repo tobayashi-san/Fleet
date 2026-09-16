@@ -179,3 +179,15 @@ test('agent token rotation keeps the old token until deployment succeeds and reu
     ansibleRunner.runPlaybook = originalRunPlaybook;
   }
 });
+
+test('manifest edits reject stale versions and historical content can be loaded without activation',async()=>{
+  wipeDb();const app=makeApp();
+  const first=await request(app).get('/api/v1/agent-manifest');assert.equal(first.status,200);
+  const edited={...first.body.content,interval:65};
+  const saved=await request(app).put('/api/v1/agent-manifest').send({content:edited,expectedVersion:first.body.version,changelog:'test change'});assert.equal(saved.status,200);
+  const stale=await request(app).put('/api/v1/agent-manifest').send({content:{...edited,interval:90},expectedVersion:first.body.version});assert.equal(stale.status,409);
+  const old=await request(app).get(`/api/v1/agent-manifest/versions/${first.body.version}`);assert.equal(old.status,200);assert.deepEqual(old.body.content,first.body.content);
+  const latest=await request(app).get('/api/v1/agent-manifest');assert.equal(latest.body.version,saved.body.version);assert.equal(latest.body.content.interval,65);
+  assert.equal((await request(app).get('/api/v1/agent-manifest/versions/0')).status,400);
+  assert.equal((await request(app).get('/api/v1/agent-manifest/versions/99999')).status,404);
+});

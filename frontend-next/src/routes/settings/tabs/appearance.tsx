@@ -9,9 +9,7 @@ import { QueryErrorState } from "@/components/ui/query-error-state";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Switch } from "@/components/ui/switch";
 import { SettingsRow, SettingsSection } from "../_row";
-import { useUi } from "@/lib/store";
 import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
 
 const DEFAULTS = {
@@ -37,8 +35,6 @@ export function AppearanceTab() {
   const setAppName = (value:string) => setDraft({appName:value,accentColor:color});
   const setColor = (value:string) => setDraft({appName,accentColor:value});
   const validColor = /^#[0-9a-fA-F]{6}$/.test(color);
-  const showVmIds = useUi((state) => state.showInfrastructureVmIds);
-  const setShowVmIds = useUi((state) => state.setShowInfrastructureVmIds);
   const dirty = appName !== (wl.appName || "") || color !== (wl.accentColor || DEFAULTS.accentColor);
   useUnsavedChanges(dirty);
 
@@ -95,7 +91,7 @@ export function AppearanceTab() {
         </SettingsRow>
 
         <SettingsRow
-          label={t("set.accentColor")}
+          label={"Browser / brand color"}
           labelId="appearance-accent-color-label"
           hint="Brand color used for the browser icon and browser chrome. Buttons, text and status colors follow your personal console theme."
         >
@@ -140,15 +136,7 @@ export function AppearanceTab() {
           {draft && <Button variant="outline" size="sm" disabled={busy} onClick={() => setDraft(null)}>Discard branding changes</Button>}
         </SettingsRow>
       </SettingsSection>
-      <SettingsSection
-        icon={<Paintbrush className="h-4 w-4" />}
-        title="Navigation"
-        description="Personal browser preference. Changes apply immediately and do not change global branding."
-      >
-        <SettingsRow label="Show VM IDs" hint="Display the Proxmox VMID before each virtual machine name in the infrastructure tree." noBorder>
-          <Switch aria-label="Show VM IDs in infrastructure tree" checked={showVmIds} onCheckedChange={setShowVmIds} />
-        </SettingsRow>
-      </SettingsSection>
+
     </div>
   );
 }

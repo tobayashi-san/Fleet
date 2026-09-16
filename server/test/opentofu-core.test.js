@@ -518,3 +518,16 @@ test('cleanupManagedServersForWorkspace keeps reused manual servers', async () =
   assert.deepEqual(cleaned, { detached: 1 });
   assert.ok(db.servers.getById(manual.id));
 });
+
+
+test('stopped Proxmox guests do not wait for DHCP or authorize empty inventory cleanup', async () => {
+  const result = await waitForManagedServers({
+    workspaceName:'stopped-review',
+    loadState:async()=>({values:{root_module:{resources:[{address:'proxmox_virtual_environment_vm.stopped',type:'proxmox_virtual_environment_vm',values:{name:'stopped',started:false}}]}}}),
+    sleepFn:async()=>assert.fail('A stopped VM cannot obtain an address'),
+  });
+  assert.equal(result.attempts,1);
+  assert.equal(result.timedOut,false);
+  assert.equal(result.authoritative,false);
+  assert.deepEqual(result.servers,[]);
+});

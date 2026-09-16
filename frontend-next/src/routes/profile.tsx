@@ -1,3 +1,4 @@
+import { Switch } from '@/components/ui/switch';
 import {SessionsCard} from '@/features/profile/SessionsCard';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -49,6 +50,8 @@ export function ProfilePage() {
   const isAdmin = profile?.role === 'admin';
   const themePreset = useUi((state) => state.themePreset);
   const setThemePreset = useUi((state) => state.setThemePreset);
+  const showVmIds = useUi(state => state.showInfrastructureVmIds);
+  const setShowVmIds = useUi(state => state.setShowInfrastructureVmIds);
   const [showAllThemes, setShowAllThemes] = useState(false);
 
   // ─ Account form
@@ -434,6 +437,7 @@ export function ProfilePage() {
       <Section icon={Paintbrush} title="Personal appearance">
         <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
         <div className="space-y-5">
+<div className="mb-4 flex items-center justify-between gap-4 rounded-md border p-3"><div><p className="text-sm font-medium">Show VM IDs</p><p className="text-xs text-muted-foreground">This browser · applies immediately to the infrastructure tree.</p></div><Switch aria-label="Show VM IDs in infrastructure tree" checked={showVmIds} onCheckedChange={setShowVmIds} /></div>
           {(showAllThemes ? (['light', 'dark'] as const) : (['recommended'] as const)).map((mode) => {
             const presets = mode === 'recommended'
               ? THEME_PRESETS.filter((preset) => preset.recommended)

@@ -389,10 +389,10 @@ export const api = {
   rotateAgentToken:  (serverId: string | number, data: AnyObj = {}) =>
     apiFetch(`/v1/servers/${serverId}/agent/token-rotate`, { method: 'POST', body: data }),
   removeAgent:       (serverId: string | number) => apiFetch(`/v1/servers/${serverId}/agent`, { method: 'DELETE' }),
-  getAgentManifest:  () => apiFetch<{ content: string }>('/v1/agent-manifest'),
+  getAgentManifest:  () => apiFetch<{ version: number; content: unknown }>('/v1/agent-manifest'),
   getAgentManifestHistory: (limit = 50) => apiFetchArray<AnyObj>(`/v1/agent-manifest/history?limit=${limit}`),
-  saveAgentManifest: (content: string, changelog = '') =>
-    apiFetch('/v1/agent-manifest', { method: 'PUT', body: { content, changelog } }),
+  saveAgentManifest: (content: unknown, changelog = '', expectedVersion?: number) =>
+    apiFetch('/v1/agent-manifest', { method: 'PUT', body: { content, changelog, expectedVersion } }),
 
   // Reset / danger
   resetServers: (confirmation: string, environmentId: string, credentials: { password: string; code?: string }) => apiFetch('/reset/servers', { method: 'DELETE', environmentId, body: { ...credentials, confirmation, scope: environmentId } }),

@@ -1,3 +1,4 @@
+import { GitTab } from '@/routes/settings/tabs/git';
 import {
   lazy,
   Suspense,
@@ -134,7 +135,8 @@ export function PlaybooksPage() {
       icon: <Clock className="h-4 w-4" />,
       cap: "canViewSchedules",
     },
-  ], [t]);
+    ...(isAdmin ? [{value:"git",label:"Git",icon:<GitBranch className="h-4 w-4"/>}] : []),
+  ], [t,isAdmin]);
   const allowed = useMemo(() => tabs.filter((tb) => !tb.cap || hasCap(profile, tb.cap)), [profile, tabs]);
   const allowedValues = useMemo(() => allowed.map((item) => item.value), [allowed]);
   const playbookTabs = useUrlTab(allowed[0]?.value ?? "templates", allowedValues);
@@ -153,8 +155,8 @@ export function PlaybooksPage() {
         description={t("pb.subtitle")}
         actions={
           <div className="flex flex-wrap items-center justify-end gap-2">
-            {isAdmin && <GitWidget onGoSettings={() => navigate({ to: "/settings/$tab", params: { tab: "git" } })} />}
-            {hasCap(profile, "canEditPlaybooks") && (
+            {isAdmin && playbookTabs.value === "templates" && <div className="hidden sm:block"><GitWidget onGoSettings={() => navigate({ to: "/settings/$tab", params: { tab: "git" } })} /></div>}
+            {playbookTabs.value === "templates" && hasCap(profile, "canEditPlaybooks") && (
               <Button onClick={() => { playbookTabs.onValueChange("templates"); setCreateContext(requestedFile); setCreateRequest(++nextCreateRequest.current); }}>
                 <Plus />{t("pb.new")}
               </Button>
@@ -172,6 +174,7 @@ export function PlaybooksPage() {
           ))}
         </TabsList>
 
+        {isAdmin && <TabsContent value="git"><GitTab workspace /></TabsContent>}
         <TabsContent value="templates">
           <TemplatesTab key={requestedFile || "library"} initialFile={requestedFile} createRequest={createContext === requestedFile ? createRequest : 0} onCreateRequestHandled={consumeCreateRequest} onRun={(filename) => { setRunPreset(filename); playbookTabs.onValueChange("runs"); }} />
         </TabsContent>

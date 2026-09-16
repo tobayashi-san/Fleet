@@ -382,6 +382,13 @@ async function waitForManagedServers({
     const state = await loadState();
     lastSync = extractManagedServersFromState(state, workspaceName);
 
+    // A deliberately stopped VM cannot acquire a DHCP/guest-agent address.
+    // Preserve non-authoritative empty results so existing host mappings remain.
+    const guests = flattenStateResources(state?.values?.root_module).filter(resourceLooksLikeServer);
+    if (lastSync.servers.length === 0 && lastSync.source === 'state' && guests.length > 0 && guests.every(resource => resource.type === 'proxmox_virtual_environment_vm' && resource.values?.started === false)) {
+      return { ...lastSync, state, attempts, waitedMs: Date.now() - startedAt, timedOut: false };
+    }
+
     let pending = false;
     if (lastSync.servers.length > 0 && typeof hydrateServers === 'function') {
       const hydrated = await hydrateServers({ state, servers: lastSync.servers });

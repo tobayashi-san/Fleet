@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { GitSyncState, type GitComparison } from '@/features/git/GitSyncState';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +32,7 @@ interface GitConfig {
   hasSshKey?: boolean;
 }
 
-export function GitTab() {
+export function GitTab({ workspace = false }: {workspace?:boolean}) {
   const [setupWarning, setSetupWarning] = useState<string | null>(null);
   const setupWarningRef = useRef<HTMLDivElement>(null);
   useEffect(() => { if (setupWarning) setupWarningRef.current?.focus(); }, [setupWarning]);
@@ -60,7 +61,7 @@ export function GitTab() {
       <p>Review the branch and local changes below, then retry Pull. This message describes the initial connection attempt.</p>
       <Button type="button" variant="outline" size="sm" onClick={() => setSetupWarning(null)}>Dismiss initial sync message</Button>
     </div>}
-    {cfg.repoUrl ? <GitDashboard key="configured" cfg={cfg} /> : <GitSetup key="setup" onSetupResult={setSetupWarning} />}
+    {cfg.repoUrl ? <GitDashboard key="configured" cfg={cfg} workspace={workspace} /> : workspace ? <p>Connect a repository in <Link to="/settings/$tab" params={{tab:'git'}} className="text-primary">Playbook Git settings</Link>.</p> : <GitSetup key="setup" onSetupResult={setSetupWarning} />}
   </div>;
 }
 
@@ -81,7 +82,8 @@ function GitSetup({ onSetupResult }: { onSetupResult: (warning: string | null) =
   const [autoPush, setAutoPush] = useState(false);
   const [readOnly, setReadOnly] = useState(true);
   const [branch, setBranch] = useState('main');
-  useUnsavedChanges(Boolean(repoUrl || authToken || sshKey || userName || userEmail || !autoPull || autoPush || !readOnly || branch !== 'main'));
+  const dirty = Boolean(repoUrl || authToken || sshKey || userName || userEmail || !autoPull || autoPush || !readOnly || branch !== 'main' || authMode !== 'https');
+  useUnsavedChanges(dirty);
 
   const connectionInput = { repoUrl: repoUrl.trim(), authToken: authMode === 'https' ? authToken.trim() : '', sshKey: authMode === 'ssh' ? sshKey.trim() : '', branch: branch.trim() };
   const connectionTest = useMutation({ mutationFn: (input: typeof connectionInput) => api.testGitConnection(input) });
@@ -163,10 +165,11 @@ function GitSetup({ onSetupResult }: { onSetupResult: (warning: string | null) =
           </div>}
         </div>
       </SettingsRow>
+      {dirty && <p role="status" className="text-sm">Unsaved repository configuration</p>}
       <SettingsRow noBorder>
         <Button type="submit" size="sm" disabled={setup.isPending || !repoUrl.trim()}>
           <Plug className="h-4 w-4" /> {setup.isPending ? t('git.connecting') : t('git.connectRepo')}
-        </Button>
+        </Button><Button type="button" variant="outline" disabled={!dirty || setup.isPending || connectionTest.isPending} onClick={()=>{setRepoUrl('');setAuthToken('');setSshKey('');setAuthMode('https');setUserName('');setUserEmail('');setAutoPull(true);setAutoPush(false);setReadOnly(true);setBranch('main');connectionTest.reset();setup.reset();}}>Discard configuration</Button>
       </SettingsRow>
       {setup.isError && <p role="alert" className="px-4 pb-4 text-sm text-destructive">{setup.error.message}</p>}
       </fieldset>
@@ -183,7 +186,7 @@ interface GitStatus { initialized: boolean; conflicts?: string[]; comparison?: G
 
 interface GitBranches { local?: string[]; remote?: string[] }
 
-function GitDashboard({ cfg }: { cfg: GitConfig }) {
+function GitDashboard({ cfg, workspace }: { cfg: GitConfig; workspace:boolean }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [statusMsg, setStatusMsg] = useState('');
@@ -307,17 +310,18 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
 
   return (
     <div className="space-y-4">
-      <SettingsSection icon={<GitBranch className="h-4 w-4" />} title={t('git.syncTitle')}>
-        <div className="flex justify-end pt-3">
+      <SettingsSection icon={<GitBranch className="h-4 w-4" />} title={workspace ? 'Playbook Git workspace' : 'Playbook Git configuration'} description="This installation · shared playbook repository across environments">
+        {!workspace && <div className="flex justify-end pt-3">
           <Button variant="destructive" size="sm" onClick={() => setConfirmDisconnect(true)}>
             <Unplug className="h-4 w-4" /> {t('git.disconnectBtn')}
           </Button>
-        </div>
+        </div>}
 
         <SettingsRow label={t('git.connectedRemote')} hint={t('git.connectedRemoteSmall')}>
           <code className="break-all text-xs text-muted-foreground">{cfg.repoUrl}</code>
         </SettingsRow>
 
+        {workspace && <>
         <SettingsRow label="Working copy" hint="Local status is refreshed every 30 seconds. Last pull is the last successful import, not a check of the remote repository.">
           {statusQ.isError ? <QueryErrorState compact title="Git status unavailable" error={statusQ.error} onRetry={() => void statusQ.refetch()} /> : statusQ.isLoading ? <SkeletonRow /> : <div className="min-w-0 space-y-1 text-xs">
             <p>Branch: {statusQ.data?.branch || 'Not initialized'} · Revision: <code>{statusQ.data?.revision?.slice(0, 12) || 'No commits'}</code></p>
@@ -332,6 +336,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
           </div>}
         </SettingsRow>
 
+        </>}
+        {!workspace && <>
         <SettingsRow label="Authentication" hint="The repository URL determines the authentication transport. Configure a matching remote URL to change transport. Saved credentials remain masked.">
           <div className="space-y-2">
             <div className="inline-flex rounded-sm border p-0.5" role="radiogroup" aria-label="Git authentication method">
@@ -351,6 +357,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
           </div>
         </SettingsRow>
 
+        </>}
+        {workspace && <>
         <SettingsRow label={t('git.branch')} hint={t('git.activeBranchSmall')}>
           {branchesQ.isError ? (
             <QueryErrorState
@@ -389,6 +397,8 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
           {statusMsg && <span role="status" className="ml-1 text-xs text-muted-foreground">{statusMsg}</span>}
         </SettingsRow>
 
+        </>}
+        {!workspace && <>
         <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
           <Switch aria-label={t('git.autoPull')} checked={autoPull} disabled={saveSettings.isPending} onCheckedChange={setAutoPull} />
         </SettingsRow>
@@ -399,15 +409,18 @@ function GitDashboard({ cfg }: { cfg: GitConfig }) {
           <Switch aria-label={t('git.autoPush')} checked={autoPush} disabled={readOnly || saveSettings.isPending} onCheckedChange={setAutoPush} />
         </SettingsRow>
         <SettingsRow noBorder>
+          {settingsDirty && <p role="status" className="text-sm">Unsaved Git settings</p>}
           <Button size="sm" onClick={() => saveSettings.mutate()} disabled={saveSettings.isPending || !settingsDirty}>
             <Save className="h-4 w-4" /> {t('git.saveSettings')}
           </Button>
           <Button size="sm" variant="ghost" disabled={!settingsDirty || saveSettings.isPending} onClick={() => {setSettingsDraft(null);saveSettings.reset();}}>Discard settings changes</Button>
           {saveSettings.isError && <p role="alert" className="text-sm text-destructive">{saveSettings.error.message}</p>}
         </SettingsRow>
+        <p className="py-2 text-sm">{readOnly ? 'Push is blocked.' : autoPush ? 'Saved playbook changes are automatically committed and pushed.' : 'Manual push is allowed.'} {autoPull ? 'Automatic pull is enabled.' : 'Pull is manual.'}</p><Link to="/playbooks" hash="tab=git" className="text-sm text-primary hover:underline">Open Git workspace: synchronize, switch branches and view commits</Link>
+        </>}
       </SettingsSection>
 
-      <GitLogPanel />
+      {workspace && <GitLogPanel />}
 
       <Dialog open={confirmDisconnect} onOpenChange={(open) => { if (!disconnect.isPending) setConfirmDisconnect(open); }}>
         <DialogContent className="max-w-sm">

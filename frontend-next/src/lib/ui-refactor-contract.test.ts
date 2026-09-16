@@ -137,7 +137,7 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain("toggleInfrastructureTree");
     expect(sidebar).not.toContain("shipyard_recent_nav");
     expect(shell).toContain("setDensity(value)");
-    expect(shell).toContain("md:hidden\" onClick={openCommandPalette}");
+    expect(shell).toContain("lg:hidden\" onClick={openCommandPalette}");
   });
 
   it("opens operational dashboard metrics as filtered work queues", () => {

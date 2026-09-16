@@ -446,7 +446,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-5xl overflow-y-auto">
+      <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-5xl flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Server className="h-5 w-5" />
@@ -457,12 +457,13 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
           </DialogDescription>
         </DialogHeader>
         {changedOnServer && <p role="alert" className="rounded-md border border-destructive p-3 text-sm">The saved VM configuration changed while this form was open. Your draft is preserved. Close and reopen the form to review the current configuration before saving.</p>}
-        <nav aria-label="VM setup steps" className="flex flex-wrap gap-2">
+        <label className="text-sm sm:hidden">Step {step + 1} of {VM_STEPS.length}<select aria-label="VM setup step" className="mt-1 h-9 w-full rounded-md border bg-background px-2" value={step} onChange={event => { setStep(Number(event.target.value)); setShowErrors(false); }}>{VM_STEPS.map((label,index) => <option key={label} value={index}>{index + 1}. {label}</option>)}</select></label>
+        <nav aria-label="VM setup steps" className="hidden shrink-0 flex-wrap gap-2 sm:flex">
           {VM_STEPS.map((label, index) => <Button key={label} type="button" size="sm" variant={step === index ? 'default' : 'outline'} aria-current={step === index ? 'step' : undefined} onClick={() => { setStep(index); setShowErrors(false); }}>{index + 1}. {label}</Button>)}
         </nav>
         <FieldErrors.Provider value={showErrors ? validation.errors : {}}>
         <form noValidate
-          className="space-y-5"
+          className="flex min-h-0 flex-col overflow-hidden"
           onSubmit={(event) => {
             event.preventDefault();
             if (step < 4) { nextStep(); return; }
@@ -470,6 +471,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
             if (formValid && !saveMutation.isPending) saveMutation.mutate();
           }}
         >
+          <div className="min-h-0 overflow-y-auto overscroll-contain space-y-5 p-1" data-dialog-body>
           <div className="min-w-0 space-y-5">
           <fieldset hidden={step !== 0} disabled={step !== 0} className="space-y-5">
           <section className="rounded-lg border bg-muted/20 p-4">
@@ -1034,10 +1036,11 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
             </p>
           )}
           {catalogQuery.isFetching && <p role="status" className="text-sm text-muted-foreground">Refreshing platform inventory…</p>}
-          <aside className="sticky bottom-0 rounded-md border bg-background p-3 text-xs shadow-sm">
+          <aside className="text-sm text-muted-foreground">
             {form.name || 'New VM'} · {form.cpu_cores} cores · {(Number(form.memory_mb) / 1024).toFixed(2)} GiB RAM · {form.disk_size_gb} GiB disk · {form.node_name || 'Select node'}
           </aside>
-          <DialogFooter className="lg:col-span-2">
+          </div>
+          <DialogFooter className="shrink-0 flex-row flex-wrap justify-end border-t bg-card pt-3 mt-3">
             <Button
               type="button"
               variant="outline"

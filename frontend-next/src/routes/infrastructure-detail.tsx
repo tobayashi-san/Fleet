@@ -163,6 +163,19 @@ export function InfrastructureDetailPage() {
     const connectionId = cluster.connections?.[0]?.id;
     if (connectionId && vms.length) setVmsToImport({ connectionId, vms });
   };
+  const auditPagination = (canViewAudit && auditConnectionId && (
+        <nav aria-label="Object audit pagination" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
+          <span className="text-sm text-muted-foreground" aria-live="polite">
+            {auditQuery.isSuccess ? `${auditQuery.data.total} audit events · Page ${Math.floor(auditOffset / 20) + 1}` : 'Object audit history'}
+          </span>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" disabled={auditOffset === 0 || auditQuery.isFetching}
+              onClick={() => setAuditPage({scope: auditScope, offset: Math.max(0, auditOffset - 20)})}>Previous audit page</Button>
+            <Button variant="outline" size="sm" disabled={!auditQuery.isSuccess || auditQuery.isFetching || auditOffset + 20 >= auditQuery.data.total}
+              onClick={() => setAuditPage({scope: auditScope, offset: auditOffset + 20})}>Next audit page</Button>
+          </div>
+        </nav>
+      ));
   const page = node ? (
     <NodePage
       cluster={cluster}
@@ -179,6 +192,7 @@ export function InfrastructureDetailPage() {
       }
       auditLoading={canViewAudit && auditQuery.isLoading}
       auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
+      auditPagination={auditPagination}
       onRetryAudit={() => void auditQuery.refetch()}
     />
   ) : (
@@ -194,6 +208,7 @@ export function InfrastructureDetailPage() {
       auditTasks={canViewAudit && auditQuery.isSuccess ? auditRows : undefined}
       auditLoading={canViewAudit && auditQuery.isLoading}
       auditError={canViewAudit && auditQuery.isError ? auditQuery.error : undefined}
+      auditPagination={auditPagination}
       onRetryAudit={() => void auditQuery.refetch()}
     />
   );
@@ -212,19 +227,7 @@ export function InfrastructureDetailPage() {
         </div>
       )}
       {page}
-      {canViewAudit && auditConnectionId && (
-        <nav aria-label="Object audit pagination" className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border p-3">
-          <span className="text-sm text-muted-foreground" aria-live="polite">
-            {auditQuery.isSuccess ? `${auditQuery.data.total} audit events · Page ${Math.floor(auditOffset / 20) + 1}` : 'Object audit history'}
-          </span>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={auditOffset === 0 || auditQuery.isFetching}
-              onClick={() => setAuditPage({scope: auditScope, offset: Math.max(0, auditOffset - 20)})}>Previous audit page</Button>
-            <Button variant="outline" size="sm" disabled={!auditQuery.isSuccess || auditQuery.isFetching || auditOffset + 20 >= auditQuery.data.total}
-              onClick={() => setAuditPage({scope: auditScope, offset: auditOffset + 20})}>Next audit page</Button>
-          </div>
-        </nav>
-      )}
+
       {vmToImport && (
         <ImportProxmoxVmDialog
           connectionId={vmToImport.connectionId}

@@ -1,3 +1,4 @@
+const { hostCheckQuality } = require('../utils/host-check-quality');
 const { updateCatalogAge } = require('../utils/update-catalog-age');
 const {agentReportStatus}=require('../utils/agent-report-status');
 const express = require('express');
@@ -107,6 +108,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
 
       return {
         id: s.id,
+        check_quality: hostCheckQuality(db, s, {updates: canViewUpdates, docker: canViewDocker, custom: canViewCustomUpdates}),
         name: s.name,
         ip_address: s.ip_address,
         tags: JSON.parse(s.tags || '[]'),

@@ -927,7 +927,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
         db.updatesCache.set(server.id, updates);
         resourceAlerts.evaluateServer(server.id);
       })
-      .catch(err => { log.debug({ err, server: server.name }, 'Background updates cache refresh failed'); });
+      .catch(err => { db.checkAttempts.failed(server.id, 'os', 'Package check failed. Check host connectivity and package manager access.'); log.debug({ err, server: server.name }, 'Background updates cache refresh failed'); });
     return;
   }
 
@@ -937,6 +937,7 @@ router.get('/:id/updates', guardServerAccess, guard('canViewUpdates'), async (re
     resourceAlerts.evaluateServer(server.id);
     respond(updates, false);
   } catch (error) {
+    db.checkAttempts.failed(server.id, 'os', 'Package check failed. Check host connectivity and package manager access.');
     // A background refresh may use the last known result. A manually forced
     // check must instead report its failure so the UI never presents stale
     // data as a freshly completed package check.
@@ -1147,6 +1148,7 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
     );
     const report = parseImageUpdateReport(result.stdout);
     if (!result.success || !report.complete) {
+      db.checkAttempts.failed(server.id, 'images', 'Image check returned no complete result. Check container runtime and registry access.');
       log.warn({ server: server.name, exitCode: result.code }, 'Image update check returned no complete result');
       return res.status(502).json({ error: 'Image update check did not complete. Existing results were kept.' });
     }
@@ -1154,6 +1156,7 @@ router.get('/:id/docker/image-updates', guardServerAccess, guard('canPullDocker'
     resourceAlerts.evaluateServer(server.id);
     res.json(report.results);
   } catch (error) {
+    db.checkAttempts.failed(server.id, 'images', 'Image check failed. Check host connectivity, container runtime and registry access.');
     serverError(res, error, 'get docker image updates');
   }
 });

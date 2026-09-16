@@ -1,11 +1,11 @@
-import { commandSearch } from '@/lib/command-search';
+import { commandSearch, commandScore } from '@/lib/command-search';
 import { infrastructureSearchItems } from '@/lib/infrastructure-search';
 import { commandModifier } from '@/lib/keyboard';
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, createContext, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Command } from 'cmdk';
 import { useNavigate } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
   Search, LayoutDashboard, Server, FileCode2, Settings, User,
   HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Network, ClipboardList,
@@ -19,8 +19,10 @@ import { asArray, cn } from '@/lib/utils';
 
 interface ServerListItem { id: string; name: string; ip_address?: string; status?: string }
 interface PlaybookListItem { id: string; name?: string; filename?: string }
-interface IpamSearchResult { id: string; kind: 'prefix' | 'address' | 'range'; label: string; secondary: string; subnet_id: string; subnet_cidr: string }
-interface IpamSearchResponse { items?: IpamSearchResult[] }
+interface IpamSearchResult { id: string; kind: 'prefix' | 'address' | 'range'; label: string; secondary: string; subnet_id: string; subnet_cidr: string; description?: string }
+interface IpamSearchResponse { items?: IpamSearchResult[]; page: number; total_pages: number; total: number }
+
+const SearchContext = createContext('');
 
 export function CommandPalette() {
   const { t } = useTranslation();
@@ -36,6 +38,7 @@ export function CommandPalette() {
   const [open, setOpen] = useState(false);
   const [showHelp, setShowHelp] = useState(false);
   const [search, setSearch] = useState('');
+  const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   // Toggle on Cmd+K / Ctrl+K
   useEffect(() => {
@@ -101,20 +104,22 @@ export function CommandPalette() {
     staleTime: 30_000,
   });
   const playbooks = playbooksQuery.data ?? [];
-  const ipamQuery = useQuery({
+  const ipamQuery = useInfiniteQuery({
     queryKey: ['ipam', 'command-search', environmentId, search.trim()],
-    queryFn: () => apiFetch<IpamSearchResponse>(`/ipam/search?environment_id=${encodeURIComponent(environmentId)}&q=${encodeURIComponent(search.trim())}&page=1&page_size=20`),
+    initialPageParam: 1,
+    queryFn: ({ pageParam, signal }) => apiFetch<IpamSearchResponse>(`/ipam/search?environment_id=${encodeURIComponent(environmentId)}&q=${encodeURIComponent(search.trim())}&page=${pageParam}&page_size=20`, { signal }),
+    getNextPageParam: last => last.page < last.total_pages ? last.page + 1 : undefined,
     enabled: open && networksAvailable && search.trim().length >= 2,
     staleTime: 15_000,
   });
-  const ipamResults = ipamQuery.data;
+  const ipamResults = ipamQuery.data?.pages.flatMap(page => page.items || []) || [];
   const infrastructureQuery = useQuery({
     queryKey: ['opentofu', 'infrastructure', environmentId, 'summary'],
     queryFn: () => apiFetch<{ clusters?: Parameters<typeof infrastructureSearchItems>[0] }>(`/opentofu/infrastructure-summary?environment_id=${encodeURIComponent(environmentId)}`),
     enabled: open && hasCap(profile, 'canViewInfrastructure'),
     staleTime: 30_000,
   });
-  const infrastructureItems = hasCap(profile, 'canViewInfrastructure') ? infrastructureSearchItems(asArray(infrastructureQuery.data?.clusters), hasCap(profile, 'canViewServers') ? asArray<ServerListItem>(servers) : []) : [];
+  const allInfrastructureItems = hasCap(profile, 'canViewInfrastructure') ? infrastructureSearchItems(asArray(infrastructureQuery.data?.clusters), hasCap(profile, 'canViewServers') ? asArray<ServerListItem>(servers) : []) : [];
   const searchReferencesFailed =
     serversQuery.isError || playbooksQuery.isError || ipamQuery.isError || infrastructureQuery.isError;
 
@@ -122,9 +127,11 @@ export function CommandPalette() {
     () => asArray<typeof plugins[number]>(plugins).filter(p => p.enabled && p.hasUi !== false && p.sidebar && canSeePlugin(profile, p.id)),
     [plugins, profile]
   );
-  const safeServers = hasCap(profile, 'canViewServers') ? commandSearch(asArray<ServerListItem>(servers),search,30,item=>item.name,item=>[item.ip_address || '']) : [];
-  const safePlaybooks = hasCap(profile, 'canViewPlaybooks') ? commandSearch(asArray<PlaybookListItem>(playbooks),search,20,item=>item.filename || item.name || item.id) : [];
+  const safeServers = hasCap(profile, 'canViewServers') ? commandSearch(asArray<ServerListItem>(servers),search,expanded.hosts ? Infinity : 5,item=>item.name,item=>[item.ip_address || '']) : [];
+  const safePlaybooks = hasCap(profile, 'canViewPlaybooks') ? commandSearch(asArray<PlaybookListItem>(playbooks),search,expanded.playbooks ? Infinity : 5,item=>item.filename || item.name || item.id) : [];
 
+  const infrastructureItems = commandSearch(allInfrastructureItems, search, expanded.infrastructure ? Infinity : 5, item => item.label, item => item.keywords);
+  const more = (group: string, count: number) => !expanded[group] && count > 5 ? <Command.Item forceMount value={`show-all-${group}`} onSelect={() => setExpanded(current => ({...current, [group]: true}))} className="cursor-pointer rounded px-2 py-2 text-xs text-primary aria-selected:bg-accent">Show all {count} matching {group}</Command.Item> : null;
   const close = () => setOpen(false);
   const go = (path: string) => { close(); navigate({ to: path }); };
 
@@ -140,12 +147,12 @@ export function CommandPalette() {
             )}
           >
             <DialogPrimitive.Title className="sr-only">{t('cmd.title')}</DialogPrimitive.Title>
-            <Command label={t('cmd.title')} className="flex flex-col">
+            <SearchContext.Provider value={search}><Command filter={commandScore} label={t('cmd.title')} className="flex flex-col">
               <div className="group flex items-center border-b px-3 transition-colors focus-within:bg-muted/30">
                 <Search className="mr-2 h-4 w-4 shrink-0 text-muted-foreground transition-colors group-focus-within:text-foreground" />
                 <Command.Input
                   value={search}
-                  onValueChange={setSearch}
+                  onValueChange={value => { setSearch(value); setExpanded({}); }}
                   aria-label={t('cmd.placeholder')}
                   placeholder={t('cmd.placeholder')}
                   className="flex h-10 w-full border-0 bg-transparent py-2 text-[13px] shadow-none outline-none placeholder:text-muted-foreground focus:border-0 focus:outline-none focus:ring-0 focus-visible:border-0 focus-visible:outline-none focus-visible:ring-0"
@@ -189,6 +196,7 @@ export function CommandPalette() {
                 {hasCap(profile, 'canViewInfrastructure') && <Command.Group heading="Infrastructure inventory" className="mt-2 text-xs text-muted-foreground">
                   <PaletteItem icon={<Server className="h-4 w-4" />} label="Infrastructure overview" shortcut="g i" onSelect={() => go('/infrastructure')} />
                   {infrastructureItems.map(item => <PaletteItem key={item.id} icon={<Server className="h-4 w-4" />} label={item.label} sublabel={item.detail} keywords={item.keywords} onSelect={() => go(item.path)} />)}
+                  {more("infrastructure", commandSearch(allInfrastructureItems, search, Infinity, item => item.label, item => item.keywords).length)}
                 </Command.Group>}
                 {safeServers.length > 0 && (
                   <Command.Group heading={t('cmd.servers')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
@@ -202,6 +210,7 @@ export function CommandPalette() {
                         onSelect={() => go(`/servers/${s.id}`)}
                       />
                     ))}
+                    {more('hosts', commandSearch(asArray<ServerListItem>(servers), search, Infinity, item => item.name, item => [item.ip_address || '']).length)}
                   </Command.Group>
                 )}
 
@@ -215,27 +224,31 @@ export function CommandPalette() {
                         onSelect={() => go(`/playbooks?file=${encodeURIComponent(p.filename || p.name || p.id)}#tab=templates`)}
                       />
                     ))}
+                    {more('playbooks', commandSearch(asArray<PlaybookListItem>(playbooks), search, Infinity, item => item.filename || item.name || item.id).length)}
                   </Command.Group>
                 )}
 
-                {(ipamResults?.items || []).length > 0 && (
+                {ipamResults.length > 0 && (
                   <Command.Group heading="Network search" className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {(ipamResults?.items || []).map(item => (
+                    {(expanded.networks ? ipamResults : ipamResults.slice(0,5)).map(item => (
                       <PaletteItem
                         key={`${item.kind}:${item.id}`}
                         icon={<Network className="h-4 w-4" />}
                         label={item.label}
                         sublabel={`${item.secondary || item.kind} · ${item.subnet_cidr}`}
-                        keywords={[item.label, item.secondary, item.subnet_cidr, item.kind]}
+                        keywords={[item.label, item.secondary, item.subnet_cidr, item.kind, item.description || '']}
+                        serverMatch={search.trim()}
                         onSelect={() => go(`/networks/${item.subnet_id}`)}
                       />
                     ))}
+                    {!expanded.networks && ipamResults.length > 5 && <Command.Item forceMount value="show-network-results" onSelect={() => setExpanded(current => ({...current, networks: true}))} className="cursor-pointer rounded px-2 py-2 text-xs text-primary aria-selected:bg-accent">Show {ipamResults.length} loaded network results</Command.Item>}
+                    {expanded.networks && ipamQuery.hasNextPage && <Command.Item forceMount value="load-more-networks" disabled={ipamQuery.isFetchingNextPage} onSelect={() => { void ipamQuery.fetchNextPage(); }} className="cursor-pointer rounded px-2 py-2 text-xs text-primary aria-selected:bg-accent">{ipamQuery.isFetchingNextPage ? 'Loading networks…' : `Load more networks (${ipamResults.length} of ${ipamQuery.data?.pages[0].total})`}</Command.Item>}
                   </Command.Group>
                 )}
 
                 {sidebarPlugins.length > 0 && (
                   <Command.Group heading={t('nav.plugins')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
-                    {sidebarPlugins.map(p => (
+                    {commandSearch(sidebarPlugins, search, expanded.plugins ? Infinity : 5, p => p.sidebar?.label || p.name || p.id).map(p => (
                       <PaletteItem
                         key={p.id}
                         icon={<Puzzle className="h-4 w-4" />}
@@ -243,6 +256,7 @@ export function CommandPalette() {
                         onSelect={() => go(`/plugins/${p.id}`)}
                       />
                     ))}
+                    {more('plugins', commandSearch(sidebarPlugins, search, Infinity, p => p.sidebar?.label || p.name || p.id).length)}
                   </Command.Group>
                 )}
 
@@ -261,7 +275,7 @@ export function CommandPalette() {
                 </div>
                 <span className="flex items-center gap-1"><span className="kbd">?</span> {t('cmd.shortcuts')}</span>
               </div>
-            </Command>
+            </Command></SearchContext.Provider>
           </DialogPrimitive.Content>
         </DialogPrimitive.Portal>
       </DialogPrimitive.Root>
@@ -273,23 +287,32 @@ export function CommandPalette() {
 }
 
 function PaletteItem({
-  icon, label, sublabel, shortcut, keywords, onSelect,
+  icon, label, sublabel, shortcut, keywords, serverMatch, onSelect,
 }: {
   icon: React.ReactNode; label: string; sublabel?: string; shortcut?: string;
-  keywords?: string[]; onSelect: () => void;
+  keywords?: string[]; serverMatch?: string; onSelect: () => void;
 }) {
+  const search = useContext(SearchContext);
+  const highlight = (text: string) => {
+    const tokens = search.trim().split(/\s+/).filter(Boolean).map(token => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (!tokens.length) return text;
+    return text.split(new RegExp(`(${tokens.join('|')})`, 'gi')).map((part, index) => index % 2 ? <mark key={index} className="bg-warning/20 text-foreground">{part}</mark> : part);
+  };
+  const matchedMetadata = search.trim() && commandScore(label, search) === 0 ? keywords?.find(keyword => keyword.toLowerCase().includes(search.trim().toLowerCase())) || (serverMatch ? 'network metadata' : undefined) : undefined;
+  const detail = [sublabel, matchedMetadata && !sublabel?.toLowerCase().includes(matchedMetadata.toLowerCase()) ? `Match: ${matchedMetadata}` : null].filter(Boolean).join(' · ');
   return (
     <Command.Item
+      value={`${label}\u0000${sublabel || ""}`}
       onSelect={onSelect}
-      keywords={keywords}
+      keywords={serverMatch ? [...(keywords || []), serverMatch] : keywords}
       className={cn(
         'flex min-h-8 cursor-pointer items-center gap-2.5 rounded-sm px-2 py-1.5 text-[13px]',
         'aria-selected:bg-accent aria-selected:text-accent-foreground'
       )}
     >
       <span className="flex h-5 w-5 items-center justify-center text-muted-foreground">{icon}</span>
-      <span className="min-w-0 flex-1 truncate">{label}</span>
-      {sublabel && <span className="max-w-[40%] truncate font-mono text-[11px] text-muted-foreground">{sublabel}</span>}
+      <span className="min-w-0 flex-1 truncate">{highlight(label)}</span>
+      {detail && <span className="max-w-[40%] truncate font-mono text-[11px] text-muted-foreground" title={detail}>{highlight(detail)}</span>}
       {shortcut && <span className="kbd">{shortcut}</span>}
     </Command.Item>
   );

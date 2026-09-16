@@ -164,7 +164,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   useEffect(() => () => resizeCleanup.current?.(), []);
 
   const startResize = (event: React.PointerEvent<HTMLButtonElement>) => {
-    if (collapsed || window.matchMedia("(max-width: 767px)").matches) return;
+    if (collapsed || window.matchMedia("(max-width: 1023px)").matches) return;
     resizeCleanup.current?.();
     event.currentTarget.setPointerCapture(event.pointerId);
     const startX = event.clientX;
@@ -185,13 +185,13 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-50 flex h-screen w-[min(85vw,18rem)] -translate-x-full flex-col border-r border-border-strong/70 bg-[hsl(var(--surface-2))] shadow-2xl transition-[width,transform] duration-200 md:sticky md:top-11 md:z-auto md:h-[calc(100vh-2.75rem)] md:translate-x-0 md:shadow-none",
+        "fixed inset-y-0 left-0 z-50 flex h-screen w-[min(85vw,18rem)] -translate-x-full flex-col border-r border-border-strong/70 bg-[hsl(var(--surface-2))] shadow-2xl transition-[width,transform] duration-200 lg:max-w-[28vw] lg:sticky lg:top-11 lg:z-auto lg:h-[calc(100vh-2.75rem)] lg:translate-x-0 lg:shadow-none",
         mobileOpen && "translate-x-0",
-        collapsed && "md:w-16",
+        collapsed && "lg:w-16",
       )}
-      style={{ width: collapsed ? undefined : `${sidebarWidth}px` }}
+      style={{ width: collapsed ? undefined : `min(85vw, ${sidebarWidth}px)` }}
     >
-      <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 md:hidden">
+      <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 lg:hidden">
         <span className="font-mono text-sm font-semibold uppercase tracking-[0.16em]">Shipyard</span>
           <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")} title={t("shell.closeNavigation")}>
           <X className="h-4 w-4" />
@@ -257,7 +257,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       {!collapsed && <button type="button" role="separator" aria-orientation="vertical" aria-valuemin={224} aria-valuemax={384} aria-valuenow={sidebarWidth} onKeyDown={(event) => {
         const next = event.key === 'ArrowLeft' ? sidebarWidth - 16 : event.key === 'ArrowRight' ? sidebarWidth + 16 : event.key === 'Home' ? 224 : event.key === 'End' ? 384 : null;
         if (next !== null) { event.preventDefault(); setSidebarWidth(next); }
-      }} onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground focus-visible:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring md:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
+      }} onPointerDown={startResize} className="absolute inset-y-0 -right-2 hidden w-4 cursor-col-resize items-center justify-center text-transparent hover:text-muted-foreground focus-visible:text-muted-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring lg:flex" aria-label={t("nav.resizeSidebar")} title={t("nav.resizeSidebar")}><GripVertical className="h-4 w-4" /></button>}
     </aside>
   );
 }

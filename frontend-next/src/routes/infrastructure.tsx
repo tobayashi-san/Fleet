@@ -479,16 +479,10 @@ export function ProxmoxConnectionsCard({
                         {connection.endpoint}
                       </div>
                     </div>
-                    <StatusBadge
-                      tone={
-                        connection.api_token_configured ? "success" : "danger"
-                      }
-                      dot
-                    >
-                      {connection.api_token_configured
-                        ? connection.insecure ? "Token stored · TLS checks off" : connection.ca_certificate_configured ? "Token stored · private CA" : "Token stored · TLS verified"
-                        : "Token missing"}
-                    </StatusBadge>
+                    <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge tone={connection.api_token_configured ? "success" : "danger"} dot>{connection.api_token_configured ? "Token stored" : "Token missing"}</StatusBadge>
+                        {connection.insecure ? <button type="button" onClick={() => onEdit(connection)} className="inline-flex items-center gap-1 text-xs font-medium text-warning underline underline-offset-2" title="Edit connection certificate verification"><TriangleAlert className="h-3.5 w-3.5" />Certificate verification off</button> : <StatusBadge tone="muted">{connection.ca_certificate_configured ? "Private CA configured" : "Certificate verification on"}</StatusBadge>}
+                      </div>
                   </div>
                   <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs text-muted-foreground">
                     <span>IPAM schedule</span>
@@ -583,18 +577,10 @@ export function ProxmoxConnectionsCard({
                         {connection.endpoint}
                       </td>
                       <td className="px-3">
-                        <StatusBadge
-                          tone={
-                            connection.api_token_configured
-                              ? "success"
-                              : "danger"
-                          }
-                          dot
-                        >
-                          {connection.api_token_configured
-                            ? connection.insecure ? "Token stored · TLS checks off" : connection.ca_certificate_configured ? "Token stored · private CA" : "Token stored · TLS verified"
-                            : "Token missing"}
-                        </StatusBadge>
+                        <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge tone={connection.api_token_configured ? "success" : "danger"} dot>{connection.api_token_configured ? "Token stored" : "Token missing"}</StatusBadge>
+                        {connection.insecure ? <button type="button" onClick={() => onEdit(connection)} className="inline-flex items-center gap-1 text-xs font-medium text-warning underline underline-offset-2" title="Edit connection certificate verification"><TriangleAlert className="h-3.5 w-3.5" />Certificate verification off</button> : <StatusBadge tone="muted">{connection.ca_certificate_configured ? "Private CA configured" : "Certificate verification on"}</StatusBadge>}
+                      </div>
                       </td>
                       <td className="px-3 text-xs text-muted-foreground">
                         {syncLabel(connection)}

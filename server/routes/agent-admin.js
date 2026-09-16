@@ -382,16 +382,27 @@ router.get('/agent-manifest/history', (req, res) => {
   }
 });
 
+router.get('/agent-manifest/versions/:version', (req, res) => {
+  const version = Number(req.params.version);
+  if (!Number.isSafeInteger(version) || version < 1) return res.status(400).json({error:'Invalid manifest version'});
+  const row = db.agentManifests.getByVersion(version);
+  if (!row) return res.status(404).json({error:'Manifest version not found'});
+  res.json({version:row.version,content:JSON.parse(row.content)});
+});
+
 router.put('/agent-manifest', (req, res) => {
   try {
     const createdBy = req.user?.id || req.user?.username || 'admin';
     const changelog = String(req.body?.changelog || '').slice(0, 500);
     const content = req.body?.content;
-    const row = manifestService.createVersion({ content, createdBy, changelog });
+    const expectedVersion = req.body.expectedVersion;
+    if (expectedVersion !== undefined && (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)) return res.status(400).json({error:'Invalid expected manifest version'});
+    const row = manifestService.createVersion({ content, createdBy, changelog, expectedVersion });
     db.auditLog.write('agent.manifest.update', `Agent manifest updated to v${row.version}`, req.ip, true, req.user?.username);
     res.json({ success: true, version: row.version });
   } catch (e) {
     db.auditLog.write('agent.manifest.update', 'Agent manifest update failed', req.ip, false, req.user?.username);
+    if (e?.status === 409) return res.status(409).json({error:e.message});
     if (e?.status === 400 || e instanceof SyntaxError || /Manifest\./.test(e.message)) {
       return res.status(400).json({ error: e.message });
     }

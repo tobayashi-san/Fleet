@@ -612,7 +612,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
             <StatusDot status={server.status} />
           </span>
           <Server className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-          <span className="min-w-0 flex-1 truncate leading-5 text-foreground">
+          <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] leading-5 text-foreground">
             {server.name}
           </span>
         </button>
@@ -714,8 +714,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               className="h-3.5 w-3.5 shrink-0"
               style={{ color: node.color || undefined }}
             />
-            <span className="min-w-0 flex-1 truncate" title={node.name}>{node.name}</span>
-            <span className="text-[10px] text-muted-foreground">
+            <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]" title={node.name}>{node.name}</span>
+            <span className="text-xs text-muted-foreground">
               {groupMemberCount.get(node.id) || 0}
             </span>
           </button>
@@ -791,8 +791,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
           >
             <StatusDot status={cluster.status} />
             <Database className="h-3.5 w-3.5 shrink-0 text-primary" />
-            <span className="min-w-0 flex-1 truncate">{clusterName}</span>
-            {!compact && <span className="shrink-0 text-[10px] text-muted-foreground">{vms.length} VM/CT</span>}
+            <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">{clusterName}</span>
+            {!compact && <span className="shrink-0 text-xs text-muted-foreground">{vms.length} VM/CT</span>}
           </Link>
         </div>
         {nodes.length > 0 && open && (
@@ -842,8 +842,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                     >
                       <StatusDot status={node.status} />
                       <Server className="h-3.5 w-3.5 shrink-0" />
-                      <span className="min-w-0 flex-1 truncate font-mono">{nodeName}{hostNames.get(node.fleet_server_id || "") && hostNames.get(node.fleet_server_id || "") !== nodeName && <span className="block truncate font-sans text-[10px] font-normal text-muted-foreground">Host: {hostNames.get(node.fleet_server_id || "")}</span>}</span>
-                      {!compact && <span className="shrink-0 text-[10px]" title={`${nodeVms.length} VM/CT guests${searching ? " shown by the current filter" : " on this node"}`}>{nodeVms.length} VM/CT</span>}
+                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] font-mono">{nodeName}{hostNames.get(node.fleet_server_id || "") && hostNames.get(node.fleet_server_id || "") !== nodeName && <span className="block truncate font-sans text-xs font-normal text-muted-foreground">Host: {hostNames.get(node.fleet_server_id || "")}</span>}</span>
+                      {!compact && <span className="shrink-0 text-xs" title={`${nodeVms.length} VM/CT guests${searching ? " shown by the current filter" : " on this node"}`}>{nodeVms.length} VM/CT</span>}
                     </Link>
                     {node.fleet_server_id && (
                       <Link
@@ -889,8 +889,8 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                               >
                                 <StatusDot status={vm.status} />
                                 <Box className="h-3 w-3 shrink-0" />
-                                {showVmIds && <span className="shrink-0 font-mono text-[10px] text-muted-foreground">{vmId}</span>}
-                                <span className="min-w-0 flex-1 truncate" title={`${vm.name || vmId}${linkedHostName ? ` · Host: ${linkedHostName}` : ""}`}>{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}{linkedHostName && linkedHostName !== vm.name && <span className="block truncate text-[10px] font-normal text-muted-foreground">Host: {linkedHostName}</span>}</span>
+                                {showVmIds && <span className="shrink-0 font-mono text-xs text-muted-foreground">{vmId}</span>}
+                                <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]" title={`${vm.name || vmId}${linkedHostName ? ` · Host: ${linkedHostName}` : ""}`}>{vm.name || `${vm.guest_type === "lxc" ? "CT" : "VM"} ${vmId}`}{linkedHostName && linkedHostName !== vm.name && <span className="block truncate text-xs font-normal text-muted-foreground">Host: {linkedHostName}</span>}</span>
                               </Link>
                             {vm.fleet_server_id && (
                               <Link
@@ -947,9 +947,9 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
       <div>
         {canViewInfrastructure && (
           <div className="mb-2 border-b pb-2">
-            <div className="flex items-center gap-2 px-2 py-1.5 text-[10px] font-semibold uppercase tracking-[0.1em] text-muted-foreground">
+            <div className="flex items-center gap-2 px-2 py-1.5 text-xs font-semibold uppercase tracking-[0.1em] text-muted-foreground">
               <Database className="h-3.5 w-3.5 shrink-0" />
-              <span className="min-w-0 flex-1 truncate">Proxmox</span>
+              <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">Proxmox</span>
             {inventoryPending ? (
                 <span aria-hidden="true" className="h-4 w-5 animate-pulse rounded bg-muted" />
               ) : (
@@ -1022,7 +1022,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
               to="/servers"
               onClick={onNavigate}
               className={cn(
-                "flex min-w-0 flex-1 items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors",
+                "flex min-w-0 flex-1 items-center gap-2 text-xs font-semibold uppercase tracking-[0.1em] transition-colors",
                 path === "/servers"
                   ? "text-foreground"
                   : "text-muted-foreground hover:text-foreground",
@@ -1050,7 +1050,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
         {!compact && selectedServerCount > 0 && (
           <div className="mx-1 mb-1 rounded-md border border-primary/20 bg-primary/5 p-1.5">
             <div className="flex items-center gap-1.5">
-              <span className="min-w-0 flex-1 truncate px-1 text-[10px] font-medium text-foreground">
+              <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere] px-1 text-xs font-medium text-foreground">
                 {selectedServerCount} host{selectedServerCount === 1 ? "" : "s"}{" "}
                 selected
               </span>
@@ -1076,7 +1076,7 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                 );
                 event.currentTarget.value = "";
               }}
-              className="mt-1 h-7 w-full rounded-sm border bg-background px-1.5 text-[10px] text-foreground"
+              className="mt-1 h-7 w-full rounded-sm border bg-background px-1.5 text-xs text-foreground"
             >
               <option value="" disabled>
                 Move to folder…
@@ -1260,10 +1260,10 @@ export function InfrastructureTree({ compact = false, onNavigate }: TreeProps) {
                         }
                       />
                       <StatusDot status={server.status} />
-                      <span className="min-w-0 flex-1 truncate">
+                      <span className="min-w-0 flex-1 break-words [overflow-wrap:anywhere]">
                         {server.name}
                       </span>
-                      <span className="font-mono text-[10px] text-muted-foreground">
+                      <span className="font-mono text-xs text-muted-foreground">
                         {server.ip_address || "—"}
                       </span>
                     </label>

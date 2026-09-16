@@ -1,3 +1,4 @@
+import { guestOsLabel, bootOrderLabel } from '@/features/infrastructure/vm-display';
 import { guestMetricPercent, guestMetricExplanation } from '@/features/infrastructure/guest-metrics';
 import type { ReactNode } from 'react';
 import { Timestamp } from '@/components/ui/timestamp';
@@ -265,7 +266,7 @@ export function VmConfigurationOverview({
             />
             <VmProperty
               label="Operating system"
-              value={hardware?.os_type || "—"}
+              value={guestOsLabel(hardware?.os_type)}
               mono
             />
             {isContainer ? <>
@@ -297,9 +298,10 @@ export function VmConfigurationOverview({
             />
             <VmProperty
               label="Boot order"
-              value={hardware?.boot_order || "Proxmox default"}
+              value={bootOrderLabel(hardware?.boot_order)}
               mono
             />
+            <details className="text-xs text-muted-foreground"><summary className="cursor-pointer">Raw Proxmox configuration values</summary><p className="mt-2 break-all font-mono">OS: {hardware?.os_type || '—'} · Boot: {hardware?.boot_order || 'default'}</p></details>
             <VmProperty
               label="Cloud-Init user"
               value={configuration?.guest?.username || "Not set"}
@@ -451,9 +453,11 @@ function VmObjectSummary({
             <span>{managementState}</span>
             {hostName && <span>Host <strong className="font-medium text-foreground">{hostName}</strong></span>}
           </div>
-          <p className="mt-2 text-xs text-muted-foreground">Source: Proxmox configuration and inventory. Configured IPv4 may differ from the guest's current address. Agent configuration does not confirm a running guest agent.</p>
-          {(vm.status === "stopped" || !cpuSample || !memorySample || !diskSample) && <p className="mt-1 text-xs text-muted-foreground">{guestMetricExplanation(vm.status)}</p>}
-          {(!diskSample) && <p className="mt-1 text-xs text-muted-foreground">Guest filesystem usage was not supplied by this inventory sample. Check the guest filesystem and agent status in Proxmox or open the linked host's Storage view.</p>}
+          <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Data source: Proxmox · {(!cpuSample || !memorySample || !diskSample) ? 'some measurements unavailable' : 'inventory measurements'}</summary>
+            <p className="mt-2">Configured addresses and the guest's current addresses may differ. Agent configuration does not confirm a running agent. Host measurements are collected separately and can have a different timestamp.</p>
+            {(vm.status === "stopped" || !cpuSample || !memorySample || !diskSample) && <p className="mt-1">{guestMetricExplanation(vm.status)}</p>}
+            {!diskSample && <p className="mt-1">Filesystem usage was not supplied by Proxmox. Inspect the guest agent or the linked host's System view for host-collected storage data.</p>}
+          </details>
         </div>
         <div className="grid shrink-0 grid-cols-3 gap-4 border-t pt-3 text-xs lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0" aria-label="Proxmox inventory usage">
           <div><span className="block text-muted-foreground">CPU</span><strong className="font-mono">{cpuSample ?? "No sample"}</strong></div>

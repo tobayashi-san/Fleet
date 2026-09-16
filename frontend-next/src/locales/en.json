@@ -781,7 +781,8 @@
     "removeLogo": "Remove logo",
     "logoTooLarge": "Logo file too large (max 150 KB)",
     "logoLoaded": "Logo loaded. Save to apply.",
-    "logoReadError": "Failed to read logo file"
+    "logoReadError": "Failed to read logo file",
+    "tabBackup": "Backup & Recovery"
   },
   "pb": {
     "new": "New Playbook",
@@ -1818,7 +1819,16 @@
     "releaseUnconfirmed": "Release could not be confirmed. Refresh the inventory before retrying.",
     "prefixChangedWhileEditing": "This prefix changed while you were editing. Your draft is still shown. Close and reopen the editor to review the latest values before saving.",
     "vlanRangeError": "VLAN must be a whole number from 1 to 4094. Leave it empty for no VLAN.",
-    "dhcpPairError": "Enter both DHCP start and DHCP end, or leave both empty to disable the range."
+    "dhcpPairError": "Enter both DHCP start and DHCP end, or leave both empty to disable the range.",
+    "syncDiagnostics": "Synchronization diagnostics",
+    "diagnosticScope": "Scope: {{scope}} · current Shipyard environment.",
+    "diagnosticFailed": "Latest synchronization failed; inventory may reflect an older successful import.",
+    "diagnosticEmpty": "The latest successful source check returned no usable addresses. Counts can come from a connection test or synchronization. A verified connection confirms access, not inventory completeness.",
+    "diagnosticCounts": "Latest successful source check: {{total}} usable addresses, {{outside}} outside managed prefixes. Stored observations from synchronization: {{imported}}. A connection test updates source counts without importing addresses.",
+    "diagnosticEmptyChecks": "Check the selected site/API path, source client or lease inventory, token read permissions and supported IP address fields.",
+    "diagnosticOutside": "Review managed prefixes in this environment: addresses outside them are excluded from the import.",
+    "diagnosticCompare": "Compare these counts with the source inventory to verify the intended site and network coverage.",
+    "diagnosticCompleteness": "Shipyard cannot infer the number of addresses the source should contain. No conflicts only describes imported addresses."
   },
   "pagination": {
     "aria": "{{item}} pagination",
@@ -1828,7 +1838,7 @@
     "next": "Next"
   },
   "deploy": {
-    "title": "Managed VMs",
+    "title": "VM definitions",
     "description": "Independently managed Proxmox VMs with one OpenTofu state per VM.",
     "advanced": "Files & variables (expert view)",
     "refresh": "Refresh",

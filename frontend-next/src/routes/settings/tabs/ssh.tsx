@@ -68,6 +68,7 @@ export function SshTab() {
       <SettingsSection
         icon={<Key className="h-4 w-4" />}
         title={t("set.sshTitle")}
+        description="This installation · shared system key"
       >
         {isLoading ? (
           <SettingsRow label={t("set.sshStatus")} noBorder>
@@ -85,6 +86,7 @@ export function SshTab() {
       <SettingsSection
         icon={<Link2 className="h-4 w-4" />}
         title="Key assignments"
+        description={`Selected environment: ${environmentId}`}
       >
         <KeyAssignments key={environmentId} environmentId={environmentId} />
       </SettingsSection>
@@ -92,6 +94,7 @@ export function SshTab() {
       <SettingsSection
         icon={<Send className="h-4 w-4" />}
         title={t("set.sshDistribute")}
+        description={`Selected environment: ${environmentId} · install the public key on selected hosts`}
       >
         <DeployForm />
       </SettingsSection>
@@ -349,6 +352,7 @@ function SshKeyView({
         </div>
       </SettingsRow>
 
+      <details className="py-3"><summary className="cursor-pointer text-sm font-medium">Advanced: export or replace the system key</summary>
       <SettingsRow
         label={t("set.manageKey")}
         hint={t("set.manageKeyHint")}
@@ -366,6 +370,7 @@ function SshKeyView({
         </Button>
       </SettingsRow>
 
+      </details>
       <ExportKeyDialog open={exportOpen} onOpenChange={setExportOpen} />
       <ImportKeyDialog
         file={importFile}

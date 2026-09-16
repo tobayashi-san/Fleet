@@ -301,11 +301,11 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
               <StatusBadge tone="success">{t("det.imageUpdated")}</StatusBadge>
             ) : upd === "not_checkable" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageNotCheckable")}<span className="block text-[11px]">No local repository digest to compare. For locally built images, check the build or release source; registry comparison cannot determine freshness.</span>
+                {t("det.imageNotCheckable")}
               </span>
             ) : upd === "unknown" ? (
               <span className="text-xs text-muted-foreground">
-                {t("det.imageCheckFailed")}<span className="block text-[11px]">The registry comparison returned no verified result. Check registry access, authentication and the image tag, then refresh image checks.</span>
+                {t("det.imageCheckFailed")}
               </span>
             ) : (
               <span className="text-xs text-muted-foreground">
@@ -329,12 +329,12 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
               {hasCap(profile, "canRestartDocker") && (
                 <Button
                   variant="ghost"
-                  size="icon"
-                  className="h-6 w-6"
+                  size="sm"
+                  className="h-7 gap-1 px-2 text-xs"
                   title={t("common.restart")}
                   onClick={() => setConfirmRestartContainer(c.container_name)}
                 >
-                  <RotateCw className="h-3 w-3" />
+                  <RotateCw className="h-3 w-3" /> {t("common.restart")}
                 </Button>
               )}
             </div>
@@ -348,6 +348,8 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
         {/* ════ DOCKER ════ */}
         {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
+            {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Workload metrics: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length}/{containers.length} containers have CPU and memory samples</summary><p className="mt-2 text-muted-foreground">Source: container runtime statistics collected on this host. Missing values mean the latest collection did not return a sample; they do not mean zero usage. Stopped containers may have no live sample. Refresh the container list and inspect host connectivity/runtime access if running containers remain without samples.</p></details>}
+            {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Image comparison limitations</summary><p className="mt-2 text-muted-foreground">Cannot check: local images without a registry digest cannot be compared. Unknown: the comparison returned no verified result; check registry access, credentials and the image tag. Refresh image checks after correcting the cause.</p></details>}
             {hasCap(profile, "canViewUpdates") && <div className="rounded-md border p-3 text-sm text-muted-foreground" role="status">
               <p>Image checks: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "No verified collection time available"}</p>
               <p>{imageCatalog?.source || "Container registry digest comparison over SSH"} · {catalogFreshness.fresh ? "Within check interval" : hasCap(profile, "canPullDocker") ? "Missing or stale check; refresh image checks" : "Missing or stale check; ask an authorized operator to refresh"}. OS packages use a separate catalog.</p>

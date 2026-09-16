@@ -645,7 +645,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                     </p>
                   </div>
                 </div>
-                {hasCap(profile, "canEditNotes") && (
+                {hasCap(profile, "canEditNotes") && (notesEditing || !!notes.trim()) && (
                   <div className="inline-flex rounded-md border bg-muted/30 p-0.5">
                     <Button
                       size="sm"
@@ -672,7 +672,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
               <CardContent className="p-5">
                 {!notesReady ? (notesFailed ? <p role="alert">Notes could not be loaded. <Button variant="link" onClick={() => void refetchNotes()}>Retry</Button></p> : <p role="status">Loading notes…</p>) : <>
                 {notesFailed && <p role="alert" className="mb-3 text-sm text-destructive">The latest notes could not be checked. Your current draft is retained. <Button variant="link" onClick={() => void refetchNotes()}>Retry</Button></p>}
-                <div className="mb-4 space-y-2 text-xs text-muted-foreground">
+                {(notesEditing || !!notes.trim() || (notesBaseline?.revision ?? 0) > 0) && <div className="mb-4 space-y-2 text-xs text-muted-foreground">
                   <p>Opened version: {formatDateTime(notesBaseline?.updated_at)} · Author: {notesBaseline?.author || 'Not recorded'} · Revision {notesBaseline?.revision ?? 0}</p>
                   {notesData && notesBaseline && notesData.revision !== notesBaseline.revision && <p role="status" className="text-warning">A different version is saved on the server (revision {notesData.revision}, {formatDateTime(notesData.updated_at)}). Your opened version and draft have been retained. Load the saved version to review it; copy any changes you want to keep first.</p>}
                   <div className="flex flex-wrap items-center gap-2">
@@ -686,7 +686,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                   {saveNotesMut.isError && <p role="alert" className="text-destructive">{saveNotesMut.error.message} Your draft is still available below.</p>}
                   {reloadNotesMut.isError && <p role="alert" className="text-destructive">{reloadNotesMut.error.message} Your draft has not been replaced.</p>}
                   <NotesHistory hostId={id} />
-                </div>
+                </div>}
                 {notesEditing ? (
                   <div className="grid gap-4 xl:grid-cols-2">
                     <section className="overflow-hidden rounded-md border bg-background">
@@ -739,6 +739,7 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
                   <div className="flex min-h-28 items-center justify-center gap-2 rounded-md border border-dashed bg-muted/20 px-4 py-5 text-sm text-muted-foreground">
                     <StickyNote className="h-4 w-4 shrink-0" />
                     <span>{t("det.notesEmpty")}</span>
+                    {hasCap(profile, 'canEditNotes') && <Button size="sm" disabled={!notesReady} onClick={() => setNotesEditing(true)}>Create host notes</Button>}
                   </div>
                 )}
                 </>}

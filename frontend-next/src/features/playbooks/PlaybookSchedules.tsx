@@ -1,3 +1,5 @@
+import { statusLabel } from '@/lib/history-labels';
+import { scheduleNameMismatch } from './schedule-name';
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -317,6 +319,7 @@ export function SchedulesTab() {
                           <span className="flex items-center gap-1">
                             <Clock className="h-3 w-3 text-muted-foreground" />
                             {cronLabel(s.cron_expression)}
+                            {scheduleNameMismatch(s.name, s.cron_expression) && <p className="mt-1 text-xs text-warning">{scheduleNameMismatch(s.name, s.cron_expression)}</p>}
                           </span>
                           {s.enabled && s.registration_status === 'unregistered' && <div className="my-1 space-y-1">
                             <p role="alert" className="text-warning">Saved but not registered · will not run automatically.</p>
@@ -337,7 +340,7 @@ export function SchedulesTab() {
                                     : "danger"
                                 }
                               >
-                                {s.last_status}
+                                {statusLabel(t, s.last_status)}
                               </StatusBadge>
                               <span className="text-muted-foreground">
                                 {fmtDate(s.last_run)}
@@ -827,6 +830,7 @@ export function ScheduleDialog({
           <section className="rounded-md border bg-muted/20 p-3 text-xs" aria-label="Next executions">
             <p className="font-medium">Next three executions</p>
             <p className="my-1 font-mono">{effectiveCron}</p>
+            {scheduleNameMismatch(name, effectiveCron) && <p role="status" className="text-warning">{scheduleNameMismatch(name, effectiveCron)}</p>}
             {previewCron !== effectiveCron || preview.isFetching ? <p>Calculating…</p> : preview.isError ? <p role="alert" className="text-destructive">{preview.error.message}</p> : preview.data && <><p>Scheduler timezone: {preview.data.timezone}</p><ol className="my-2 list-decimal pl-5">{preview.data.runs.map(run=><li key={run}>{new Intl.DateTimeFormat('en-GB', {timeZone:preview.data.timezone,dateStyle:'medium',timeStyle:'long'}).format(new Date(run))}</li>)}</ol><p className="text-muted-foreground">Calculated from the scheduler's current timezone. Paused schedules do not run. If a previous execution of this schedule is still active, the next occurrence is skipped, not queued. Failed runs are not automatically retried; the next regular occurrence follows the cron expression.</p></>}
             {formEnvironment === environmentId && previewCron === effectiveCron && !preview.isFetching && !preview.isError && preview.data && <ScheduleMaintenancePreview runs={preview.data.runs} targets={targetPreview.targets} hosts={srvList} environmentId={formEnvironment} />}
           </section>

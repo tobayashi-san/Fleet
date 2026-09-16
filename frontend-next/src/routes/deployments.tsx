@@ -134,7 +134,7 @@ export function DeploymentsPage() {
     </Card>}
 
     {vmsQuery.isLoading ? <div className="space-y-1 rounded-md border p-4">{[0, 1, 2, 3].map((item) => <div key={item} className="h-11 animate-pulse rounded bg-muted/40" />)}</div>
-      : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Managed VMs could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
+      : vmsQuery.isError ? <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM definitions could not be loaded" description="No infrastructure has been changed." action={<Button variant="outline" onClick={() => void vmsQuery.refetch()}><RefreshCw />Try again</Button>} /></Card>
       : vms.length === 0 ? <Card><EmptyState icon={<Server className="h-5 w-5" />} title="No VM definitions" description="This list contains declaratively managed VM definitions. Existing Proxmox VMs and hosts remain in Infrastructure inventory; adopting a host does not create a VM definition." action={canEdit ? <div className="flex flex-wrap justify-center gap-2"><Button onClick={() => setCreateOpen(true)}><Server />Create managed VM</Button>{inventoryClusterId && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId" params={{ clusterId: inventoryClusterId }}>Open inventory</Link></Button>}</div> : undefined} /></Card>
       : <Card>
         <CardHeader className="border-b bg-muted/15 py-3"><CardTitle className="flex items-center gap-2 text-base"><Workflow className="h-4 w-4" />VM definitions</CardTitle></CardHeader>
@@ -178,7 +178,7 @@ export function DeploymentsPage() {
         ? <EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM templates could not be loaded" description="No template data is being shown." action={<Button variant="outline" onClick={() => void templatesQuery.refetch()}><RefreshCw />Try again</Button>} />
         : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
-    <CreateDeploymentDialog environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
+    <CreateDeploymentDialog onConfigurePlatforms={() => setConnectionsOpen(true)} environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
     <PlatformConnectionsDialog open={connectionsOpen && !connectionEditorOpen && !connectionToDelete} onOpenChange={setConnectionsOpen}>
       {connectionsQuery.isError ? <QueryErrorState compact error={connectionsQuery.error} title="Platform connections could not be loaded" onRetry={() => void connectionsQuery.refetch()} /> : <ProxmoxConnectionsCard connections={connections} isAdmin={canManagePlatforms} canSyncIpam={canSyncIpam} onAdd={() => { setConnectionToEdit(null); setConnectionEditorOpen(true); }} onEdit={(connection) => { setConnectionToEdit(connection); setConnectionEditorOpen(true); }} onDelete={setConnectionToDelete} />}
     </PlatformConnectionsDialog>

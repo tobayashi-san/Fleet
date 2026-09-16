@@ -3,7 +3,19 @@ import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} fro
 const shots=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../test-results/design-layout');
 async function login(page:Page){await page.goto('/login');await page.evaluate(async()=>{const body=JSON.stringify({username:'e2e-admin',password:'E2e-password-2026!'});let r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body});if(!r.ok)r=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body});const data=await r.json();if(!data.token)throw Error('Isolated authentication failed');localStorage.setItem('shipyard_token',data.token);});await page.goto('/');}
 async function shot(page:Page,name:string){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,name+'.png'),fullPage:true,animations:'disabled'});}
-async function inViewport(page:Page,locator:Locator){await expect(locator).toBeVisible();const b=await locator.boundingBox();expect(b).not.toBeNull();expect(b!.y).toBeGreaterThanOrEqual(0);expect(b!.y+b!.height).toBeLessThanOrEqual(page.viewportSize()!.height);expect(b!.x+b!.width).toBeLessThanOrEqual(page.viewportSize()!.width);}
+async function inViewport(page: Page, locator: Locator) {
+  await expect(locator).toBeVisible();
+  // Entry animations change dialog transforms after they become visible.
+  // Retry geometry without scrolling, while still rejecting persistent overflow.
+  await expect(async () => {
+    const bounds = await locator.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.y).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(page.viewportSize()!.height);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  }).toPass({ timeout: 5000 });
+}
 
 test('tablet navigation remains readable at intermediate widths',async({page})=>{await login(page);for(const width of [768,820,1024]){await page.setViewportSize({width,height:900});await page.goto('/settings/notifications');if(width<1024){await page.getByRole('button',{name:'Open navigation',exact:true}).click();}const a=page.getByRole('button',{name:'Operations',exact:true}),b=page.getByRole('button',{name:'Infrastructure',exact:true});await inViewport(page,a);await inViewport(page,b);const x=await a.boundingBox(),y=await b.boundingBox();expect(x!.x+x!.width).toBeLessThanOrEqual(y!.x+1);await shot(page,'navigation-'+width);if(width<1024)await page.getByRole('button',{name:'Close navigation',exact:true}).first().click();expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);}});
 

@@ -1,11 +1,13 @@
 'use strict';
-const {test,after}=require('node:test');const assert=require('node:assert/strict');
+const {test,after,beforeEach}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-mfa-'));
 process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.JWT_SECRET='synthetic-mfa-test';
 const db=require('../db');const express=require('express');const request=require('supertest');const bcrypt=require('bcryptjs');const jwt=require('jsonwebtoken');const otp=require('otplib');const qr=require('qrcode');
 const {createSession}=require('../utils/auth-sessions');
 const app=express();app.use(express.json());app.use('/auth',require('../routes/auth').router);
+// Keep OTP generation and verification in the same time step, including across CI scheduling delays.
+beforeEach(t=>{const now=Date.now();t.mock.method(Date,'now',()=>now);});
 const password='Synthetic-password-123';
 function account(name){const user=db.users.create(name,'',bcrypt.hashSync(password,4),'admin');return {user,token:sign(user.id)};}
 function sign(id){const user=db.users.getById(id);return jwt.sign({userId:id,tv:user.token_version||0,sid:createSession(user,{})},process.env.JWT_SECRET);}

@@ -166,6 +166,31 @@ test('VM API creates one hidden workspace and state boundary per VM', async () =
   const runs = await request(app).get(`/api/opentofu/vms/${created.body.id}/runs`).set(auth);
   assert.equal(runs.status, 200);
   assert.deepEqual(runs.body.items, []);
+  const draftState = await request(app).get(`/api/opentofu/vms/${created.body.id}/state`).set(auth);
+  assert.equal(draftState.status, 200);
+  assert.equal(draftState.body.status, 'not_deployed');
+  assert.deepEqual(draftState.body.resources, []);
+  const https = require('https');
+  const {EventEmitter} = require('events');
+  const previousRequest = https.request;
+  let missingLiveVm=false;
+  https.request = (_url, _options, callback) => {
+    const req = new EventEmitter(); req.setTimeout=()=>req; req.end=()=>{
+      const response = new EventEmitter(); response.statusCode=missingLiveVm && String(_url).endsWith('/config') ? 500 : 200; response.setEncoding=()=>{};
+      callback(response);
+      process.nextTick(()=>{response.emit('data',JSON.stringify({data:missingLiveVm ? [] : {ide2:'local-lvm:cloudinit,media=cdrom',scsi0:'local-lvm:vm-45101-disk-0,size=40G',cores:1,memory:1024}}));response.emit('end');});
+    };return req;
+  };
+  try {
+    const live = await request(app).get(`/api/opentofu/vms/${created.body.id}/live`).set(auth);
+    assert.equal(live.status,200);
+    assert.equal(live.body.disk_size_gb,40,'Cloud-init media must not hide the main disk size');
+    missingLiveVm=true;
+    const missing = await request(app).get(`/api/opentofu/vms/${created.body.id}/live`).set(auth);
+    assert.equal(missing.status,200);
+    assert.equal(missing.body.available,false);
+    assert.match(missing.body.reason,/does not exist/);
+  } finally {https.request=previousRequest;}
   const planWithoutBinary = await request(app).post(`/api/opentofu/vms/${created.body.id}/plan`).set(auth).send({});
   assert.equal(planWithoutBinary.status, 500);
   assert.match(planWithoutBinary.body.error, /binary not found/i);

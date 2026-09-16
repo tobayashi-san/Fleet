@@ -348,12 +348,24 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className={started ? "grid items-start gap-4 lg:grid-cols-2" : "space-y-4"}>
       {/* Left: form */}
       <Card className="min-h-0">
         <CardContent className="space-y-4 p-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
             <Play className="h-4 w-4" /> {t("qr.title")}
+          </div>
+          <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 shadow-sm">
+            <p className="min-w-0 flex-1 text-sm"><strong className="break-all">{selPb || "Select a playbook"}</strong><span className="block text-muted-foreground">{selectedTargets.length} hosts selected · {checkMode ? "Dry run" : "Live run"}</span></p>
+            {(!selPb || selectedTargets.length === 0) && <p className="text-sm text-muted-foreground">Select a playbook and at least one host to continue.</p>}
+            <Button onClick={run} disabled={busy || !selPb || selectedTargets.length === 0}>
+              <Play className="h-4 w-4" /> {busy ? (startingRun ? "Starting…" : t("qr.running")) : checkMode ? "Start dry run" : t("qr.run")}
+            </Button>
+            {busy && activeRunId && (
+              <Button variant="destructive" onClick={() => setCancelTarget({id:activeRunId,environment:environmentId})}>
+                <X className="h-4 w-4" /> Cancel run
+              </Button>
+            )}
           </div>
           <div className="space-y-1">
             <Label htmlFor="quick-run-playbook">{t("run.playbook")}</Label>
@@ -526,16 +538,6 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
             </div>
           </details>
           {runConnectionError && <p role="alert" className="text-sm text-destructive">Run status could not be refreshed: {runConnectionError}. The run is still tracked; status will be retried.</p>}
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={run} disabled={busy}>
-              <Play className="h-4 w-4" /> {busy ? (startingRun ? "Starting…" : t("qr.running")) : checkMode ? "Start dry run" : t("qr.run")}
-            </Button>
-            {busy && activeRunId && (
-              <Button variant="destructive" onClick={() => setCancelTarget({id:activeRunId,environment:environmentId})}>
-                <X className="h-4 w-4" /> Cancel run
-              </Button>
-            )}
-          </div>
           <CancelRunDialog target={cancelTarget} onClose={() => setCancelTarget(null)} />
           <ConfirmDialog
             open={confirmAllOpen}
@@ -553,12 +555,12 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
             isPending={busy}
           />
           <Dialog open={reviewOpen} onOpenChange={setReviewOpen}>
-            <DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto">
+            <DialogContent className="flex max-h-[calc(100dvh-2rem)] max-w-2xl flex-col overflow-hidden">
               <DialogHeader>
                 <DialogTitle>Review playbook run</DialogTitle>
                 <DialogDescription>Verify the exact hosts and merged variables before starting Ansible.</DialogDescription>
               </DialogHeader>
-              <div className="space-y-4 text-sm">
+              <div className="min-h-0 space-y-4 overflow-y-auto p-1 text-sm" data-dialog-body>
                 <div className="rounded-md border p-3">
                   <div className="font-medium">{selPb}</div>
                   <div className="mt-1 text-xs text-muted-foreground">{checkMode ? "Dry run" : "Live run"} · {forks} parallel hosts</div>
@@ -587,7 +589,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                   ) : <p className="text-xs text-muted-foreground">No environment or run variables.</p>}
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="shrink-0 border-t pt-3">
                 <Button variant="outline" onClick={() => setReviewOpen(false)}>Back</Button>
                 <Button onClick={() => { setReviewOpen(false); void startRun(reviewAllMode); }} disabled={busy}><Play className="h-4 w-4" /> Start run</Button>
               </DialogFooter>
@@ -596,8 +598,8 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
         </CardContent>
       </Card>
 
-      {/* Right: output */}
-      <Card className="min-h-0">
+      {/* Output only takes space once a run has started. */}
+      {started && <Card className="min-h-0">
         <CardContent className="flex min-h-[28rem] flex-col p-4">
           <div className="flex items-center gap-2 text-sm font-semibold mb-3">
             <Terminal className="h-4 w-4" /> {t("pb.output")}
@@ -625,7 +627,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
             </div>
           )}
         </CardContent>
-      </Card>
+      </Card>}
     </div>
   );
 }

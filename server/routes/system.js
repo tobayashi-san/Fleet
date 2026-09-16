@@ -380,6 +380,7 @@ router.get('/settings', adminOnly, (req, res) => {
       webhookSecret:        raw.webhook_secret  ? '••••••••' : '',
       smtpHost:             raw.smtp_host       || '',
       smtpPort:             raw.smtp_port       || '587',
+      smtpSecurity: raw.smtp_security || (raw.smtp_host ? (raw.smtp_port === '465' ? 'tls' : 'legacy') : 'starttls'),
       smtpUser:             raw.smtp_user       || '',
       hasSmtpPassword:      Boolean(raw.smtp_pass),
       smtpFrom:             raw.smtp_from       || '',
@@ -400,7 +401,7 @@ router.put('/settings', adminOnly, (req, res) => {
   try {
     const { appName, appTagline, accentColor, showIcon, logoIcon, logoImage, theme, timeFormat,
             schedulerTimezone, agentEnabled, webhookUrl, webhookSecret,
-            smtpHost, smtpPort, smtpUser, smtpPass, smtpFrom, smtpTo,
+            smtpHost, smtpPort, smtpSecurity, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed, notifResourceAlerts } = req.body;
     const suppressMaintenance = req.body.notifSuppressMaintenance;
     if (suppressMaintenance !== undefined && typeof suppressMaintenance !== 'boolean') return res.status(400).json({error:'notifSuppressMaintenance must be a boolean.'});
@@ -427,6 +428,8 @@ router.put('/settings', adminOnly, (req, res) => {
     if (notifResourceAlerts !== undefined) {
       if (typeof notifResourceAlerts !== 'boolean') return res.status(400).json({ error: 'notifResourceAlerts must be a boolean' });
     }
+    if (smtpSecurity !== undefined && !['tls','starttls','plain','legacy'].includes(smtpSecurity)) return res.status(400).json({error:'Invalid SMTP transport mode',field:'smtpSecurity'});
+    if (smtpSecurity === 'legacy' && db.settings.get('smtp_security') !== 'legacy' && (!db.settings.get('smtp_host') || db.settings.get('smtp_security'))) return res.status(400).json({error:'Legacy mode is only available for an existing legacy configuration'});
     if (smtpPort !== undefined && !((typeof smtpPort === 'number' && Number.isInteger(smtpPort) || typeof smtpPort === 'string' && /^\d+$/.test(smtpPort)) && Number(smtpPort) >= 1 && Number(smtpPort) <= 65535))
       return res.status(400).json({error:'SMTP port must be a whole number from 1 to 65535.',field:'smtpPort'});
     if (webhookUrl !== undefined) {
@@ -459,6 +462,7 @@ router.put('/settings', adminOnly, (req, res) => {
       if (webhookUrl    !== undefined) db.settings.set('webhook_url',     webhookUrl.trim());
       if (webhookSecret !== undefined && webhookSecret !== '••••••••') setSecret(db, 'webhook_secret',  str(webhookSecret, 500));
       if (smtpHost      !== undefined) db.settings.set('smtp_host',       str(smtpHost, 255));
+      if (smtpSecurity !== undefined) db.settings.set('smtp_security', smtpSecurity);
       if (smtpPort      !== undefined) db.settings.set('smtp_port',       String(Number(smtpPort)));
       if (smtpUser      !== undefined) db.settings.set('smtp_user',       str(smtpUser, 256));
       if (smtpPass      !== undefined) setSecret(db, 'smtp_pass',       str(smtpPass, 500));
@@ -475,7 +479,7 @@ router.put('/settings', adminOnly, (req, res) => {
       }
       if (suppressMaintenance !== undefined) db.settings.set('notify_suppress_maintenance', suppressMaintenance ? '1' : '0');
       if (dedupeMinutes !== undefined) db.settings.set('notify_dedupe_minutes', String(dedupeMinutes));
-      const fields = ['appName','appTagline','accentColor','showIcon','logoIcon','logoImage','theme','timeFormat','schedulerTimezone','agentEnabled','webhookUrl','webhookSecret','smtpHost','smtpPort','smtpUser','smtpPass','smtpFrom','smtpTo','notifPlaybookFailed','notifUpdateFailed','notifResourceAlerts','notifSuppressMaintenance','notifDedupeMinutes'].filter(key=>req.body[key]!==undefined);
+      const fields = ['appName','appTagline','accentColor','showIcon','logoIcon','logoImage','theme','timeFormat','schedulerTimezone','agentEnabled','webhookUrl','webhookSecret','smtpHost','smtpPort','smtpSecurity','smtpUser','smtpPass','smtpFrom','smtpTo','notifPlaybookFailed','notifUpdateFailed','notifResourceAlerts','notifSuppressMaintenance','notifDedupeMinutes'].filter(key=>req.body[key]!==undefined);
       db.auditLog.write('system.settings', `Updated settings: ${fields.join(', ')}`, req.ip, true, req.user?.username);
     })();
     if (schedulerTimezone !== undefined) scheduler.reloadAllSchedules();

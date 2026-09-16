@@ -562,12 +562,21 @@ function RolesPanel() {
             key={r.id}
             noBorder={i === builtIn.length - 1}
             label={<span className="flex items-center gap-2"><Lock className="h-3 w-3 text-muted-foreground" /> {r.name}</span>}
-            hint={r.id === 'admin' ? 'Full access to everything' : 'Default access — all servers, playbooks and features'}
+            hint={r.id === 'admin' ? 'Full access to everything' : 'All regular capabilities and resources. No administration, Git management or role management.'}
           >
             <Badge variant="secondary">{t('set.builtIn')}</Badge>
           </SettingsRow>
         ))}
       </SettingsSection>
+
+      {rolesQ.isSuccess && <details className="rounded-md border bg-card p-4">
+        <summary className="cursor-pointer font-medium">Compare role permissions</summary>
+        <p className="my-3 text-sm text-muted-foreground">Capabilities below use effective server-provided permissions. Resource restrictions still apply. Administration is reserved for administrators.</p>
+        <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th className="p-2">Capability</th>{roles.map(role => <th key={role.id} className="p-2">{role.name}</th>)}</tr></thead><tbody>
+          <tr><th className="p-2 font-normal">Administration / Git / roles</th>{roles.map(role => <td key={role.id} className="p-2">{role.id === 'admin' ? 'Allowed' : 'Not allowed'}</td>)}</tr>
+          {ALL_CAPS.map(cap => <tr key={cap.key} className="border-t"><th className="p-2 font-normal">{[...SERVER_CAPS].includes(cap) ? "Hosts" : DOCKER_CAPS.includes(cap) ? "Workloads" : UPDATE_CAPS.includes(cap) ? "Updates" : PLAYBOOK_CAPS.includes(cap) ? "Playbooks" : SCHEDULE_CAPS.includes(cap) ? "Schedules" : VAR_CAPS.includes(cap) ? "Variables" : "Other"}: {cap.label}</th>{roles.map(role => <td key={role.id} className="p-2">{role.id === 'admin' ? 'Allowed' : role.effectivePermissions ? role.effectivePermissions[cap.key] === true ? 'Allowed' : 'Not allowed' : 'Not reported'}</td>)}</tr>)}
+        </tbody></table></div>
+      </details>}
 
       <SettingsSection
         icon={<ShieldCheck className="h-4 w-4" />}

@@ -1121,7 +1121,7 @@ export function MaintenanceWindowDialog({
   if (!window) return null;
   return (<>
     <Dialog open onOpenChange={(open) => !open && requestClose()}>
-      <DialogContent className="max-w-2xl max-h-[calc(100dvh-2rem)] overflow-y-auto">
+      <DialogContent className="flex max-w-2xl max-h-[calc(100dvh-2rem)] flex-col overflow-hidden">
         <DialogHeader>
           <DialogTitle>
             {initial ? "Edit maintenance window" : "Schedule maintenance window"}
@@ -1132,7 +1132,7 @@ export function MaintenanceWindowDialog({
           </DialogDescription>
         </DialogHeader>
         <form
-          className="min-w-0 space-y-4"
+          className="flex min-h-0 min-w-0 flex-col overflow-hidden"
           onInput={markEdited}
           onChange={markEdited}
           onSubmit={(event) => {
@@ -1142,6 +1142,7 @@ export function MaintenanceWindowDialog({
             saveMutation.mutate();
           }}
         >
+          <div className="min-h-0 space-y-4 overflow-y-auto overscroll-contain p-1" data-dialog-body>
           {contextChanged && <p role="alert" className="text-sm text-destructive">This draft belongs to {openedEnvironment}. Return to that environment to save, or discard the draft.</p>}
           <fieldset disabled={saveMutation.isPending || contextChanged} className="min-w-0 space-y-4">
           <div className="space-y-1.5">
@@ -1288,7 +1289,8 @@ export function MaintenanceWindowDialog({
               <div className="max-h-72 overflow-auto"><table className="w-full table-fixed text-xs"><thead><tr><th>Field</th><th>Current saved value</th><th>Your draft</th></tr></thead><tbody>{comparison.map(([label,current,draft])=><tr key={label} className={current!==draft?'bg-amber-500/10':''}><th className="align-top text-left">{label}</th><td className="break-words p-2 align-top">{current||'—'}</td><td className="break-words p-2 align-top">{draft||'—'}</td></tr>)}</tbody></table></div>
               {latestWindow.can_edit===false?<p role="alert" className="text-sm text-destructive">You can no longer edit this window's scope.</p>:<Button type="button" variant="outline" disabled={contextChanged} onClick={()=>{setReviewedRevision(latestWindow.revision);setLatestWindow(null);saveMutation.reset();}}>Use my draft against this version</Button>}</>}
           </div>}
-          <DialogFooter>
+          </div>
+          <DialogFooter className="shrink-0 border-t bg-card pt-3 mt-3">
             <Button type="button" variant="outline" onClick={requestClose} disabled={saveMutation.isPending}>
               Cancel
             </Button>
@@ -1510,7 +1512,7 @@ function OperationList({
                 <span className="whitespace-normal break-words">{row.completed_at ? "Completed" : "Started"}: <Timestamp value={row.time} /></span>
               </div>
             </button>
-            <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} className="mx-4 mb-3 inline-block text-xs text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
+            <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="mx-4 mb-3 inline-block text-xs text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
             <div className="px-4 pb-2"><GroupedExecutionLinks row={row} /></div>
             {row.target_detail && (
               <div className="px-4 pb-3 text-xs">

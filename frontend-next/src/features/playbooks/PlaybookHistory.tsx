@@ -155,7 +155,7 @@ export function HistoryTab() {
               </table>
             </div>
           )}
-          {historyQuery.data && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
+          {historyQuery.data && (historyQuery.data.total > 0 || page > 1) && <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-xs">
             <p>{historyQuery.data.total} matching entries · Page {page} of {Math.max(1, Math.ceil(historyQuery.data.total / historyQuery.data.pageSize))}</p>
             <div className="flex gap-2">
               <Button size="sm" variant="outline" disabled={page <= 1 || historyQuery.isFetching} onClick={() => setPage(page - 1)}>Previous</Button>

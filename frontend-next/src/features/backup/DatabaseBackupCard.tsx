@@ -1,3 +1,4 @@
+import {useQueryClient} from '@tanstack/react-query';
 import {useRef,useState} from 'react';
 import {apiDownload} from '@/lib/api';
 import {Button} from '@/components/ui/button';
@@ -5,6 +6,7 @@ import {Input} from '@/components/ui/input';
 import {Card,CardHeader,CardTitle,CardContent} from '@/components/ui/card';
 
 export function DatabaseBackupCard() {
+  const qc=useQueryClient();
   const [password,setPassword]=useState('');
   const [code,setCode]=useState('');
   const [passphrase,setPassphrase]=useState('');
@@ -24,6 +26,7 @@ export function DatabaseBackupCard() {
     try {
       await apiDownload('/system/database-backup',`shipyard-database-${new Date().toISOString().slice(0,10)}.backup`,{body:{password,code,passphrase,scope:'all-environments-database'}});
       setComplete(true);
+      void qc.invalidateQueries({queryKey:['recovery-status']});
     } catch(error) {setError(error instanceof Error ? error.message : 'Backup could not be created');}
     finally {setPassword('');setCode('');setPassphrase('');setRepeat('');setPending(false);inFlight.current=false;}
   }

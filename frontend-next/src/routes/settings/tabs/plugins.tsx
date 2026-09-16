@@ -146,12 +146,15 @@ function PluginList({ plugins }: { plugins: PluginInfo[] }) {
             <>
               {p.description && <span className="block">{p.description}</span>}
               <span className="mt-1 block">Package ID: <code>{p.id}</code> · Source: local installation</span>
+              <span className="block">Runtime: {p.loaded ? 'Loaded' : 'Not loaded'} · User access: {p.enabled ? 'Allowed' : 'Blocked'}</span>
+              <details className="mt-2"><summary className="cursor-pointer">Technical details</summary>
               {p.packageStatus && <span className="block">Installed version: {p.packageStatus.installedVersion || 'unavailable'} · Last registered version: {p.packageStatus.loadedVersion || 'unavailable'}<span className={p.packageStatus.state === 'reload-required' || p.packageStatus.state === 'unreadable' ? 'block text-amber-600 dark:text-amber-400' : 'block'}>{p.packageStatus.state === 'reload-required' ? 'Installed version differs. Review the package before reloading.' : p.packageStatus.state === 'unreadable' ? 'Installed manifest cannot be read. Review the server package.' : p.packageStatus.state === 'version-unavailable' ? 'Version comparison unavailable: a package version is not declared.' : 'Version labels match; this does not verify unchanged package contents.'} Checked {formatDateTime(p.packageStatus.checkedAt)}.</span></span>}
               <span className="block">Runtime: {p.loaded ? 'Loaded' : 'Not loaded'} · Requirements: {p.compatibility?.status === 'compatible' ? 'Declared version ranges satisfied' : p.compatibility?.status === 'incompatible' ? 'Incompatible — loading blocked' : p.compatibility?.status === 'invalid' ? 'Invalid declaration — loading blocked' : 'Not declared; compatibility is unverified'}</span>
               {p.compatibility?.requirements.map(requirement=><span key={requirement.name} className="block">{requirement.name}: {requirement.current} · Requires {requirement.range} · {requirement.matches ? 'Matches' : 'Does not match'}</span>)}
               {p.loaded && p.hasUi === false && <span className="block">Backend-only package · No web interface</span>}
               {p.loaded && <span className="block">Registration succeeded; plugin workflows still require verification.</span>}
               {p.trust ? <span className="block">Trust: {p.trust.trusted ? 'Digest matches configured allowlist' : 'No matching allowlist entry'} · Policy: {p.trust.policy}<span className="block">Digest scope: {p.trust.scope || 'Not reported by this server'} · Scheme: {p.trust.scheme || 'Unspecified'}</span><code className="mt-1 block break-all text-[10px]">SHA-256 {p.trust.digest}</code></span> : <span className="block">Trust metadata unavailable.</span>}
+              </details>
               <span className="mt-1 block">Access: server process privileges. Disabling plugin access does not unload registered server code.</span>
               {!p.loaded && (
                 <span className="mt-1 flex items-center gap-1 text-destructive">
@@ -167,12 +170,12 @@ function PluginList({ plugins }: { plugins: PluginInfo[] }) {
               <Button variant="outline" size="sm">{t('plugins.open')}</Button>
             </Link>
           )}
-          <Switch
+          <label className="flex items-center gap-2 text-xs">Allow user access<Switch
             checked={!!p.enabled}
             disabled={!p.loaded || busyId !== null}
             aria-label={`Enable access to ${p.name || p.id}`}
             onCheckedChange={(v) => onToggle(p, v)}
-          />
+          /></label>
           <StatusBadge tone={p.enabled ? 'success' : 'muted'} dot>
             {p.enabled ? t('set.pluginsEnabled') : t('set.pluginsDisabled')}
           </StatusBadge>

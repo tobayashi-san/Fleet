@@ -118,3 +118,18 @@ test('invalid SSH ports reject before persistence or connection testing', async 
  assert.equal(imported.body.skipped,1);
  assert.match(imported.body.errors[0],/SSH port/);
 });
+
+test('quality distinguishes failed attempts from stale results and clears failure after successful refresh', async()=>{
+ const host=db.servers.create({name:'quality-host',hostname:'quality',ip_address:'192.0.2.90'});
+ const read=async()=> (await request(app).get('/dashboard')).body.servers.find(s=>s.id===host.id).check_quality;
+ assert.equal((await read()).find(c=>c.kind==='os').state,'not_checked');
+ assert.equal((await read()).find(c=>c.kind==='custom').state,'not_applicable');
+ db.updatesCache.set(host.id,[]);
+ db.checkAttempts.failed(host.id,'os','Package manager unavailable');
+ const failed=(await read()).find(c=>c.kind==='os');
+ assert.equal(failed.state,'failed');assert.ok(failed.checked_at);assert.ok(failed.attempted_at);
+ db.updatesCache.set(host.id,[]);
+ assert.equal((await read()).find(c=>c.kind==='os').state,'current');
+ db.db.prepare("UPDATE server_updates_cache SET updated_at='2000-01-01' WHERE server_id=?").run(host.id);
+ assert.equal((await read()).find(c=>c.kind==='os').state,'stale');
+});

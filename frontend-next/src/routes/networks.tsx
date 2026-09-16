@@ -1080,6 +1080,15 @@ function IpamSourcesContent({
                                   outside: source.ignored_count || 0,
                                 })}
                               </p>
+                              <details className="mt-3 rounded-md border p-2 text-xs">
+                                <summary className="cursor-pointer font-medium">{tr('syncDiagnostics')}</summary>
+                                <div className="mt-2 space-y-2">
+                                  <p>{tr('diagnosticScope', { scope: source.type === 'unifi' ? `UniFi site ${source.site || 'default'} · ${source.path || 'configured endpoint'}` : `pfSense ${source.path || 'configured endpoint'}` })}</p>
+                                  <p>{source.last_status === 'failed' ? tr('diagnosticFailed') : !source.last_synced_at ? tr('noImport') : !source.record_count ? tr('diagnosticEmpty') : tr('diagnosticCounts', { total: source.record_count, imported: source.inventory_count || 0, outside: source.ignored_count || 0 })}</p>
+                                  <p>{!source.record_count ? tr('diagnosticEmptyChecks') : source.ignored_count ? tr('diagnosticOutside') : tr('diagnosticCompare')}</p>
+                                  <p>{tr('diagnosticCompleteness')}</p>
+                                </div>
+                              </details>
                               <div className="mt-1">
                                 {source.conflict_count ? (
                                   <Badge variant="destructive">

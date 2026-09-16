@@ -333,6 +333,9 @@ test('workflow history preserves original schedule, playbook, targets and dry-ru
   const manual=db.scheduleHistory.create(null,'Manual run','update.yml',visibleHost.name);
   const manualResponse=await request(app).get(`/api/operations/workflow-${manual}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
   assert.equal(manualResponse.status,200);assert.equal(manualResponse.body.schedule_deleted,false);assert.equal(manualResponse.body.check_mode,false);
+  assert.equal(manualResponse.body.host_results[0].name, visibleHost.name);
+  assert.equal(manualResponse.body.host_results[0].status, 'unknown');
+  assert.equal(manualResponse.body.host_results[0].ok, null);
 });
 
 
@@ -357,6 +360,8 @@ test('workflow endpoints bind access and host association to recorded IDs across
  assert.equal((await request(app).get(`/api/schedule-history/${run}`).set(newHeaders)).status,403);
  assert.equal((await request(app).get(`/api/operations/workflow-${run}/details`).set(newHeaders)).status,404);
  const list=await request(app).get('/api/schedule-history').set(newHeaders);assert.equal(list.body.some(row=>row.id===run),false);
+ const adminDetails=await request(app).get(`/api/operations/workflow-${run}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
+ assert.equal(adminDetails.body.host_results[0].server_id,null);
  const history=await request(app).get(`/api/servers/${replacement.id}/history`).set(newHeaders);assert.equal(history.body.some(row=>row.id===run),false);
 });
 

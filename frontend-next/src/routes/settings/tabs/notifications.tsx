@@ -3,7 +3,7 @@ import { formatDateTime } from '@/lib/utils';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Globe, Mail, Bell, Save, Send } from 'lucide-react';
+import { Bell, Save, Send } from 'lucide-react';
 import { api, apiFetch } from '@/lib/api';
 import { showToast } from '@/lib/toast';
 import { useSettings } from '@/lib/queries';
@@ -17,6 +17,7 @@ interface WhiteLabel {
   webhookUrl?: string;
   webhookSecret?: string;
   smtpHost?: string;
+  smtpSecurity?: string;
   smtpPort?: string | number;
   smtpUser?: string;
   hasSmtpPassword?: boolean;
@@ -29,8 +30,14 @@ interface WhiteLabel {
   notifResourceAlerts?: boolean;
 }
 
+function NotificationSection({title, status, dirty = false, children}: {title:string; status:string; dirty?:boolean; children:React.ReactNode}) {
+  return <details className="rounded-md border bg-card" data-notification-section>
+    <summary className="cursor-pointer p-4 text-sm marker:text-muted-foreground"><span className="font-semibold">{title}</span><span className="mt-1 block pl-4 text-muted-foreground">{status}</span>{dirty && <span role="status" className="mt-1 block pl-4 font-medium text-warning">Unsaved changes · expand to save or discard</span>}</summary>
+    <div className="border-t px-4 pb-3">{children}</div>
+  </details>;
+}
+
 export function NotificationsTab() {
-  const { t } = useTranslation();
   const settingsQuery = useSettings();
   const wl = (settingsQuery.data as unknown as WhiteLabel) || {};
   if (settingsQuery.isPending) return <p role="status" className="text-sm text-muted-foreground">Loading notification settings…</p>;
@@ -39,22 +46,11 @@ export function NotificationsTab() {
   return (
     <div className="space-y-4">
       {settingsQuery.isError && <QueryErrorState compact title="Notification settings could not be refreshed" error={settingsQuery.error} onRetry={() => void settingsQuery.refetch()} />}
-      <fieldset disabled={settingsQuery.isError} className="contents">
-      <SettingsSection icon={<Globe className="h-4 w-4" />} title={t('set.webhooks')}>
-        <WebhookForm wl={wl} />
-      </SettingsSection>
-
-      <SettingsSection icon={<Mail className="h-4 w-4" />} title={t('set.smtp')}>
-        <SmtpForm wl={wl} />
-      </SettingsSection>
-
-      <SettingsSection
-        icon={<Bell className="h-4 w-4" />}
-        title={t('set.notificationEvents')}
-        description={t('set.notificationEventsHint')}
-      >
-        <NotificationToggles wl={wl} />
-      </SettingsSection>
+      <section aria-label="Notification overview" className="rounded-md border p-4 text-sm"><h2 className="font-semibold">This installation · saved notification configuration</h2><p>Webhook: {wl.webhookUrl ? 'Configured' : 'Not configured'} · Email: {wl.smtpHost && wl.smtpTo ? 'Configured' : 'Not configured'}</p><p>Enabled events: {[wl.notifPlaybookFailed !== false && 'Playbook failures',wl.notifUpdateFailed !== false && 'Update failures'].filter(Boolean).join(', ') || 'None'}. Events use the configured global channels, subject to suppression rules.</p>{!wl.webhookUrl && !(wl.smtpHost && wl.smtpTo) && <p className="mt-2 text-warning">Configure a channel to deliver notifications.</p>}<p className="text-xs text-muted-foreground">Configured does not mean tested. Review channel tests and delivery history below.</p></section>
+      <fieldset disabled={settingsQuery.isError} className="min-w-0 space-y-4">
+      <WebhookForm wl={wl} />
+      <SmtpForm wl={wl} />
+      <NotificationToggles wl={wl} />
       <DeliveryHistory />
       </fieldset>
     </div>
@@ -95,6 +91,7 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
   });
 
   return (
+    <NotificationSection title="Webhook" dirty={dirty} status={`${wl.webhookUrl ? "Configured" : "Not configured"} · ${test.isPending ? "Testing…" : test.isSuccess ? "Last test accepted" : test.isError ? "Last test failed" : "Not tested in this session"} · Configure webhook`}>
     <form onSubmit={(event) => { event.preventDefault(); if (!save.isPending && !test.isPending && dirty) save.mutate(); }} className="contents">
       <SettingsRow label={t('set.webhookUrl')} hint={t('set.webhookUrlHint')}>
         <Input
@@ -109,7 +106,7 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
         />
       </SettingsRow>
 
-      <SettingsRow label={t('set.webhookSecret')} hint="Leave unchanged to keep the saved secret. Enter a replacement or explicitly remove it.">
+      <SettingsRow label={t('set.webhookSecret')} hint="Unchanged fields keep the saved secret.">
         <Input
           aria-label={t('set.webhookSecret')}
           name="webhookSecret"
@@ -123,6 +120,7 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
         />
       </SettingsRow>
 
+      {dirty && <p role="status" className="text-sm">Unsaved webhook changes</p>}
       {secret === '' && <p role="status" className="text-sm text-warning">The saved webhook secret will be removed when you save.</p>}
       {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
       <SettingsRow noBorder>
@@ -139,6 +137,7 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
         <p role="status" className="text-xs text-muted-foreground">{dirty ? 'Save your changes before testing this channel.' : test.isPending ? 'Sending test notification…' : test.isSuccess ? `Test from ${formatDateTime(test.submittedAt)} accepted by the channel. Verify receipt at the destination.` : test.isError ? `Test failed at ${formatDateTime(test.submittedAt)}: ${(test.error as Error).message}` : 'No test performed in this session.'}</p>
       </SettingsRow>
     </form>
+    </NotificationSection>
   );
 }
 
@@ -149,9 +148,9 @@ function WebhookForm({ wl }: { wl: WhiteLabel }) {
 function SmtpForm({ wl }: { wl: WhiteLabel }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const saved = {host:wl.smtpHost || '',port:String(wl.smtpPort || '587'),user:wl.smtpUser || '',from:wl.smtpFrom || '',to:wl.smtpTo || ''};
+  const saved = {security:wl.smtpSecurity || (wl.smtpHost ? (String(wl.smtpPort) === '465' ? 'tls' : 'legacy') : 'starttls'),host:wl.smtpHost || '',port:String(wl.smtpPort || '587'),user:wl.smtpUser || '',from:wl.smtpFrom || '',to:wl.smtpTo || ''};
   const [draft, setDraft] = useState<typeof saved | null>(null);
-  const {host,port,user,from,to} = draft ?? saved;
+  const {security,host,port,user,from,to} = draft ?? saved;
   const update = (key:keyof typeof saved,value:string) => setDraft({...draft ?? saved,[key]:value});
   const [pass, setPass] = useState<string | null>(null);
   const dirty = JSON.stringify(draft ?? saved) !== JSON.stringify(saved) || pass !== null;
@@ -159,6 +158,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
 
   const save = useMutation({
     mutationFn: () => api.saveSettings({
+      smtpSecurity: security,
       smtpHost: host.trim(),
       smtpPort: port.trim(),
       smtpUser: user.trim(),
@@ -169,7 +169,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
     onSuccess: () => {
       test.reset();
       showToast(t('set.smtpSaved'), 'success');
-      qc.setQueryData(['settings'], (previous:WhiteLabel | undefined) => ({...previous,smtpHost:host.trim(),smtpPort:port.trim(),smtpUser:user.trim(),smtpFrom:from.trim(),smtpTo:to.trim(),hasSmtpPassword:pass === null ? previous?.hasSmtpPassword : Boolean(pass)}));
+      qc.setQueryData(['settings'], (previous:WhiteLabel | undefined) => ({...previous,smtpSecurity:security,smtpHost:host.trim(),smtpPort:port.trim(),smtpUser:user.trim(),smtpFrom:from.trim(),smtpTo:to.trim(),hasSmtpPassword:pass === null ? previous?.hasSmtpPassword : Boolean(pass)}));
       setPass(null);
       setDraft(null);
       qc.invalidateQueries({ queryKey: ['settings'] });
@@ -184,17 +184,19 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
   });
 
   return (
+    <NotificationSection title="Email (SMTP)" dirty={dirty} status={`${wl.smtpHost && wl.smtpTo ? "Configured" : "Not configured"} · ${test.isPending ? "Testing…" : test.isSuccess ? "Last test accepted" : test.isError ? "Last test failed" : "Not tested in this session"} · Configure email`}>
     <form onSubmit={(event) => { event.preventDefault(); if (!save.isPending && !test.isPending && dirty) save.mutate(); }} className="contents">
-      <SettingsRow label={t('set.smtpHost')} hint="Enter a hostname or IP address. Port 465 uses implicit TLS; other ports use STARTTLS when offered by the server.">
+      <SettingsRow label={t('set.smtpHost')} hint="Hostname and port supplied by your mail provider.">
         <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-[1fr_90px]">
           <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpHost')} name="smtpHost" value={host} onChange={(e) => update('host',e.target.value)} placeholder="smtp.example.com" />
           <Input disabled={save.isPending || test.isPending} aria-label={`${t('set.smtpHost')} port`} name="smtpPort" value={port} onChange={(e) => update('port',e.target.value)} type="number" min={1} max={65535} step={1} required placeholder="587" />
         </div>
       </SettingsRow>
+      <SettingsRow label="SMTP transport" hint="This installation · Required STARTTLS refuses delivery if encryption cannot be established."><select aria-label="SMTP transport" className="h-9 rounded-sm border bg-background px-3 text-sm" disabled={save.isPending || test.isPending} value={security} onChange={e => update('security',e.target.value)}><option value="starttls">Required STARTTLS (usually 587)</option><option value="tls">Implicit TLS (usually 465)</option><option value="plain">Unencrypted lab relay</option>{saved.security === 'legacy' && <option value="legacy">Legacy: STARTTLS when offered</option>}</select>{security === 'plain' && <p className="text-sm text-warning">Mail and credentials may be transmitted without encryption.</p>}{security === 'legacy' && <p className="text-sm text-warning">Existing behavior retained. Select an explicit mode to require encryption.</p>}</SettingsRow>
       <SettingsRow label={t('set.smtpUser')}>
         <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpUser')} name="smtpUsername" value={user} onChange={(e) => update('user',e.target.value)} placeholder="user@example.com" autoComplete="username" className="max-w-md" />
       </SettingsRow>
-      <SettingsRow label={t('set.smtpPass')} hint="Leave unchanged to retain the stored password. Enter a replacement or explicitly remove it.">
+      <SettingsRow label={t('set.smtpPass')} hint="Unchanged fields keep the saved password.">
         <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpPass')} name="smtpPassword" type="password" value={pass ?? ''} onChange={(e) => setPass(e.target.value)} placeholder={wl.hasSmtpPassword ? 'Saved password · leave unchanged to keep' : 'No saved password'} autoComplete="new-password" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpFrom')}>
@@ -203,6 +205,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
       <SettingsRow label={t('set.smtpTo')} hint={t('set.smtpToHint')}>
         <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpTo')} name="smtpTo" type="email" multiple value={to} onChange={(e) => update('to',e.target.value)} placeholder="admin@example.com" className="max-w-md" />
       </SettingsRow>
+      {dirty && <p role="status" className="text-sm">Unsaved email changes</p>}
       {pass === '' && <p role="status" className="text-sm text-warning">The saved SMTP password will be removed when you save.</p>}
       {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
       <SettingsRow noBorder>
@@ -219,6 +222,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
         <p role="status" className="text-xs text-muted-foreground">{dirty ? 'Save your changes before testing this channel.' : test.isPending ? 'Sending test notification…' : test.isSuccess ? `Test from ${formatDateTime(test.submittedAt)} accepted by the channel. Verify receipt at the destination.` : test.isError ? `Test failed at ${formatDateTime(test.submittedAt)}: ${(test.error as Error).message}` : 'No test performed in this session.'}</p>
       </SettingsRow>
     </form>
+    </NotificationSection>
   );
 }
 
@@ -227,50 +231,27 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
 // ─────────────────────────────────────────────────────────────
 
 function NotificationToggles({ wl }: { wl: WhiteLabel }) {
-  const { t } = useTranslation();
   const qc = useQueryClient();
-
-  const items: { key: 'notifPlaybookFailed' | 'notifUpdateFailed' | 'notifResourceAlerts'; label: string; hint: string; inactive?: boolean }[] = [
-    { key: 'notifPlaybookFailed', label: t('set.notifyPlaybookFailure'), hint: t('set.notifyPlaybookFailureHint') },
-    { key: 'notifUpdateFailed',   label: t('set.notifyUpdateFailure'),   hint: t('set.notifyUpdateFailureHint') },
-    { key: 'notifResourceAlerts', label: t('set.notifyResourceAlerts'), hint: 'Monitoring is inactive in this build. This retained preference does not send alerts.', inactive: true },
-  ];
-
-  const save = useMutation({
-    mutationFn: (patch: Partial<WhiteLabel>) => api.saveSettings(patch),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['settings'] }),
-    onError: () => showToast(t('set.toastErrorSave'), 'error'),
-  });
-
-  return (
-    <>
-      <SettingsRow label="Suppress identical repeats" hint="After channel acceptance, suppress identical events in the same known environment for this period. Changed messages and later attempts after failed delivery are not suppressed. Tests bypass suppression. The cache resets when Shipyard restarts.">
-        <select aria-label="Duplicate suppression period" className="h-9 rounded-sm border border-input bg-background px-3 text-sm" disabled={save.isPending} value={wl.notifDedupeMinutes || 0} onChange={event => save.mutate({notifDedupeMinutes:Number(event.target.value)})}>
-          {[...new Set([0,1,5,15,30,60,wl.notifDedupeMinutes || 0])].sort((a,b)=>a-b).map(minutes=><option key={minutes} value={minutes}>{minutes ? `${minutes} ${minutes === 1 ? 'minute' : 'minutes'}` : 'Disabled'}</option>)}
-        </select>
-      </SettingsRow>
-      <SettingsRow label="Suppress during maintenance" hint="Suppress host-related notifications only when all recorded hosts are covered by active maintenance in their environment. Entire-environment windows cover all current hosts; impact notes do not narrow scope. Unknown targets and channel tests are still sent. Suppressed events remain in delivery history.">
-        <Switch aria-label="Suppress during maintenance" checked={wl.notifSuppressMaintenance === true} disabled={save.isPending} onCheckedChange={value => save.mutate({notifSuppressMaintenance:value})} />
-      </SettingsRow>
-      {items.map((it, i) => (
-        <SettingsRow
-          key={it.key}
-          label={it.label}
-          hint={it.hint}
-          noBorder={i === items.length - 1}
-        >
-          <Switch
-            aria-label={it.label}
-            disabled={save.isPending || it.inactive}
-            checked={wl[it.key] !== false}
-            onCheckedChange={(v) => save.mutate({ [it.key]: v })}
-          />
-        </SettingsRow>
-      ))}
-      {save.isPending && <p role="status" className="py-2 text-xs text-muted-foreground">Saving notification preferences…</p>}
-      {save.isError && <p role="alert" className="py-2 text-sm text-destructive">Notification preferences were not saved: {(save.error as Error).message}</p>}
-    </>
-  );
+  const saved = {notifDedupeMinutes:wl.notifDedupeMinutes || 0,notifSuppressMaintenance:wl.notifSuppressMaintenance === true,notifPlaybookFailed:wl.notifPlaybookFailed !== false,notifUpdateFailed:wl.notifUpdateFailed !== false};
+  const [draft,setDraft] = useState<typeof saved | null>(null);
+  const values = draft ?? saved;
+  const dirty = JSON.stringify(values) !== JSON.stringify(saved);
+  useUnsavedChanges(dirty);
+  const save = useMutation({mutationFn:()=>api.saveSettings(values),onSuccess:()=>{qc.setQueryData(['settings'],(old:WhiteLabel|undefined)=>({...old,...values}));setDraft(null);void qc.invalidateQueries({queryKey:['settings']});showToast('Notification preferences saved','success');}});
+  return <NotificationSection title="Notification events" dirty={dirty} status={`${Number(saved.notifPlaybookFailed) + Number(saved.notifUpdateFailed)} failure events enabled · Edit events and suppression`}><fieldset disabled={save.isPending} className="contents">
+    <SettingsRow label="Suppress identical repeats" hint="After channel acceptance, suppress identical events in the same known environment. Failed deliveries may retry. Tests bypass suppression; the cache resets on restart.">
+      <select aria-label="Duplicate suppression period" className="h-9 rounded-sm border bg-background px-3 text-sm" value={values.notifDedupeMinutes} onChange={e=>setDraft({...values,notifDedupeMinutes:Number(e.target.value)})}>{[...new Set([0,1,5,15,30,60,saved.notifDedupeMinutes])].sort((a,b)=>a-b).map(v=><option key={v} value={v}>{v ? `${v} minutes` : 'Disabled'}</option>)}</select>
+    </SettingsRow>
+    {([
+      ['notifSuppressMaintenance','Suppress during maintenance','Only when all recorded hosts are covered by active maintenance in their environment. Unknown targets and channel tests are sent. Suppression remains in delivery history.'],
+      ['notifPlaybookFailed','Playbook failures','Send failed playbook execution events to configured channels.'],
+      ['notifUpdateFailed','Update failures','Send failed update execution events to configured channels.'],
+    ] as const).map(([key,label,hint])=><SettingsRow key={key} label={label} hint={hint}><Switch aria-label={label} checked={values[key]} onCheckedChange={value=>setDraft({...values,[key]:value})}/></SettingsRow>)}
+    <p className="py-2 text-xs text-muted-foreground">Resource monitoring alerts are unavailable in this build.</p>
+    {dirty && <p role="status" className="text-sm">Unsaved changes</p>}
+    {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}
+    <SettingsRow noBorder><Button disabled={!dirty} onClick={()=>save.mutate()}>Save notification preferences</Button><Button variant="outline" disabled={!dirty} onClick={()=>setDraft(null)}>Discard changes</Button></SettingsRow>
+  </fieldset></NotificationSection>;
 }
 
 
@@ -281,13 +262,13 @@ function DeliveryHistory() {
     queryFn: () => apiFetch<{ items: Array<{ id: string; channel: string; destination: string; event_title: string; status: string; status_code: number | null; duration_ms: number; created_at: string }>; total: number; total_pages: number }>(`/system/notification-deliveries?page=${page}`),
     refetchInterval: 30_000,
   });
-  return <SettingsSection icon={<Bell className="h-4 w-4" />} title="Delivery history" description="Global notification channels · up to 1,000 attempts from the last 30 days. Duplicate suppressed means no new send was attempted. Accepted means the endpoint accepted the request, not that a person read it.">
+  return <details className="rounded-md border bg-card"><summary className="cursor-pointer p-4 text-sm font-semibold">Delivery history<span className="mt-1 block pl-4 font-normal text-muted-foreground">{history.isPending ? "Loading…" : history.isError ? "History unavailable" : `${history.data.total} recorded attempts`} · Inspect delivery results</span></summary><SettingsSection className="border-0" icon={<Bell className="h-4 w-4" />} title="Delivery history" description="Global notification channels · up to 1,000 attempts from the last 30 days. Duplicate suppressed means no new send was attempted. Accepted means the endpoint accepted the request, not that a person read it.">
     <div className="space-y-3 py-3">
       <Button type="button" variant="outline" size="sm" disabled={history.isFetching} onClick={() => void history.refetch()}>Refresh history</Button>
       {history.isPending ? <p role="status" className="text-sm">Loading delivery attempts…</p> : history.isError ? <QueryErrorState compact error={history.error} title="Delivery history unavailable" onRetry={() => void history.refetch()} /> : <>
         {!history.data.items.length ? <p className="text-sm text-muted-foreground">No recorded attempts on this page. History begins with this feature; earlier deliveries are not reconstructed.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{['Time', 'Channel / destination', 'Event', 'Result'].map(label => <th key={label} className="border-b px-2 py-2">{label}</th>)}</tr></thead><tbody>{history.data.items.map(item => <tr key={item.id}><td className="border-b px-2 py-2">{formatDateTime(item.created_at)}</td><td className="border-b px-2 py-2">{item.channel.toUpperCase()}<span className="block text-muted-foreground">{item.destination}</span></td><td className="border-b px-2 py-2">{item.event_title}</td><td className="border-b px-2 py-2"><span className={['failed','partial'].includes(item.status) ? 'text-destructive' : 'text-muted-foreground'}>{item.status === 'maintenance' ? 'Maintenance suppressed' : item.status === 'suppressed' ? 'Duplicate suppressed' : item.status === 'partial' ? 'Some recipients rejected' : item.status === 'failed' ? 'Failed' : item.status === 'accepted' ? 'Accepted' : 'Unknown'}</span>{item.status_code ? ` · HTTP ${item.status_code}` : ''}<span className="block text-muted-foreground">{item.duration_ms} ms</span></td></tr>)}</tbody></table></div>}
-        <div className="flex items-center justify-between gap-3 text-xs"><Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page} / {history.data.total_pages} · {history.data.total} attempts</span><Button type="button" size="sm" variant="outline" disabled={page >= history.data.total_pages} onClick={() => setPage(page + 1)}>Next</Button></div>
+        {(history.data.total > 0 || page > 1) && <div className="flex items-center justify-between gap-3 text-xs"><Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page} / {history.data.total_pages} · {history.data.total} attempts</span><Button type="button" size="sm" variant="outline" disabled={page >= history.data.total_pages} onClick={() => setPage(page + 1)}>Next</Button></div>}
       </>}
     </div>
-  </SettingsSection>;
+  </SettingsSection></details>;
 }

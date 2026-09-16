@@ -158,7 +158,8 @@ function registerIsolatedVmRoutes({
         if (split > 0) result[item.slice(0, split)] = item.slice(split + 1);
         return result;
       }, {});
-      const diskEntry = Object.entries(value).find(([key, raw]) => /^(?:scsi|virtio|sata|ide)\d+$/.test(key) && typeof raw === 'string');
+      const disks = Object.entries(value).filter(([key, raw]) => /^(?:scsi|virtio|sata|ide)\d+$/.test(key) && typeof raw === 'string' && !/(?:^|,)media=cdrom(?:,|$)/.test(raw));
+      const diskEntry = disks.find(([key]) => key === vm.disk_interface) || disks[0];
       const networkEntry = Object.entries(value).find(([key, raw]) => /^net\d+$/.test(key) && typeof raw === 'string');
       const ipEntry = Object.entries(value).find(([key, raw]) => /^ipconfig\d+$/.test(key) && typeof raw === 'string');
       const disk = optionMap(diskEntry?.[1]);
@@ -179,8 +180,16 @@ function registerIsolatedVmRoutes({
         started: value.onboot === undefined ? null : value.onboot === 1 || value.onboot === '1',
       });
     } catch (error) {
+      // Proxmox can report a missing VM config as HTTP 500. Only call it
+      // absent after a successful node inventory response confirms that fact.
+      try {
+        const inventory = await requestProxmoxApi(readSavedProxmoxConnection(source), `/nodes/${encodeURIComponent(vm.node_name)}/qemu`);
+        if (Array.isArray(inventory) && !inventory.some(item => Number(item.vmid) === Number(vm.vm_id))) {
+          return res.json({available:false, reason:'The VM does not exist in Proxmox yet.'});
+        }
+      } catch { /* retain the original error when absence cannot be verified */ }
       const status = Number(error.status || 0) === 404 ? 200 : (error.status || 502);
-      res.status(status).json({ available: false, reason: Number(error.status || 0) === 404 ? 'The VM does not exist in Proxmox yet.' : (error.message || 'Live Proxmox configuration could not be loaded.') });
+      res.status(status).json({ available: false, error: status === 200 ? undefined : (error.message || 'Live Proxmox configuration could not be loaded.'), reason: Number(error.status || 0) === 404 ? 'The VM does not exist in Proxmox yet.' : (error.message || 'Live Proxmox configuration could not be loaded.') });
     }
   });
 

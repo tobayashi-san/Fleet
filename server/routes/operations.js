@@ -1,6 +1,7 @@
+const { executionHostResults } = require('../utils/execution-host-results');
 const { validHistoryRange, matchesHistoryRange, historyDay } = require('../utils/history-date-range');
 const { executionSummary } = require('../utils/execution-summary');
-const { canAccessWorkflowHistory } = require('../utils/workflow-history-scope');
+const { workflowHostIds, canAccessWorkflowHistory } = require('../utils/workflow-history-scope');
 const express = require('express');
 const db = require('../db');
 const { operationName, timestamp } = require('../utils/operation-display');
@@ -230,8 +231,19 @@ router.get('/:id/details', (req, res) => {
   const elapsed = timestamp(execution.completed_at) - timestamp(execution.started_at);
   const output = String(execution.output || '');
   const limit = 200000;
+  const visibleHosts = can(getPermissions(req.user), 'canViewServers') ? filterServers(db.servers.getAll(req.environmentId || 'default'), getPermissions(req.user)) : [];
+  const workflowSnapshot = row.source === 'Workflow' ? db.db.prepare('SELECT targets,target_server_ids FROM schedule_history WHERE id=?').get(executionId) : null;
+  const capturedIds = workflowSnapshot ? workflowHostIds(workflowSnapshot) : null;
+  const hostResults = row.source === 'Workflow' ? executionHostResults(output).map(result => ({...result, server_id: visibleHosts.find(host => host.name === result.name && (!capturedIds || capturedIds.includes(host.id)))?.id || null})) : [];
+  if (workflowSnapshot) {
+    const parsed = require('../utils/validate').parseTargetExpression(workflowSnapshot.targets);
+    if (parsed.kind === 'list') for (const name of parsed.included) {
+      if (!hostResults.some(host => host.name === name)) hostResults.push({name, server_id: visibleHosts.find(host => host.name === name && (!capturedIds || capturedIds.includes(host.id)))?.id || null, status: 'unknown', ok: null, changed: null, failed: null, unreachable: null, duration_seconds: null});
+    }
+  }
   res.json({
     ...row,
+    host_results: hostResults,
     execution_id: executionId,
     duration_seconds: Number.isFinite(elapsed) && elapsed >= 0 ? Math.round(elapsed / 1000) : null,
     summary: executionSummary(row.status, output),

@@ -25,7 +25,7 @@ export function SettingsRow({ label, hint, children, align = 'center', noBorder,
     >
       <div className="flex min-w-0 flex-col gap-0.5 text-sm">
         {label && <span id={labelId} className="font-medium text-foreground">{label}</span>}
-        {hint && <span className="text-xs text-muted-foreground">{hint}</span>}
+        {hint && <span className="text-[13px] leading-relaxed text-muted-foreground">{hint}</span>}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">{children}</div>
     </div>
@@ -44,13 +44,13 @@ interface SettingsSectionProps {
 /** Card-like section that hosts a group of SettingsRow's. */
 export function SettingsSection({ title, description, icon, headerRight, children, className }: SettingsSectionProps) {
   return (
-    <section className={cn('rounded-panel border border-border-strong/80 bg-card text-card-foreground shadow-[0_1px_2px_hsl(var(--foreground)/0.045)]', className)}>
+    <section className={cn('rounded-panel border border-border-strong/80 bg-card text-card-foreground ', className)}>
       {(title || description || headerRight) && (
         <header className="flex flex-wrap items-start gap-3 border-b border-border/60 px-4 py-3.5 sm:flex-nowrap">
           {icon && <div className="mt-0.5 text-muted-foreground">{icon}</div>}
           <div className="min-w-0 flex-1">
             {title && <h3 className="text-sm font-semibold">{title}</h3>}
-            {description && <p className="mt-0.5 text-xs text-muted-foreground">{description}</p>}
+            {description && <p className="mt-0.5 text-[13px] leading-relaxed text-muted-foreground">{description}</p>}
           </div>
           {headerRight && <div className="flex flex-wrap items-center gap-2">{headerRight}</div>}
         </header>

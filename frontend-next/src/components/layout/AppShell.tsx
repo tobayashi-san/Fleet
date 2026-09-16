@@ -173,19 +173,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-11 shrink-0 items-center border-b border-border-strong/80 bg-[hsl(var(--surface-2))] shadow-[0_1px_2px_hsl(var(--foreground)/0.06)]">
-        <div style={{ width: collapsed ? undefined : `${sidebarWidth}px` }} className={cn('hidden h-full shrink-0 items-center border-r border-border-strong/70 px-4 md:flex', collapsed ? 'w-16 justify-center px-2' : '')}>
+        <div style={{ width: collapsed ? undefined : `${sidebarWidth}px` }} className={cn('hidden h-full max-w-[28vw] shrink-0 items-center border-r border-border-strong/70 px-4 lg:flex', collapsed ? 'w-16 justify-center px-2' : '')}>
           {!collapsed && <span className="truncate font-mono text-[12px] font-bold tracking-[0.15em] text-foreground">{(appName || 'Shipyard').toUpperCase()}</span>}
           {collapsed && <span className="font-mono text-sm font-semibold tracking-[0.08em]">S</span>}
         </div>
-        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 md:px-3">
-          <Button variant="ghost" size="icon" className="h-10 w-10 md:hidden" onClick={() => setMobileNavOpen(true)} aria-label={t('shell.openNavigation')}>
+        <div className="flex min-w-0 flex-1 items-center gap-2 px-3 lg:px-3">
+          <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label={t('shell.openNavigation')}>
             <Menu className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon" className="hidden h-8 w-8 md:inline-flex" onClick={toggleSidebar} aria-label={t('shell.toggleNavigation')}>
+          <Button variant="ghost" size="icon" className="hidden h-8 w-8 lg:inline-flex" onClick={toggleSidebar} aria-label={t('shell.toggleNavigation')}>
             <PanelLeft className="h-4 w-4" />
           </Button>
-          <span className="hidden truncate text-sm font-semibold sm:inline md:hidden">{appName || 'Shipyard'}</span>
-          <Button variant="ghost" size="icon" className="h-10 w-10 md:hidden" onClick={openCommandPalette} aria-label={t('shell.searchCommands')}>
+          <span className="hidden truncate text-sm font-semibold sm:inline lg:hidden">{appName || 'Shipyard'}</span>
+          <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={openCommandPalette} aria-label={t('shell.searchCommands')}>
             <Search className="h-4 w-4" />
           </Button>
           <select
@@ -193,7 +193,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             value={environmentId}
             onChange={(event) => switchEnvironment(event.target.value)}
             disabled={environmentsQuery.isPending || environmentsQuery.isError}
-            className="ml-auto h-8 min-w-0 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs text-foreground md:hidden"
+            className="ml-auto h-8 min-w-0 max-w-[9rem] rounded-md border border-input bg-background px-2 text-xs text-foreground lg:hidden"
           >
             {environments.length === 0 && (
               <option value={environmentId}>{activeEnvironmentLabel}</option>
@@ -204,12 +204,12 @@ export function AppShell({ children }: { children: ReactNode }) {
               </option>
             ))}
           </select>
-          <button type="button" onClick={openCommandPalette} className="hidden h-7 max-w-xl flex-1 items-center gap-2 rounded-sm border border-input bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted/45 md:flex">
+          <button type="button" onClick={openCommandPalette} className="hidden h-7 max-w-xl flex-1 items-center gap-2 rounded-sm border border-input bg-background px-2.5 text-xs text-muted-foreground transition-colors hover:border-border-strong hover:bg-muted/45 lg:flex">
             <Search className="h-3.5 w-3.5" />
             <span className="flex-1 text-left">{t('shell.searchCommands')}</span>
             <span className="kbd">{commandModifier()} K</span>
           </button>
-          <div ref={environmentMenuRef} className="relative ml-auto hidden md:block">
+          <div ref={environmentMenuRef} className="relative ml-auto hidden lg:block">
             <button type="button" onClick={() => setEnvironmentOpen((open) => !open)} className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-muted-foreground hover:bg-accent" aria-haspopup="menu" aria-expanded={environmentOpen}>
               {activeEnvironmentLabel} <ChevronDown className="h-3.5 w-3.5" />
             </button>
@@ -222,7 +222,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 const name = String(item.name);
                 return <div key={id} className={cn('group flex items-center rounded-sm hover:bg-accent', id === environmentId && 'bg-accent')}>
                   <button type="button" onClick={() => { switchEnvironment(id); setEnvironmentOpen(false); }} className={cn('flex min-w-0 flex-1 items-center justify-between px-2 py-2 text-sm', id === environmentId && 'font-medium')}><span className="truncate">{name}</span><span className="ml-2 shrink-0 text-xs text-muted-foreground">{t('shell.hostCount', { count: Number(item.server_count ?? 0) })}{canViewDeployments ? ` · ${t('shell.vmDefinitionCount', { count: Number(item.vm_definition_count ?? 0) })}` : ''}</span></button>
-                  {isAdmin && <div className="mr-1 flex items-center gap-0.5 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100">
+                  {isAdmin && <div className="mr-1 flex items-center gap-0.5 lg:opacity-0 lg:group-hover:opacity-100 lg:group-focus-within:opacity-100">
                     <button type="button" title={t('shell.renameEnvironment')} aria-label={t('shell.renameNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground" onClick={() => { renameEnvironment.reset(); setEnvironmentToRename({ id, name }); setEnvironmentOpen(false); }}><Pencil className="h-3 w-3" /></button>
                     {id !== 'default' && <button type="button" title={t('shell.deleteEnvironment')} aria-label={t('shell.deleteNamed', { name })} className="inline-flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-destructive/10 hover:text-destructive" onClick={() => { removeEnvironment.reset(); setEnvironmentToDelete({ id, name }); setEnvironmentOpen(false); }}><Trash2 className="h-3 w-3" /></button>}
                   </div>}
@@ -235,7 +235,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               {createEnvironment.isError && <p role="alert" className="mt-2 text-xs text-destructive">{createEnvironment.error.message}</p>}
             </div>}
           </div>
-          <div ref={helpMenuRef} className="relative hidden md:block">
+          <div ref={helpMenuRef} className="relative hidden lg:block">
             <Button variant="ghost" size="icon" className="h-8 w-8" title={t('shell.help')} aria-label={t('shell.help')} onClick={() => { setHelpOpen((open) => !open); setProfileOpen(false); }} aria-expanded={helpOpen} aria-haspopup="menu">
               <HelpCircle className="h-4 w-4" />
             </Button>
@@ -259,11 +259,11 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
           <ActivityCenter placement="header" />
           <div ref={profileMenuRef} className="relative">
-          <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-haspopup="menu" aria-label={t('nav.openProfileMenu')} title={t('nav.openProfileMenu')} className="flex h-10 w-10 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground md:h-8 md:w-8">
+          <button type="button" onClick={() => { setProfileOpen((open) => !open); setHelpOpen(false); setMobileNavOpen(false); }} aria-expanded={profileOpen} aria-haspopup="menu" aria-label={t('nav.openProfileMenu')} title={t('nav.openProfileMenu')} className="flex h-10 w-10 items-center justify-center rounded-full border text-muted-foreground transition-colors hover:bg-accent hover:text-foreground lg:h-8 lg:w-8">
               <User className="h-4 w-4" />
             </button>
             {profileOpen && (
-              <div className="fixed inset-x-3 top-14 z-[60] w-auto rounded-md border border-border/90 bg-popover p-2 text-popover-foreground shadow-2xl shadow-black/40 md:absolute md:inset-x-auto md:right-0 md:top-10 md:w-72 md:max-w-[calc(100vw-1rem)]">
+              <div className="fixed inset-x-3 top-14 z-[60] w-auto rounded-md border border-border/90 bg-popover p-2 text-popover-foreground shadow-2xl shadow-black/40 lg:absolute lg:inset-x-auto lg:right-0 lg:top-10 lg:w-72 lg:max-w-[calc(100vw-1rem)]">
                 <div className="flex items-center gap-3 border-b px-3 py-3">
                   <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary"><User className="h-5 w-5" /></div>
                   <div className="min-w-0">
@@ -275,7 +275,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <Link to="/profile" onClick={() => setProfileOpen(false)} className="flex items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent">
                     <UserRoundCog className="h-4 w-4 text-muted-foreground" /> {t('shell.accountSecurity')}
                   </Link>
-                  <div className="mt-1 space-y-0.5 border-t pt-1 md:hidden">
+                  <div className="mt-1 space-y-0.5 border-t pt-1 lg:hidden">
                     <button type="button" onClick={() => { setProfileOpen(false); setGuideOpen(true); }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><HelpCircle className="h-4 w-4 text-muted-foreground" />Guide for this page</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Github className="h-4 w-4 text-muted-foreground" />{t('shell.githubRepository')}</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard/issues')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Bug className="h-4 w-4 text-muted-foreground" />{t('shell.reportIssue')}</button>
@@ -307,9 +307,9 @@ export function AppShell({ children }: { children: ReactNode }) {
         </div>
       </header>
       <div className="flex min-h-0 flex-1">
-      {mobileNavOpen && <button className="fixed inset-0 z-40 bg-black/50 md:hidden" aria-label={t('shell.closeNavigation')} onClick={() => setMobileNavOpen(false)} />}
+      {mobileNavOpen && <button className="fixed inset-0 z-40 bg-black/50 lg:hidden" aria-label={t('shell.closeNavigation')} onClick={() => setMobileNavOpen(false)} />}
       <Sidebar mobileOpen={mobileNavOpen} onMobileClose={() => setMobileNavOpen(false)} />
-      <main className="min-w-0 flex-1 overflow-auto bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 md:px-5 md:py-4 lg:px-6 lg:py-5">{children}</main>
+      <main className="min-w-0 flex-1 overflow-auto bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 lg:px-6 lg:py-5">{children}<footer className="mt-6 border-t pt-3 text-xs text-muted-foreground">Times shown in Europe/Zurich. Hover over a timestamp for its relative age.</footer></main>
       </div>
       <CommandPalette />
       <ContextHelp open={guideOpen} onClose={() => setGuideOpen(false)} />

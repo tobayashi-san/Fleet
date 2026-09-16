@@ -3,7 +3,7 @@ import { driftResultLabel, parsePlanSummary as parseSummary, planSummaryLabel as
 import { RunDetailsDialog } from '@/features/deployments/RunDetailsDialog';
 import { Timestamp } from '@/components/ui/timestamp';
 import { platformInventoryId } from '@/lib/platform-inventory-id';
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, CheckCircle2, History, Pencil, Play, RefreshCw, RotateCcw, Server, ShieldCheck, Trash2, TriangleAlert, Unlink } from "lucide-react";
@@ -112,6 +112,13 @@ export function DeploymentDetailPage() {
   const vm = vmQuery.data;
   const runs = Array.isArray(runsQuery.data?.items) ? runsQuery.data!.items! : [];
   const activeRun = runs.find((run) => isActiveRunStatus(run.status));
+  const latestFinishedRun = runs.find(run => !isActiveRunStatus(run.status));
+  useEffect(() => {
+    if (!latestFinishedRun?.id) return;
+    for (const section of ['state', 'state-safety', 'state-backups', 'actual', 'live']) {
+      void queryClient.invalidateQueries({queryKey:['opentofu','vm',id,section]});
+    }
+  }, [id, latestFinishedRun?.id, latestFinishedRun?.status, queryClient]);
   const runStateUnavailable = runsQuery.isPending || runsQuery.isError;
   const latestPlan = runs.find((run) => run.action === "plan" && run.status === "success");
   const approvedPlan = latestPlan?.plan_safe === 1 && parseSummary(latestPlan.plan_summary) ? latestPlan : undefined;
@@ -152,7 +159,7 @@ export function DeploymentDetailPage() {
 
   if (vmQuery.isLoading) return <div className="space-y-2">{[0, 1, 2].map((item) => <div key={item} className="h-16 animate-pulse rounded bg-muted/40" />)}</div>;
   if (vmQuery.isError) return <Card><QueryErrorState error={vmQuery.error} title="Managed VM could not be loaded" onRetry={() => void vmQuery.refetch()} /></Card>;
-  if (!vm) return <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="Managed VM not found" description="It may have been destroyed, unmanaged, or moved during a legacy migration." action={<Button asChild><Link to="/deployments">Back to managed VMs</Link></Button>} /></Card>;
+  if (!vm) return <Card><EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM definition not found" description="It may have been destroyed, unmanaged, or moved during a legacy migration." action={<Button asChild><Link to="/deployments">Back to VM definitions</Link></Button>} /></Card>;
 
   const inventoryClusterId = platformInventoryId(vm.platform?.endpoint);
   const inventoryNode = live?.node_name || vm.node_name;
@@ -162,7 +169,7 @@ export function DeploymentDetailPage() {
     <RunDetailsDialog vmId={id} runId={selectedRunId} open={Boolean(selectedRunId)} onOpenChange={open => { if (!open) setSelectedRunId(null); }} />
     <PageHeader title={vm.name} description={`Independent VM on ${vm.platform?.name || "Proxmox"}`} actions={<>
       {live?.available && inventoryClusterId && inventoryNode && inventoryVmId && hasCap(profileQuery.data, "canViewInfrastructure") && <Button asChild variant="outline"><Link to="/infrastructure/$clusterId/nodes/$nodeName/vms/$vmId" params={{clusterId:inventoryClusterId,nodeName:inventoryNode,vmId:String(inventoryVmId)}}>Open inventory VM</Link></Button>}
-      <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All managed VMs</Link></Button>
+      <Button asChild variant="outline"><Link to="/deployments"><ArrowLeft />All VM definitions</Link></Button>
       <Button variant="outline" onClick={refresh}><RefreshCw />Refresh</Button>
       <Button variant="outline" onClick={() => setEditOpen(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Pencil />Edit</Button>
     </>} />
@@ -194,11 +201,13 @@ export function DeploymentDetailPage() {
     </CardContent></Card>
 
     <Card><CardHeader><CardTitle className="flex items-center gap-2 text-base"><RotateCcw className="h-4 w-4" />OpenTofu state recovery</CardTitle></CardHeader><CardContent className="space-y-3 text-sm">
-      <p className="text-muted-foreground">Encrypted state backups protect Shipyard's management state. Restoring one does not roll back the VM in Proxmox; create a new plan afterwards and review the difference before applying.</p>
       {stateSafetyQuery.isError || stateBackupsQuery.isError ? <QueryErrorState compact error={stateSafetyQuery.error || stateBackupsQuery.error} title="State recovery information could not be loaded" onRetry={() => void Promise.all([stateSafetyQuery.refetch(), stateBackupsQuery.refetch()])} /> : <>
         <div className="flex flex-wrap gap-2"><StatusBadge tone={stateSafetyQuery.data?.mode === 'encrypted-backup' ? 'success' : stateSafetyQuery.data?.mode === 'remote' ? 'info' : 'muted'}>{stateSafetyQuery.data?.mode === 'remote' ? `Remote ${stateSafetyQuery.data.backend || ''} backend` : stateSafetyQuery.data?.mode === 'encrypted-backup' ? 'Encrypted local backups' : stateSafetyQuery.isPending ? 'Loading recovery status…' : 'Recovery status unavailable'}</StatusBadge>{stateSafetyQuery.data?.mode === 'remote' && <span className="text-xs text-muted-foreground">Restore state through the configured backend.</span>}</div>
-        {stateSafetyQuery.data?.mode === 'encrypted-backup' && <div className="flex flex-wrap items-end gap-2"><label className="min-w-[18rem] flex-1"><span className="mb-1 block text-xs font-medium">Recovery point</span><select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedBackup} onChange={event => setSelectedBackup(event.target.value)}><option value="">Select an encrypted backup</option>{(stateBackupsQuery.data?.items || []).map(backup => <option key={backup.name} value={backup.name}>{formatDate(backup.created_at)} · {(backup.size / 1024).toFixed(1)} KiB</option>)}</select></label><Button variant="outline" disabled={!canDestroy || !selectedBackup || Boolean(activeRun) || runStateUnavailable} onClick={() => setConfirmRestore(true)}><RotateCcw />Restore state</Button></div>}
+        <details><summary className="cursor-pointer py-2 font-medium">Recovery options</summary>
+      <p className="text-muted-foreground">Encrypted state backups protect Shipyard's management state. Restoring one does not roll back the VM in Proxmox; create a new plan afterwards and review the difference before applying.</p>
+        {stateSafetyQuery.data?.mode === 'encrypted-backup' && <div className="flex flex-wrap items-end gap-2"><label className="min-w-0 w-full flex-1"><span className="mb-1 block text-xs font-medium">Recovery point</span><select className="flex h-9 w-full rounded-md border border-input bg-background px-3 text-sm" value={selectedBackup} onChange={event => setSelectedBackup(event.target.value)}><option value="">Select an encrypted backup</option>{(stateBackupsQuery.data?.items || []).map(backup => <option key={backup.name} value={backup.name}>{formatDate(backup.created_at)} · {(backup.size / 1024).toFixed(1)} KiB</option>)}</select></label><Button variant="outline" disabled={!canDestroy || !selectedBackup || Boolean(activeRun) || runStateUnavailable} onClick={() => setConfirmRestore(true)}><RotateCcw />Restore state</Button></div>}
         {stateSafetyQuery.data?.mode === 'encrypted-backup' && !stateBackupsQuery.isPending && (stateBackupsQuery.data?.items || []).length === 0 && <p className="text-xs text-muted-foreground">No state backup exists yet. Shipyard creates one before a state-changing apply when local state is present.</p>}
+        </details>
       </>}
     </CardContent></Card>
 
@@ -210,10 +219,10 @@ export function DeploymentDetailPage() {
         {run.action === "plan" && <div><dt className="text-muted-foreground">Isolation check</dt><dd>{runIsolationLabel(run)}</dd></div>}</dl>
         <Button variant="outline" size="sm" onClick={() => setSelectedRunId(run.id)}>View logs</Button>
       </article>)}</div><div className="table-scroll hidden md:block"><table data-density="compact" className="w-full min-w-[700px] text-sm"><thead><tr><th className="px-3">Action</th><th className="px-3">Status</th><th className="px-3">Plan</th><th className="px-3">Isolation check</th><th className="px-3">Started</th><th className="px-3">Completed</th><th className="px-3">Duration</th><th className="px-3">Details</th></tr></thead><tbody>{historyRuns.map((run) => <tr key={run.id}><td className="px-3 font-medium">{runActionLabel(run.action)}</td><td className="px-3"><StatusBadge tone={statusTone(run.status)} dot>{runStatusLabel(run.status)}</StatusBadge></td><td className="px-3 text-xs">{run.plan_summary ? summaryLabel(run.plan_summary) : "—"}</td><td className="px-3">{run.action === "plan" ? <StatusBadge tone={run.plan_safe === 1 ? "success" : run.plan_safe === 0 ? "danger" : "muted"}>{runIsolationLabel(run)}</StatusBadge> : "—"}</td><td className="px-3 text-xs text-muted-foreground"><Timestamp value={run.started_at} /></td><td className="px-3 text-xs text-muted-foreground"><Timestamp value={run.completed_at} /></td><td className="px-3 text-xs text-muted-foreground">{runDurationLabel(run)}</td><td className="px-3"><Button variant="outline" size="sm" onClick={() => setSelectedRunId(run.id)}>View logs</Button></td></tr>)}</tbody></table></div></>}
-    </CardContent><div className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-xs text-muted-foreground">
+    </CardContent>{(historyRuns.length > 0 || historyPage > 1) && <div className="flex flex-wrap items-center justify-between gap-2 border-t p-3 text-xs text-muted-foreground">
       <span>Page {historyQuery.data?.pagination?.page || historyPage} of {historyQuery.data?.pagination?.total_pages || "—"} · {historyQuery.data?.pagination?.total ?? "—"} runs</span>
       <div className="flex gap-2"><Button variant="outline" size="sm" disabled={historyPage <= 1} onClick={() => setHistoryPosition({vmId:id,page:historyPage-1})}>Newer runs</Button><Button variant="outline" size="sm" disabled={historyQuery.isPending || historyQuery.isError || !historyQuery.data?.pagination?.has_next} onClick={() => setHistoryPosition({vmId:id,page:historyPage+1})}>Older runs</Button></div>
-    </div></Card>
+    </div>}</Card>
 
     <Card><CardHeader><CardTitle className="text-base">Deployment automation</CardTitle></CardHeader><CardContent className="space-y-4">
       <div><div className="text-sm font-medium">Before OpenTofu</div>{(vm.pre_deploy_playbooks || []).length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No pre-deploy workflows configured.</p> : <div className="mt-2 space-y-2">{vm.pre_deploy_playbooks!.map((playbook, index) => <div key={playbook} className="rounded-md border p-3 text-sm"><div className="font-medium">{index + 1}. {playbook}</div><div className="mt-0.5 text-xs text-muted-foreground">Target host: {vm.pre_deploy_target_server_id}</div></div>)}</div>}</div>

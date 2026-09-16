@@ -1956,7 +1956,7 @@ export function ServersPage() {
                           onChange={(e) => selectAll(e.target.checked)}
                         />
                       </th>
-                      <th className="px-3 py-2.5">{t("srv.colName")}</th>
+                      <th className="min-w-[220px] px-3 py-2.5">{t("srv.colName")}</th>
                       <th className="w-52 px-3 py-2.5">{t("srv.colIp")}</th>
                       <th className="w-48 px-3 py-2.5">{t("common.status")}</th>
                       {operatingColumns.state && <th className="px-3 py-2.5" title="Cached update counts and current attention reasons">Operating state</th>}

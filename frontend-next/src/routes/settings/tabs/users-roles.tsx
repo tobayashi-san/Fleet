@@ -64,7 +64,6 @@ interface RolePermissions {
 
 interface ServerRow { id: string | number; name: string; ip_address?: string; status?: string }
 interface GroupRow { id: string | number; name: string; color?: string }
-interface PluginRow { id: string; name?: string; sidebar?: { icon?: string; label?: string } }
 interface PlaybookRow { filename: string }
 
 // -------------------- root --------------------
@@ -297,16 +296,14 @@ function useAccessResources() {
   // Resolve host and folder names within the selected environment, using
   // the same cache keys as the infrastructure views.
   const groupsQ = useQuery<GroupRow[]>({ queryKey: ['server-groups', environmentId], queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<GroupRow[]> });
-  const pluginsQ = useQuery<PluginRow[]>({ queryKey: ['plugins'], queryFn: () => api.getPlugins() as unknown as Promise<PluginRow[]> });
   const playbooksQ = useQuery<PlaybookRow[]>({ queryKey: ['playbooks'], queryFn: () => api.getPlaybooks() as unknown as Promise<PlaybookRow[]> });
 
   const labels = {
     servers: Object.fromEntries((serversQ.data || []).map(item => [String(item.id), item.name])),
     groups: Object.fromEntries((groupsQ.data || []).map(item => [String(item.id), item.name])),
     playbooks: Object.fromEntries((playbooksQ.data || []).map(item => [item.filename, item.filename])),
-    plugins: Object.fromEntries((pluginsQ.data || []).map(item => [item.id, item.name || item.sidebar?.label || item.id])),
   };
-  return {serversQ, groupsQ, pluginsQ, playbooksQ, labels};
+  return {serversQ, groupsQ, playbooksQ, labels};
 }
 
 export function UserFormDialog({
@@ -608,14 +605,12 @@ function RolesPanel() {
             : `${p.servers?.groups?.length || 0} group(s), ${p.servers?.servers?.length || 0} server(s)`;
           const pbSummary = p.full === true || p.playbooks === 'all'
             ? t('set.allPlaybooks') : `${(p.playbooks as string[] | undefined)?.length || 0} playbook(s)`;
-          const plSummary = p.full === true || p.plugins === 'all'
-            ? t('set.allPlugins') : `${(p.plugins as string[] | undefined)?.length || 0} plugin(s)`;
           return (
             <SettingsRow
               key={r.id}
               noBorder={i === custom.length - 1}
               label={r.name}
-              hint={r.effectivePermissions ? `${serverSummary} · ${pbSummary} · ${plSummary}` : 'Effective permission details unavailable'}
+              hint={r.effectivePermissions ? `${serverSummary} · ${pbSummary}` : 'Effective permission details unavailable'}
             >
               <OverflowMenu title={`Actions for ${r.name}`}>
                 <OverflowItem icon={Pencil} onClick={() => setEditing(r)}>
@@ -685,7 +680,6 @@ interface RolePreset {
   caps: string[];
   serversMode: 'all' | 'restricted';
   pbMode: 'all' | 'restricted';
-  plMode: 'all' | 'restricted';
 }
 
 const SERVER_CAPS: CapDef[] = [
@@ -788,7 +782,6 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'Read-only access for inventory, updates, playbooks and schedules.',
     serversMode: 'all',
     pbMode: 'all',
-    plMode: 'restricted',
     caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canViewMaintenance'],
   },
   {
@@ -797,7 +790,6 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'Can run selected playbooks and routine update actions.',
     serversMode: 'all',
     pbMode: 'all',
-    plMode: 'restricted',
     caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes', 'canViewMaintenance'],
   },
   {
@@ -806,7 +798,6 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'Can maintain servers, compose stacks, schedules and custom update tasks.',
     serversMode: 'all',
     pbMode: 'all',
-    plMode: 'all',
     caps: ALL_CAPS.map(c => c.key).filter(k => k !== 'canDeleteServers' && k !== 'canViewAudit'),
   },
   {
@@ -815,7 +806,6 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'All regular capabilities, but no Admin settings, Git or role management.',
     serversMode: 'all',
     pbMode: 'all',
-    plMode: 'all',
     caps: ALL_CAPS.map(c => c.key),
   },
 ];
@@ -824,19 +814,17 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const { t } = useTranslation();
   const qc = useQueryClient();
   const isEdit = !!role;
-  const {serversQ, groupsQ, pluginsQ, playbooksQ, labels} = useAccessResources();
+  const {serversQ, groupsQ, playbooksQ, labels} = useAccessResources();
 
   const usersQ = useQuery<UserRow[]>({queryKey:['users'], queryFn:() => api.getUsers() as unknown as Promise<UserRow[]>, enabled:isEdit});
   const p = role?.effectivePermissions || {};
   const assignedUsers = (usersQ.data || []).filter(user => user.role === role?.id);
   const initServersMode = p.servers === 'all' ? 'all' : 'restricted';
   const initPbMode = p.playbooks === 'all' ? 'all' : 'restricted';
-  const initPlMode = p.plugins === 'all' ? 'all' : 'restricted';
 
   const [name, setName] = useState(role?.name ?? '');
   const [serversMode, setServersMode] = useState<'all' | 'restricted'>(initServersMode);
   const [pbMode, setPbMode] = useState<'all' | 'restricted'>(initPbMode);
-  const [plMode, setPlMode] = useState<'all' | 'restricted'>(initPlMode);
   const [groupsSel, setGroupsSel] = useState<Set<string>>(
     new Set(asArray<string | number>(typeof p.servers === 'object' && p.servers?.groups).map(String))
   );
@@ -846,15 +834,11 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
   const [pbSel, setPbSel] = useState<Set<string>>(
     new Set(Array.isArray(p.playbooks) ? p.playbooks : [])
   );
-  const [plSel, setPlSel] = useState<Set<string>>(
-    new Set(Array.isArray(p.plugins) ? p.plugins : [])
-  );
   const [caps, setCaps] = useState<Record<string, boolean>>(() => editableCapabilities(p, ALL_CAPS.map(cap => cap.key)));
   const proposedPermissions: RolePermissions = {
     ...caps,
     servers: serversMode === 'all' ? 'all' : {groups:[...groupsSel],servers:[...serversSel]},
     playbooks: pbMode === 'all' ? 'all' : [...pbSel],
-    plugins: plMode === 'all' ? 'all' : [...plSel],
   };
   const [error, setError] = useState<string | null>(null);
   const [revisionConflict, setRevisionConflict] = useState(false);
@@ -887,7 +871,6 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     },
   });
 
-  const sidebarPlugins = asArray<PluginRow>(pluginsQ.data).filter(pl => pl.sidebar);
   const enabledCaps = ALL_CAPS.filter(c => !!caps[c.key]);
   const dangerousEnabled = enabledCaps.filter(c => DANGEROUS_CAPS.has(c.key));
 
@@ -898,10 +881,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
     setCaps(nextCaps);
     setServersMode(preset.serversMode);
     setPbMode(preset.pbMode);
-    setPlMode(preset.plMode);
   };
 
-  const referenceQueries = [serversQ, groupsQ, pluginsQ, playbooksQ, ...(isEdit ? [usersQ] : [])];
+  const referenceQueries = [serversQ, groupsQ, playbooksQ, ...(isEdit ? [usersQ] : [])];
   const referenceError = referenceQueries.find((query) => query.isError)?.error;
   const referencesLoading = referenceQueries.some((query) => query.isLoading);
   if (referenceError || referencesLoading) {
@@ -978,11 +960,9 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
           <RolePreview
             serversMode={serversMode}
             pbMode={pbMode}
-            plMode={plMode}
             groupsSelected={groupsSel.size}
             serversSelected={serversSel.size}
             playbooksSelected={pbSel.size}
-            pluginsSelected={plSel.size}
             enabledCaps={enabledCaps}
             dangerousCaps={dangerousEnabled}
           />
@@ -1073,32 +1053,6 @@ function RoleFormDialog({ role, onClose }: { role: RoleRow | null; onClose: () =
             <CapGrid caps={VAR_CAPS} caps2={caps} setCaps={setCaps} />
           </Section>
 
-          {/* Plugins */}
-          <Section icon={<Puzzle className="h-3.5 w-3.5" />} title={t('set.capPlugins')}>
-            {sidebarPlugins.length === 0 ? (
-              <p className="text-xs text-muted-foreground">{t('set.noPluginsWithUi')}</p>
-            ) : (
-              <>
-                <RadioRow name="plugins" mode={plMode} setMode={setPlMode} />
-                {plMode === 'restricted' && (
-                  <div className="space-y-1 rounded-md border p-3">
-                    {sidebarPlugins.map(pl => (
-                      <CheckRow key={pl.id}
-                        checked={plSel.has(pl.id)}
-                        onChange={() => toggleSet(plSel, setPlSel, pl.id)}
-                        label={
-                          <span className="flex items-center gap-2">
-                            <Puzzle className="h-3 w-3 text-muted-foreground" />
-                            {pl.sidebar?.label || pl.name || pl.id}
-                          </span>
-                        } />
-                    ))}
-                  </div>
-                )}
-              </>
-            )}
-          </Section>
-
           {/* Other */}
           <Section icon={<MoreHorizontal className="h-3.5 w-3.5" />} title={t('set.capOther')}
             onSelectAll={() => setCaps(c => bulkToggle(c, OTHER_CAPS))}>
@@ -1136,21 +1090,17 @@ function resourceSummary(mode: 'all' | 'restricted', selected: number, label: st
 function RolePreview({
   serversMode,
   pbMode,
-  plMode,
   groupsSelected,
   serversSelected,
   playbooksSelected,
-  pluginsSelected,
   enabledCaps,
   dangerousCaps,
 }: {
   serversMode: 'all' | 'restricted';
   pbMode: 'all' | 'restricted';
-  plMode: 'all' | 'restricted';
   groupsSelected: number;
   serversSelected: number;
   playbooksSelected: number;
-  pluginsSelected: number;
   enabledCaps: CapDef[];
   dangerousCaps: CapDef[];
 }) {
@@ -1169,10 +1119,9 @@ function RolePreview({
           {dangerousCaps.length} sensitive
         </Badge>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
+      <div className="grid gap-2 sm:grid-cols-2">
         <PreviewMetric label="Hosts" value={serverScope} />
         <PreviewMetric label="Playbooks" value={resourceSummary(pbMode, playbooksSelected, 'playbooks')} />
-        <PreviewMetric label="Plugins" value={resourceSummary(plMode, pluginsSelected, 'plugins')} />
       </div>
       <div className="mt-3 flex flex-wrap gap-1.5">
         {enabledCaps.length === 0 ? (

@@ -1,6 +1,5 @@
 const { hostCheckQuality } = require('../utils/host-check-quality');
 const { updateCatalogAge } = require('../utils/update-catalog-age');
-const {agentReportStatus}=require('../utils/agent-report-status');
 const express = require('express');
 const db = require('../db');
 const { getPermissions, filterServers, can } = require('../utils/permissions');
@@ -30,7 +29,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
     const canViewUpdates = can(perms, 'canViewUpdates');
     const canViewDocker = can(perms, 'canViewDocker');
     const canViewCustomUpdates = can(perms, 'canViewCustomUpdates');
-    const agentEnabled = db.settings.get('agent_enabled') === '1';
+    const agentEnabled = false;
     const canViewHistory = canViewUpdates || can(perms, 'canViewServerHistory');
     const visibleServerIds = servers.map(server => server.id);
     const visibleAlerts = db.resourceAlerts.list({
@@ -51,7 +50,6 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       const containers = canViewDocker ? db.dockerContainers.getByServer(s.id) : [];
       const imageUpdatesMeta = canViewDocker && canViewUpdates ? db.dockerImageUpdatesCache.getWithMeta(s.id) : null;
       const imageUpdates = imageUpdatesMeta ? imageUpdatesMeta.results : null;
-      const agentCfg = agentEnabled ? db.agentConfig.getByServerId(s.id) : null;
       const history = canViewHistory ? db.updateHistory.getByServer(s.id) : [];
       const alerts = visibleAlerts.filter(alert => String(alert.server_id) === String(s.id));
 
@@ -62,15 +60,7 @@ router.get('/', authenticatedApiLimiter, (req, res) => {
       const ramPct = (isOnline && info?.ram_total_mb) ? Math.round((info.ram_used_mb / info.ram_total_mb) * 100) : null;
       const diskPct = (isOnline && info?.disk_total_gb) ? Math.round((info.disk_used_gb / info.disk_total_gb) * 100) : null;
 
-      let agentMode = 'legacy';
-      let agentState = 'legacy';
-      let agentLastSeen = null;
-      if (agentCfg && agentCfg.mode && agentCfg.mode !== 'legacy') {
-        agentMode = agentCfg.mode;
-        const report = agentReportStatus(agentCfg);
-        agentLastSeen = report.lastSeen;
-        agentState = report.health;
-      }
+      const agentMode = 'legacy', agentState = 'legacy', agentLastSeen = null;
 
       // A dashboard must be able to show why a custom desired state differs,
       // but never expose executable commands through this aggregate endpoint.

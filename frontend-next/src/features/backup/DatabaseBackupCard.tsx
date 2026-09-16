@@ -31,7 +31,7 @@ export function DatabaseBackupCard() {
     finally {setPassword('');setCode('');setPassphrase('');setRepeat('');setPending(false);inFlight.current=false;}
   }
   return <Card>
-    <CardHeader><CardTitle>Encrypted database backup</CardTitle><p className="text-sm text-muted-foreground">Includes database records and stored credentials from all environments. Playbooks, plugins, Git workspace, infrastructure state files and remote workload data are not included.</p></CardHeader>
+    <CardHeader><CardTitle>Encrypted database backup</CardTitle><p className="text-sm text-muted-foreground">Includes database records and stored credentials from all environments. Playbooks, Git workspace, infrastructure state files and remote workload data are not included.</p></CardHeader>
     <CardContent>
       <p className="mb-4 text-sm">Keep the original SHIPYARD_KEY_SECRET and deployment files separately. The backup passphrase protects this archive; it does not replace the original application encryption key. Restore into a new database with the server recovery CLI; this page does not activate a restore.</p>
       <form onSubmit={download} className="space-y-3">

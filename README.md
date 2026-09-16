@@ -21,8 +21,8 @@ Shipyard brings Linux host management, Docker, Ansible, and Proxmox into one web
 interface. Use it to check your homelab, maintain a group of servers, or give
 your team a shared place to run infrastructure tasks.
 
-Start with **one Linux host and an SSH connection**. Proxmox, OpenTofu, plugins,
-and the Shipyard Agent are optional—you can add them when you need them.
+Start with **one Linux host and an SSH connection**. Proxmox and OpenTofu
+are optional. Host information is collected over SSH; no Shipyard agent is required.
 
 > [!IMPORTANT]
 > Install Shipyard on a private network or behind a VPN. It holds SSH credentials
@@ -193,7 +193,6 @@ data volumes.
 | [Deployment](docs/DOCKER_DEPLOYMENT.md) | LAN access, TLS, persistent storage, and configuration |
 | [Backup and recovery](docs/README.md#backup-and-recovery) | Choosing database-only or application backups and planning a restore |
 | [MFA](docs/mfa-policy.md) · [SSH keys](docs/ssh-key-import.md) · [Audit log](docs/audit-log.md) | Access configuration and operational history |
-| [Plugin development](plugin-template/README.md) | Extending Shipyard with reviewed, trusted server-side code |
 | [All documentation](docs/README.md) | Operator guides, development workflow, and historical records |
 
 ## Local development

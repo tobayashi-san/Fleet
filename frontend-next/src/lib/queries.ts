@@ -19,37 +19,12 @@ export interface Profile {
   [k: string]: unknown;
 }
 
-export interface PluginInfo {
-  packageStatus?: {installedVersion: string | null; loadedVersion: string | null; state: 'reload-required' | 'same-version' | 'unreadable' | 'version-unavailable'; checkedAt: number; rollback: 'manual'};
-  hasUi?: boolean;
-  compatibility?: {status:'unspecified'|'compatible'|'incompatible'|'invalid';error?:string;requirements:{name:string;range:string;current:string;matches:boolean}[];runtime:{node:string;shipyard:string}};
-  trust?: { digest: string; trusted: boolean; policy: string; scheme?: string; scope?: string };
-  id: string;
-  name?: string;
-  version?: string;
-  description?: string;
-  enabled?: boolean;
-  loaded?: boolean;
-  error?: string;
-  sidebar?: { icon?: string; label?: string };
-  [k: string]: unknown;
-}
-
 /** Fetches the logged-in profile (cached for the session). */
 export function useProfile() {
   return useQuery<Profile>({
     queryKey: ['profile'],
     queryFn: () => api.getProfile() as Promise<Profile>,
     staleTime: 5 * 60_000,
-  });
-}
-
-/** Fetches the plugin list (used by sidebar + Settings → Plugins tab). */
-export function usePlugins() {
-  return useQuery<PluginInfo[]>({
-    queryKey: ['plugins'],
-    queryFn: () => api.getPlugins() as Promise<PluginInfo[]>,
-    staleTime: 60_000,
   });
 }
 
@@ -84,16 +59,6 @@ export function hasCap(profile: Profile | undefined | null, cap: string): boolea
   if (!perms) return false;
   if (perms.full) return true;
   return perms[cap] === true;
-}
-
-/** Whether the user can see a given plugin in the sidebar. */
-export function canSeePlugin(profile: Profile | undefined | null, pluginId: string): boolean {
-  if (!profile) return false;
-  if (profile.role === 'admin') return true;
-  const perms = profile.permissions;
-  if (!perms) return false;
-  if (perms.full || perms.plugins === 'all') return true;
-  return Array.isArray(perms.plugins) && perms.plugins.includes(pluginId);
 }
 
 /** Shared navigation rule for the built-in deployment area. */

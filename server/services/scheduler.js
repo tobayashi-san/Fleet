@@ -1,4 +1,4 @@
-const {agentReportStatus} = require('../utils/agent-report-status');
+const { collectionQueue } = require('./collection-queue');
 const pollingObservations = require('../utils/polling-observations').createPollingObservations();
 const cron = require("node-cron");
 const { workflowHostIds } = require("../utils/workflow-history-scope");
@@ -12,7 +12,6 @@ const sshManager = require("./ssh-manager");
 const { parseImageUpdateReport } = require("../utils/parse-image-updates");
 const gitSync = require("./git-sync");
 const { resolveTargets } = require("../utils/validate");
-const pullModeManager = require("./pull-mode-manager");
 const resourceAlerts = require("./resource-alerts");
 const { syncIpamSource } = require("../routes/ipam");
 const {
@@ -30,7 +29,6 @@ let updatesPoller = null;
 let imageUpdatesPoller = null;
 let customUpdatesPoller = null;
 let ipamSourcesPoller = null;
-let agentMetricsPruner = null;
 let infoPolling = false;
 let updatesPolling = false;
 let imageUpdatesPolling = false;
@@ -99,7 +97,7 @@ function runNow(pollFn, label) {
 }
 
 function makePoller(pollFn, label, intervalMs) {
-  return setInterval(() => runNow(pollFn, label), intervalMs);
+  return setInterval(() => runNow(pollFn, label), Math.min(intervalMs, 60_000));
 }
 
 async function pollIpamSources() {
@@ -156,11 +154,11 @@ async function pollIpamSources() {
     });
     const [sourceResults, proxmoxResults] = await Promise.all([
       Promise.allSettled(
-        due.map((source) => syncIpamSource(source, { actor: "scheduler" })),
+        due.map((source) => collectionQueue.run("ipam", {id:`ipam-source-${source.id}`}, () => syncIpamSource(source, { actor: "scheduler" }))),
       ),
       Promise.allSettled(
         dueProxmox.map((connection) =>
-          syncProxmoxIpam(connection.id, { actor: "scheduler" }),
+          collectionQueue.run("ipam", {id:`ipam-proxmox-${connection.id}`}, () => syncProxmoxIpam(connection.id, { actor: "scheduler" })),
         ),
       ),
     ]);
@@ -453,49 +451,17 @@ async function pollSystemInfo() {
   lastInfoPollTime = Date.now();
   try {
     const servers = db.servers.getAll();
-    const agentEnabled = db.settings.get("agent_enabled") === "1";
+    collectionQueue.prune(servers.map(server => server.id));
     const outcomes = await Promise.allSettled(
-      servers.map(async (server) => {
-        const agentCfg = agentEnabled
-          ? db.agentConfig.getByServerId(server.id)
-          : null;
-        if (agentCfg?.mode === "push") {
-          const report = agentReportStatus(agentCfg);
-          if (report.state === 'recent') {
-            db.servers.updateStatus(server.id, "online");
-            return;
-          }
-          if (report.state !== 'never') {
-            pollingObservations.fail(observation,server,'Push agent report is overdue or invalid. Inspect agent status and connectivity.');
-            // Agent has reported before but is now overdue — mark offline
-            db.servers.updateStatus(server.id, "offline");
-            return;
-          }
-          // Agent never reported yet — fall through to SSH polling as fallback
-        }
-
-        if (agentCfg?.mode === "pull") {
-          const r = await pullModeManager.pollServer(server);
-          if (r.ok) {
-            const report = agentReportStatus(db.agentConfig.getByServerId(server.id));
-            if (report.state === 'recent') {
-              db.servers.updateStatus(server.id, "online");
-            } else if (!r.report) {
-              pollingObservations.fail(observation,server,'Pull agent returned no current report. Inspect agent status and connectivity.');
-              db.servers.updateStatus(server.id, "offline");
-            }
-            return;
-          }
-        }
-
+      servers.filter(server => collectionQueue.due('info', server)).map(async (server) => {
         try {
-          const info = await systemInfo.getSystemInfo(server);
+          const info = await collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {baseMs:getPollingConfig().info.intervalMs});
           db.serverInfo.upsert(server.id, info);
           db.servers.updateStatus(server.id, "online");
         } catch (err) {
           pollingObservations.fail(observation,server,'System information check failed. Inspect host connectivity and SSH access.');
           log.debug({ err, server: server.name }, "System info poll failed");
-          db.servers.updateStatus(server.id, "offline");
+          if (!["COLLECTION_QUEUE_FULL", "SSH_QUEUE_FULL", "SSH_QUEUE_TIMEOUT"].includes(err.code)) db.servers.updateStatus(server.id, "offline");
         }
       }),
     );
@@ -512,24 +478,6 @@ async function pollSystemInfo() {
   }
 }
 
-function startAgentMetricsRetention() {
-  if (agentMetricsPruner) clearInterval(agentMetricsPruner);
-  agentMetricsPruner = setInterval(
-    () => {
-      try {
-        const days = parseInt(
-          db.settings.get("agent_metrics_retention_days", 10) || "7",
-          10,
-        );
-        db.agentMetrics.pruneOlderThanDays(days);
-      } catch (err) {
-        log.debug({ err }, "Agent metrics retention prune failed");
-      }
-    },
-    60 * 60 * 1000,
-  );
-}
-
 /**
  * Poll available updates for all servers in parallel and update the DB cache.
  */
@@ -540,9 +488,9 @@ async function pollUpdates() {
   try {
     const servers = db.servers.getAll();
     const outcomes = await Promise.allSettled(
-      servers.map(async (server) => {
+      servers.filter(server => collectionQueue.due('updates', server)).map(async (server) => {
         try {
-          const updates = await systemInfo.getAvailableUpdates(server);
+          const updates = await collectionQueue.run('updates', server, () => systemInfo.getAvailableUpdates(server), {baseMs:getPollingConfig().updates.intervalMs});
           db.updatesCache.set(server.id, updates);
         } catch (err) {
           pollingObservations.fail(observation,server,'Package check failed. Check host connectivity and package manager access.');
@@ -574,22 +522,17 @@ async function pollImageUpdates() {
   try {
     const servers = db.servers.getAll().filter((s) => s.status === "online" && s.docker_enabled);
     const outcomes = await Promise.allSettled(
-      servers.map(async (server) => {
+      servers.filter(server => collectionQueue.due('imageUpdates', server)).map(async (server) => {
         try {
-          const result = await ansibleRunner.runPlaybook(
-            "check-image-updates.yml",
-            server.name,
-            {},
-            null,
-            { environmentId: server.environment_id || "default" },
-          );
-          const report = parseImageUpdateReport(result.stdout);
-          if (!result.success || !report.complete) {
-            pollingObservations.fail(observation,server,'Image check returned no complete result. Check container runtime and registry access.');
-            db.checkAttempts.failed(server.id, 'images', 'Image check returned no complete result. Check container runtime and registry access.');
-            log.warn({ server: server.name, exitCode: result.code }, "Image updates poll returned no complete result; keeping cached status");
-            return;
-          }
+          const report = await collectionQueue.run('imageUpdates', server, async () => {
+            const result = await ansibleRunner.runPlaybook(
+              "check-image-updates.yml", server.name, {}, null,
+              { environmentId: server.environment_id || "default" },
+            );
+            const report = parseImageUpdateReport(result.stdout);
+            if (!result.success || !report.complete) throw Object.assign(new Error('Image update check did not complete. Existing results were kept.'), {code:'IMAGE_CHECK_INCOMPLETE'});
+            return report;
+          }, {baseMs:getPollingConfig().imageUpdates.intervalMs});
           db.dockerImageUpdatesCache.set(server.id, report.results);
         } catch (err) {
           pollingObservations.fail(observation,server,'Image check failed. Check host connectivity, container runtime and registry access.');
@@ -719,19 +662,16 @@ async function pollCustomUpdates() {
   try {
     const servers = db.servers.getAll();
     const outcomes = await Promise.allSettled(
-      servers.map(async (server) => {
+      servers.filter(server => collectionQueue.due('customUpdates', server)).map(async (server) => {
         const tasks = db.customUpdateTasks.getByServer(server.id);
-        await Promise.allSettled(
-          tasks.map((task) =>
-            checkCustomTask(server, task).catch((err) => {
-              pollingObservations.fail(observation,server,'Custom update check failed. Inspect task configuration and host connectivity.');
-              return log.debug(
-                { err, server: server.name },
-                "Custom task check failed",
-              ); },
-            ),
-          ),
-        );
+        try {
+          await collectionQueue.run('customUpdates', server, async () => {
+            const results = [];
+            for (const task of tasks) results.push(await checkCustomTask(server, task));
+            return results;
+          }, {baseMs:getPollingConfig().customUpdates.intervalMs});
+        } catch (err) { pollingObservations.fail(observation,server,'Custom update check failed.'); }
+
       }),
     );
     observation.errors += outcomes.filter(result => result.status === 'rejected').length;
@@ -754,13 +694,7 @@ function setupPollingIntervals() {
   const cfg = getPollingConfig();
 
   if (cfg.info.enabled) {
-    infoPoller = setInterval(() => {
-      if (Date.now() - lastInfoPollTime >= cfg.info.intervalMs) {
-        pollSystemInfo().catch((err) =>
-          log.error({ err }, "System info poll error"),
-        );
-      }
-    }, 60 * 1000); // tick every minute, decide whether to actually poll
+    infoPoller = makePoller(pollSystemInfo, "System info", cfg.info.intervalMs);
   }
 
   if (cfg.updates.enabled)
@@ -815,7 +749,6 @@ function startPolling() {
   if (cfg.customUpdates.enabled) runNow(pollCustomUpdates, "Custom updates");
   if (cfg.ipamSources.enabled) runNow(pollIpamSources, "IPAM sources");
   setupPollingIntervals();
-  startAgentMetricsRetention();
 }
 
 /**
@@ -829,6 +762,7 @@ function restartPolling() {
   restartPollingTimer = setTimeout(() => {
     restartPollingTimer = null;
     stopPolling();
+    collectionQueue.resetSchedule();
     setupPollingIntervals();
     log.info("Poller restarted with new config");
   }, RESTART_POLLING_DEBOUNCE_MS);
@@ -842,6 +776,7 @@ function flushRestartPolling() {
     clearTimeout(restartPollingTimer);
     restartPollingTimer = null;
     stopPolling();
+    collectionQueue.resetSchedule();
     setupPollingIntervals();
     log.info("Poller restarted with new config");
   }
@@ -881,10 +816,7 @@ function stopPolling() {
     clearInterval(ipamSourcesPoller);
     ipamSourcesPoller = null;
   }
-  if (agentMetricsPruner) {
-    clearInterval(agentMetricsPruner);
-    agentMetricsPruner = null;
-  }
+
 }
 
 /**
@@ -916,6 +848,8 @@ function getRuntimeStatus() {
   return {
     checkedAt:new Date().toISOString(),
     scope:'current-process',
+    collectionQueue:collectionQueue.snapshot(),
+    adaptive:true,
     restartPending:!!restartPollingTimer,
     registeredSchedules:jobs.size,
     runningSchedules:running.size,
@@ -940,6 +874,7 @@ module.exports = {
   previewCustomTask: performCustomTaskCheck,
   pollIpamSources,
   getPollingConfig,
+  collectionStatus: () => collectionQueue.snapshot(),
   getRuntimeStatus,
   getSchedulerTimezone,
   getNextRun,

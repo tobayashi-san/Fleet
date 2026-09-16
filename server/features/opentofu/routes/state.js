@@ -57,9 +57,14 @@ function registerStateRoutes({ db, router, backupLocalState, ensureStateSafety, 
   router.get('/workspaces/:id/state', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
+    ensureWorkspacePath(workspace);
+    const unattemptedDraft = workspace.workspace_kind === 'isolated_vm'
+      && workspaceBackendType(workspace) === 'local'
+      && !fs.existsSync(path.join(workspace.path, 'terraform.tfstate'))
+      && !db.db.prepare("SELECT 1 FROM tofu_runs WHERE workspace_id = ? AND action = 'apply'").get(workspace.id);
+    if (unattemptedDraft) return res.json({resources: [], status: 'not_deployed'});
     const binary = findBinary();
     if (!binary) return res.status(500).json({ error: 'Binary not found' });
-    ensureWorkspacePath(workspace);
     if (!fs.existsSync(workspace.path)) {
       return res.json({ resources: [], error: `Path "${workspace.path}" does not exist inside the container.` });
     }

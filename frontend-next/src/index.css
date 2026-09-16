@@ -1306,6 +1306,7 @@
     padding-top: 0.7rem !important;
     padding-bottom: 0.7rem !important;
   }
+  :root[data-ui-density="comfortable"] table[data-density="compact"] > tbody > tr > td { font-size: 0.875rem; }
   :root[data-ui-density="comfortable"] .section-label { font-size: 0.75rem; }
   :root[data-ui-density="comfortable"] main button:not([role="switch"]) { min-height: 2.25rem; }
 

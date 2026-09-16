@@ -149,6 +149,8 @@ class AnsibleRunner {
   get _ansibleEnv() {
     return {
       ...process.env,
+      ANSIBLE_CALLBACK_PLUGINS: [path.join(__dirname, '..', 'ansible', 'callback_plugins'), process.env.ANSIBLE_CALLBACK_PLUGINS].filter(Boolean).join(path.delimiter),
+      ANSIBLE_CALLBACKS_ENABLED: [...new Set([...(process.env.ANSIBLE_CALLBACKS_ENABLED || '').split(',').filter(Boolean), 'shipyard_timing'])].join(','),
       ANSIBLE_FORCE_COLOR: '0',
       ANSIBLE_NOCOLOR: '1',
       ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',

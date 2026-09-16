@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -72,6 +73,7 @@ export function NodePage({
   onRefresh,
   refreshing,
   showAudit,
+  auditPagination,
   auditTasks,
   auditLoading,
   auditError,
@@ -86,6 +88,7 @@ export function NodePage({
   onRefresh: () => void;
   refreshing: boolean;
   showAudit: boolean;
+  auditPagination?: ReactNode;
   auditTasks?: AuditTask[];
   auditLoading?: boolean;
   auditError?: unknown;
@@ -237,6 +240,7 @@ export function NodePage({
         {showAudit && (
           <TabsContent value="tasks" className="mt-0">
             <ObjectTasksCard tasks={auditTasks} loading={auditLoading} error={auditError} onRetry={onRetryAudit} />
+            {auditPagination}
           </TabsContent>
         )}
       </Tabs>

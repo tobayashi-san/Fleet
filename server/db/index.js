@@ -839,6 +839,7 @@ module.exports = {
         VALUES (?, ?, datetime('now'))
         ON CONFLICT(server_id) DO UPDATE SET updates_json = excluded.updates_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(updates));
+      db.prepare("DELETE FROM host_check_attempts WHERE server_id=? AND kind='os'").run(serverId);
     },
     delete: (serverId) => {
       db.prepare('DELETE FROM server_updates_cache WHERE server_id = ?').run(serverId);
@@ -925,6 +926,10 @@ module.exports = {
       .map(row => cryptoUtil.decrypt(row.value)).filter(value => typeof value === 'string' && value.length > 0),
   },
 
+  checkAttempts: {
+    failed: (serverId, kind, reason) => db.prepare(`INSERT INTO host_check_attempts(server_id,kind,status,reason) VALUES (?,?,'failed',?) ON CONFLICT(server_id,kind) DO UPDATE SET status='failed',reason=excluded.reason,attempted_at=datetime('now')`).run(serverId,kind,reason),
+  },
+
   dockerImageUpdatesCache: {
     get: (serverId) => {
       const row = db.prepare('SELECT * FROM docker_image_updates_cache WHERE server_id = ?').get(serverId);
@@ -942,6 +947,7 @@ module.exports = {
         VALUES (?, ?, datetime('now'))
         ON CONFLICT(server_id) DO UPDATE SET results_json = excluded.results_json, updated_at = datetime('now')
       `).run(serverId, JSON.stringify(results));
+      db.prepare("DELETE FROM host_check_attempts WHERE server_id=? AND kind='images'").run(serverId);
     },
   },
 

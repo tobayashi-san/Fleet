@@ -25,3 +25,7 @@ Shipyard.wiki/
 playbooks/
 plugins/
 **/*.tsbuildinfo
+
+review-*/
+**/__pycache__/
+**/*.pyc

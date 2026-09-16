@@ -111,19 +111,26 @@ function getLatestParsed() {
   };
 }
 
-function createVersion({ content, createdBy, changelog }) {
+function createVersion({ content, createdBy, changelog, expectedVersion }) {
   const manifest = typeof content === 'string' ? JSON.parse(content) : content;
   const err = validateManifest(manifest);
   if (err) throw validationError(err);
 
-  const latest = ensureSeeded();
-  const version = latest.version + 1;
-  const normalized = normalizeForStorage(manifest, version);
-  return db.agentManifests.createNext({
-    content: JSON.stringify(normalized),
-    createdBy,
-    changelog,
-  });
+  return db.db.transaction(() => {
+    const latest = ensureSeeded();
+    if (expectedVersion !== undefined && expectedVersion !== latest.version) {
+      const conflict = new Error('Manifest changed on the server. Reload and compare before saving.');
+      conflict.status = 409;
+      throw conflict;
+    }
+    const version = latest.version + 1;
+    const normalized = normalizeForStorage(manifest, version);
+    return db.agentManifests.createNext({
+      content: JSON.stringify(normalized),
+      createdBy,
+      changelog,
+    });
+  }).immediate();
 }
 
 module.exports = {

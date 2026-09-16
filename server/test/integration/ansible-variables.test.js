@@ -69,6 +69,8 @@ test('real local Ansible receives native stored types and overrides while output
       overridden: 9, override_secret: 'synthetic-new-credential',
     }, (_type, data) => { streamed += data; });
     assert.equal(result.success, true, result.stdout + result.stderr);
+    const hostResults = require('../../utils/execution-host-results').executionHostResults(result.stdout);
+    assert.ok(hostResults.find(host => host.name === 'localhost')?.duration_seconds > 0, result.stdout);
     assert.match(result.stdout, /stored=\*{8} override=\*{8}/);
     assert.match(streamed, /stored=\*{8} override=\*{8}/);
     for (const secret of ['synthetic-stored-credential', 'synthetic-old-credential', 'synthetic-new-credential']) {

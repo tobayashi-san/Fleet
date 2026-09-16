@@ -23,6 +23,7 @@ interface ActivityItem {
   status: ActivityStatus;
   startedAt: number;
   completedAt?: number;
+  executionId?: string;
   lastLine?: string;
 }
 
@@ -140,9 +141,10 @@ function eventLine(data: Record<string, unknown>) {
 
 function formatAge(ts: number) {
   const diff = Math.max(0, now() - ts);
-  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s`;
-  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m`;
-  return `${Math.round(diff / 3_600_000)}h`;
+  if (diff < 60_000) return `${Math.max(1, Math.round(diff / 1000))}s ago`;
+  if (diff < 3_600_000) return `${Math.round(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.round(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
 }
 
 function EnvironmentActivityCenter({
@@ -196,6 +198,7 @@ function EnvironmentActivityCenter({
           startedAt: existing?.startedAt || now(),
           completedAt: status === 'running' ? undefined : (existing?.completedAt || now()),
           lastLine: line,
+          executionId: text(data.type).startsWith('tofu_') && data.dbRunId ? `deployment-${text(data.dbRunId)}` : text(data.type).startsWith('ansible_') && data.historyId ? `workflow-${text(data.historyId)}` : text(data.type).startsWith('schedule_') && data.runId ? `workflow-${text(data.runId)}` : text(data.type).startsWith('update_') && data.historyId && !text(data.historyId).includes('custom') ? `host-${text(data.historyId)}` : existing?.executionId,
         };
 
         const next = idx >= 0
@@ -277,6 +280,7 @@ function EnvironmentActivityCenter({
                       <span className="truncate text-sm font-medium">{item.title}</span>
                       {statusIcon(item.status)}
                     </div>
+                    {showOperationsLink && item.executionId && <Link to="/operations/executions/$id" params={{id: item.executionId}} search={{environment: environmentId}} onClick={() => setOpen(false)} className="text-xs text-primary hover:underline">Open execution</Link>}
                     {item.subtitle && (
                       <div className="truncate text-xs text-muted-foreground">{item.subtitle}</div>
                     )}

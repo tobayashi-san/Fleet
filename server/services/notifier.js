@@ -182,10 +182,11 @@ async function performEmail(title, message, success) {
   const user     = db.settings.get('smtp_user') || '';
   const pass     = getSecret(db, 'smtp_pass') || '';
   const from     = db.settings.get('smtp_from') || user;
-  const secure   = port === 465;
+  const mode = db.settings.get('smtp_security') || (port === 465 ? 'tls' : 'legacy');
+  const secure = mode === 'tls';
 
   // Reuse transporter unless SMTP config has changed
-  const cfgHash = `${host}:${port}:${user}:${pass}:${secure}`;
+  const cfgHash = `${host}:${port}:${user}:${pass}:${mode}`;
   if (_smtpTransporter && _smtpConfigHash !== cfgHash) {
     try { _smtpTransporter.close(); } catch {}
     _smtpTransporter = null;
@@ -195,6 +196,8 @@ async function performEmail(title, message, success) {
       host,
       port,
       secure,
+      requireTLS: mode === 'starttls',
+      ignoreTLS: mode === 'plain',
       auth: user ? { user, pass } : undefined,
       tls: { rejectUnauthorized: true },
       connectionTimeout: 10000,

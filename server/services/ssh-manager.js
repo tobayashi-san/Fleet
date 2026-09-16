@@ -135,7 +135,7 @@ function makeHostVerifier({ serverId, expectedFingerprint, out, hostLabel }) {
       log.warn({ err: e, serverId }, 'Failed to compute host key fingerprint');
       return verify(false);
     }
-    if (out) out.fingerprint = fp;
+    if (out) { out.fingerprint = fp; out.mismatch = false; }
     const stored = expectedFingerprint || (serverId ? db.servers.getHostFingerprint(serverId) : '');
     if (!stored) {
       // TOFU: accept and persist
@@ -147,6 +147,7 @@ function makeHostVerifier({ serverId, expectedFingerprint, out, hostLabel }) {
       return verify(true);
     }
     if (stored === fp) return verify(true);
+    if (out) out.mismatch = true;
     log.error(
       { serverId, host: hostLabel, expected: stored, got: fp },
       'SSH host key MISMATCH — refusing connection'
@@ -527,6 +528,7 @@ class SSHManager {
     const privateKey = readPrivateKey(this.getPrivateKeyPath());
     const ssh = new NodeSSH();
     const host = server.ip_address;
+    const verification = {};
 
     const connectPromise = ssh.connect({
       host,
@@ -534,7 +536,7 @@ class SSHManager {
       username: server.ssh_user || 'root',
       privateKey,
       readyTimeout: 10000,
-      hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host }),
+      hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host, out: verification }),
     }).then(() => {
       this.connections.set(key, ssh);
       this.lastUsed.set(key, Date.now());
@@ -542,11 +544,8 @@ class SSHManager {
       return ssh;
     }).catch(error => {
       this.connecting.delete(key);
-      // ssh2 surfaces a hostVerifier rejection as a "Handshake failed" / "All
-      // configured authentication methods failed" style error. Detect by checking
-      // the stored fingerprint vs none-collected (verifier rejected before auth).
-      const stored = db.servers.getHostFingerprint(server.id);
-      if (stored && /handshake|host key|verification|All configured/i.test(error.message || '')) {
+      ssh.dispose();
+      if (verification.mismatch) {
         throw new HostKeyMismatchError(host);
       }
       throw new Error(`SSH connection failed to ${host}: ${error.message}`);
@@ -634,6 +633,7 @@ class SSHManager {
     const privateKey = readPrivateKey(this.getPrivateKeyPath());
     const ssh = new NodeSSH();
     const host = server.ip_address;
+    const verification = {};
     try {
       await ssh.connect({
         host,
@@ -641,13 +641,12 @@ class SSHManager {
         username: server.ssh_user || 'root',
         privateKey,
         readyTimeout: 10000,
-        hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host }),
+        hostVerifier: makeHostVerifier({ serverId: server.id, hostLabel: host, out: verification }),
       });
       return ssh;
     } catch (error) {
       ssh.dispose();
-      const stored = db.servers.getHostFingerprint(server.id);
-      if (stored && /handshake|host key|verification|All configured/i.test(error.message || '')) {
+      if (verification.mismatch) {
         throw new HostKeyMismatchError(host);
       }
       throw new Error(`SSH connection failed to ${host}: ${error.message}`);

@@ -40,6 +40,15 @@ function applySchema(db) {
       updated_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS host_check_attempts (
+      server_id TEXT NOT NULL REFERENCES servers(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      status TEXT NOT NULL,
+      reason TEXT NOT NULL DEFAULT '',
+      attempted_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY(server_id, kind)
+    );
+
     CREATE TABLE IF NOT EXISTS server_info (
       server_id TEXT PRIMARY KEY,
       os TEXT,

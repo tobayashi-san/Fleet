@@ -61,3 +61,21 @@ test('failed archive verification prevents download and success audit and remove
   assert.equal(fs.existsSync(path.dirname(archive)),false);
  }finally{service.verifyEncryptedDatabaseBackup=verify;}
 });
+
+test('recovery records are admin-only, validated, persistent and explicitly manual',async()=>{
+  const record={occurredAt:'2026-01-01T00:00:00Z',scope:'Isolated database and application files',version:'test-version',result:'passed',notes:'Recovered in an isolated environment'};
+  assert.equal((await request(app).get('/backup/status').set('Authorization',token(viewer))).status,403);
+  assert.equal((await request(app).put('/backup/records/recovery').set('Authorization',token(viewer)).send(record)).status,403);
+  assert.equal((await request(app).put('/backup/records/recovery').set('Authorization',token(admin)).send({...record,occurredAt:'2099-01-01'})).status,400);
+  assert.equal((await request(app).put('/backup/records/recovery').set('Authorization',token(admin)).send({...record,result:'unknown'})).status,400);
+  assert.equal((await request(app).put('/backup/records/toString').set('Authorization',token(admin)).send(record)).status,404);
+  const saved=await request(app).put('/backup/records/recovery').set('Authorization',token(admin)).send(record);assert.equal(saved.status,200);assert.equal(saved.body.source,'manual');
+  const status=await request(app).get('/backup/status').set('Authorization',token(admin));assert.equal(status.status,200);assert.equal(status.body.recoveryTest.recordedBy,'backup-admin');assert.equal(status.body.recoveryTest.version,'test-version');assert.equal(status.body.externalBackup,null);assert.equal(status.body.databaseExport.source,'shipyard');
+});
+
+test('a failed external backup does not erase the last recorded success',async()=>{
+ const record={occurredAt:'2026-01-01T00:00:00Z',scope:'Application archive',version:'test-version',result:'passed',notes:''};
+ assert.equal((await request(app).put('/backup/records/external').set('Authorization',token(admin)).send(record)).status,200);
+ assert.equal((await request(app).put('/backup/records/external').set('Authorization',token(admin)).send({...record,occurredAt:'2026-01-02T00:00:00Z',result:'failed'})).status,200);
+ const response=await request(app).get('/backup/status').set('Authorization',token(admin));assert.equal(response.body.externalBackup.result,'failed');assert.equal(response.body.externalLastSuccess.result,'passed');assert.equal(response.body.externalLastSuccess.occurredAt,'2026-01-01T00:00:00.000Z');
+});

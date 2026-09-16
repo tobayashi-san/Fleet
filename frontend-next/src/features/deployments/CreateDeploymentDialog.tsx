@@ -10,7 +10,7 @@ import type { ProxmoxConnection } from "@/features/infrastructure/ProxmoxConnect
 import { VmFormDialog } from "./VmFormDialog";
 
 /** Two-step VM creation: choose a platform, then define the isolated VM. */
-export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { environmentId: string; open: boolean; onOpenChange: (open: boolean) => void }) {
+export function CreateDeploymentDialog({ environmentId, open, onOpenChange, onConfigurePlatforms }: { environmentId: string; open: boolean; onOpenChange: (open: boolean) => void; onConfigurePlatforms: () => void }) {
   const [connectionId, setConnectionId] = useState("");
   const [vmFormOpen, setVmFormOpen] = useState(false);
   const connectionsQuery = useQuery({
@@ -48,9 +48,10 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange }: { 
               <option value="">{connectionsQuery.isLoading ? "Loading…" : "Select platform…"}</option>
               {connections.map((connection) => <option key={connection.id} value={connection.id}>{connection.name} · {connection.endpoint}</option>)}
             </select>
-            {connections.length === 0 && connectionsQuery.isSuccess && <p className="text-xs text-amber-700 dark:text-amber-300">Create a Proxmox connection from the Managed VMs page first.</p>}
+            {connections.length === 0 && connectionsQuery.isSuccess && <p className="text-xs text-amber-700 dark:text-amber-300">Add a platform connection before creating a VM definition.</p>}
           </div>
         )}
+        {connections.length === 0 && connectionsQuery.isSuccess && <Button type="button" onClick={() => { onOpenChange(false); onConfigurePlatforms(); }}>Open platform connections</Button>}
         <DialogFooter>
           <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>Cancel</Button>
           <Button type="button" disabled={!connectionId} onClick={continueToVm}>Continue</Button>

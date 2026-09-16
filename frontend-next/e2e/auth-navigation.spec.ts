@@ -130,7 +130,7 @@ test('initial setup, login and protected console navigation work end-to-end', as
   const settingsNavigation = page.getByRole('navigation', { name: 'Administration' });
   await expect(settingsNavigation.getByRole('link', { name: 'Appearance' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'SSH' })).toBeVisible();
-  await expect(settingsNavigation.getByRole('link', { name: 'Git Integration' })).toBeVisible();
+  await expect(settingsNavigation.getByRole('link', { name: 'Playbook Git' })).toBeVisible();
   await expect(settingsNavigation.getByRole('link', { name: 'System', exact: true })).toBeVisible();
   await settingsNavigation.getByRole('link', { name: 'User Management' }).click();
   const userActions = page.getByRole('button', { name: 'Actions for e2e-admin' });
@@ -227,6 +227,8 @@ test('host details keep their originating workspace and desktop activity opens i
     }));
     await page.goto('/operations?section=tasks');
     await page.getByRole('row', { name: /Desktop activity details/ }).click();
+    await expect(page.getByRole('link', { name: 'Open execution page', exact: true })).toBeVisible();
+    await page.getByRole('link', { name: 'Open execution: Desktop activity details', exact: true }).click();
     await expect(page).toHaveURL(new RegExp(`/operations/executions/${'desktop-activity'}(?:\\?.*)?$`));
     await expect(page.getByRole('heading', { name: 'Execution details', exact: true })).toBeVisible();
     await expect(page.getByText('Execution environment:', { exact: false })).toBeVisible();
@@ -375,9 +377,10 @@ test('shadcn looks round panels and controls without changing console themes', a
   }
 });
 
-test('agent feature visibility follows the setting immediately', async ({ page }) => {
+test('agent feature visibility follows explicitly saved settings', async ({ page }) => {
   await loginForIsolatedTest(page);
-  await page.goto('/settings/system');
+  await page.goto('/settings/collection');
+  await page.getByText('Agents — configuration and affected hosts', {exact:true}).click();
   const agentToggle = page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i });
   await expect(agentToggle).toHaveAttribute('data-state', 'unchecked');
   const switchBox = await agentToggle.boundingBox();
@@ -388,6 +391,7 @@ test('agent feature visibility follows the setting immediately', async ({ page }
 
   const enabledSave = page.waitForResponse(response => response.url().includes('/api/system/settings') && response.request().method() === 'PUT' && response.status() === 200);
   await agentToggle.click();
+  await page.getByRole('button',{name:'Save agent settings'}).click();
   await enabledSave;
   const serverId = await page.evaluate(async () => {
     const token = localStorage.getItem('shipyard_token');
@@ -427,9 +431,11 @@ test('agent feature visibility follows the setting immediately', async ({ page }
   await page.goBack();
   await expect(page.getByRole('tab', { name: /overview/i })).toHaveAttribute('data-state', 'active');
 
-  await page.goto('/settings/system');
+  await page.goto('/settings/collection');
+  await page.getByText('Agents — configuration and affected hosts', {exact:true}).click();
   const disabledSave = page.waitForResponse(response => response.url().includes('/api/system/settings') && response.request().method() === 'PUT' && response.status() === 200);
   await page.getByRole('switch', { name: /agent-feature aktivieren|enable agent feature/i }).click();
+  await page.getByRole('button',{name:'Save agent settings'}).click();
   await disabledSave;
   await page.goto(`/servers/${serverId}`);
   await expect(page.getByRole('button', { name: 'Host tools' })).toHaveCount(0);
@@ -471,7 +477,7 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/opentofu/legacy-workspaces?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'legacy deployments unavailable' }) }));
   await page.route('**/api/opentofu/vm-templates?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'templates unavailable' }) }));
   await page.goto('/deployments');
-  await expect(page.getByText('Managed VMs could not be loaded', { exact: true })).toBeVisible();
+  await expect(page.getByText('VM definitions could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText('Legacy VM deployments could not be checked', { exact: true })).toBeVisible();
   await expect(page.getByText('VM templates could not be loaded', { exact: true })).toBeVisible();
   await expect(page.getByText(/no managed virtual machines|no templates yet/i)).toHaveCount(0);
@@ -479,7 +485,7 @@ test('dashboard and deployment failures are never presented as healthy empty sta
   await page.route('**/api/opentofu/vms/unavailable-vm', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'managed virtual machine unavailable' }) }));
   await page.goto('/deployments/unavailable-vm');
   await expect(page.getByText('Managed VM could not be loaded', { exact: true })).toBeVisible();
-  await expect(page.getByText('Managed VM not found', { exact: true })).toHaveCount(0);
+  await expect(page.getByText('VM definition not found', { exact: true })).toHaveCount(0);
 });
 
 test('operational and infrastructure failures provide retry states instead of healthy empty states', async ({ page }) => {
@@ -1172,6 +1178,11 @@ test('infrastructure overview presents platform nodes and VMs as an operator inv
     await expect(page.locator('main table').first()).toBeHidden();
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.getByRole('tab', { name: 'Inventory', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toHaveCount(0);
+    await page.getByRole('tab', { name: /^Tasks/i }).click();
+    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toBeVisible();
+    await page.getByRole('tab', { name: 'Inventory', exact: true }).click();
+    await expect(page.getByRole('navigation', { name: 'Object audit pagination' })).toHaveCount(0);
     await expect(page.getByText('E2E Xeon', { exact: true })).toBeVisible();
     await expect(page.getByText('pve-manager/8.4.1', { exact: true })).toBeVisible();
     await expect(page.getByRole('cell', { name: 'vmbr0', exact: true })).toBeVisible();

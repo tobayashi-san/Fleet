@@ -1,5 +1,4 @@
 import { formatDateTime } from '@/lib/utils';
-import { DatabaseBackupCard } from '@/features/backup/DatabaseBackupCard';
 import { useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Trash2, Unlock, Radiation, AlertTriangle, CheckCircle2 } from 'lucide-react';
@@ -81,7 +80,7 @@ export function DangerTab() {
   ];
 
   return (
-    <div className="space-y-4"><DatabaseBackupCard /><SettingsSection
+    <div className="space-y-4"><SettingsSection
       icon={<AlertTriangle className="h-4 w-4 text-destructive" />}
       title={t('set.danger')}
       description={t('set.dangerHint')}
@@ -168,13 +167,13 @@ function DzRow({ action, noBorder, resetRunning, acquireReset, releaseReset }: {
 
   return (
     <SettingsRow
-      label={action.key === 'all' ? 'Combined reset' : t(action.labelKey)}
+      label={action.key === 'all' ? 'Reset hosts, schedules, accounts and user playbooks' : t(action.labelKey)}
       hint={`${details.scope}. ${details.detail}`}
       noBorder={noBorder}
     >
       {phase === 'idle' && (
-        <Button variant="destructive" size="sm" disabled={resetRunning} onClick={() => { setTargetEnvironment(environmentId); setConfirmation(''); setError(''); setBackupApproval(null); setBackupFile(null); setBackupPassphrase(''); setPhase('confirm'); }}>
-          {action.icon} {action.key === 'all' ? 'Combined reset' : t(action.labelKey)}
+        <Button variant="destructive" size="sm" className="h-auto whitespace-normal py-2 text-left" disabled={resetRunning} onClick={() => { setTargetEnvironment(environmentId); setConfirmation(''); setError(''); setBackupApproval(null); setBackupFile(null); setBackupPassphrase(''); setPhase('confirm'); }}>
+          {action.icon} {action.key === 'all' ? 'Reset hosts, schedules, accounts and user playbooks' : t(action.labelKey)}
         </Button>
       )}
       {phase === 'confirm' && (
@@ -195,12 +194,12 @@ function DzRow({ action, noBorder, resetRunning, acquireReset, releaseReset }: {
             {t('common.cancel')}
           </Button>
           <Button variant="destructive" size="sm" disabled={resetRunning || confirmation !== details.phrase || !password || !backupApproval} onClick={run}>
-            {action.key === 'all' ? 'Combined reset' : t(action.labelKey)}
+            {action.key === 'all' ? 'Reset hosts, schedules, accounts and user playbooks' : t(action.labelKey)}
           </Button>
         </div>
       )}
       {phase === 'busy' && (
-        <div role="status" aria-live="polite" className="space-y-1 text-sm"><p className="font-medium">{action.key === 'all' ? 'Combined reset' : t(action.labelKey)} in progress…</p><p>{scoped ? `Target environment: ${targetEnvironment}` : 'Scope: all environments'}</p><p className="text-muted-foreground">Wait for the result before starting another reset. Leaving this page does not cancel the operation.</p></div>
+        <div role="status" aria-live="polite" className="space-y-1 text-sm"><p className="font-medium">{action.key === 'all' ? 'Reset hosts, schedules, accounts and user playbooks' : t(action.labelKey)} in progress…</p><p>{scoped ? `Target environment: ${targetEnvironment}` : 'Scope: all environments'}</p><p className="text-muted-foreground">Wait for the result before starting another reset. Leaving this page does not cancel the operation.</p></div>
       )}
       {phase === 'recovery' && (
         <div className="space-y-2 text-sm"><p role="alert" className="text-destructive">{error}</p><p>Do not delete the remaining staging files or repeat the reset. After your administrator completes recovery, reload this page to review the action again.</p></div>

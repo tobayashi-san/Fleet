@@ -11,3 +11,10 @@ it('finds later playbooks and returns no entries for unmatched queries',()=>{
  expect(commandSearch(playbooks,'automation-59',20,p=>p)[0]).toBe(playbooks[59]);
  expect(commandSearch(playbooks,'unmatched request',20,p=>p)).toEqual([]);
 });
+it('ranks exact and name tokens above metadata and rejects scattered letters',()=>{
+ const rows=[{name:'hr01-iot-ha',tags:['Production']},{name:'media',tags:[]},{name:'hr01-media-hms',tags:[]},{name:'alias',tags:['media']}];
+ expect(commandSearch(rows,'media',5,r=>r.name,r=>r.tags).map(r=>r.name)).toEqual(['media','hr01-media-hms','alias']);
+});
+it('treats a disambiguating identity as metadata, not part of the display name',()=>{
+ expect(commandSearch(['media\u0000VM 101','media-worker\u0000Host'],'media',5,item=>item)[0]).toBe('media\u0000VM 101');
+});

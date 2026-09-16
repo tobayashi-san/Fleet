@@ -157,7 +157,7 @@ const ipamSourcesRoute = createRoute({ getParentRoute: () => protectedLayout, pa
 const networkDetailRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/networks/$id', component: () => <PermissionGate allow={canAccessNetworks}><LazyPage><NetworkDetailPage /></LazyPage></PermissionGate> });
 // Settings is the single page that hosts: appearance, ssh, system, agent-manifest,
 // notifications, git, plugins, users-roles, audit, danger.
-// Tab is selected via the optional :tab path segment (default = appearance).
+// Tab is selected via the optional :tab path segment (default = system).
 const settingsRoute   = createRoute({ getParentRoute: () => protectedLayout, path: '/settings',     component: () => <PermissionGate allow={profile => profile.role === 'admin'}><LazyPage><SettingsPage /></LazyPage></PermissionGate> });
 const settingsTabRoute= createRoute({ getParentRoute: () => protectedLayout, path: '/settings/$tab', component: () => <PermissionGate allow={profile => profile.role === 'admin'}><LazyPage><SettingsPage /></LazyPage></PermissionGate> });
 // Plugin host route: dynamically loaded plugin UIs (sidebar entries link here).

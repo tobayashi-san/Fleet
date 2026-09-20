@@ -23,13 +23,14 @@ function terminalTheme(isDark: boolean) { return isDark ? {
 interface SshTerminalProps {
   server: Record<string, unknown>;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 /**
  * Full-screen overlay that opens an xterm.js SSH session via WebSocket.
  * xterm + fit addon are lazily imported so they stay in the `terminal` chunk.
  */
-export function SshTerminal({ server, onClose }: SshTerminalProps) {
+export function SshTerminal({ server, onClose, embedded = false }: SshTerminalProps) {
   const { t } = useTranslation();
   const serverId = String(server.id);
   const sshUser = (server.ssh_user as string) || 'root';
@@ -198,6 +199,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
 
         // Resize observer
         resizeObs = new ResizeObserver(() => {
+          if (!containerRef.current?.clientWidth || !containerRef.current?.clientHeight) return;
           fitAddon.fit();
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'resize', cols: term.cols, rows: term.rows }));
@@ -209,7 +211,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
 
     // Escape key handler
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
+      if (!embedded && e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
         closeTerminal();
@@ -228,11 +230,11 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
       const focusTarget = previouslyFocused?.dataset.terminalTrigger === 'true'
         ? document.querySelector<HTMLElement>('[role="tab"][data-state="active"]')
         : previouslyFocused;
-      if (focusTarget && typeof focusTarget.focus === 'function') {
+      if (!embedded && focusTarget && typeof focusTarget.focus === 'function') {
         try { focusTarget.focus(); } catch { /* ignore */ }
       }
     };
-  }, [environmentId, closeTerminal, setStatus, serverId, sshUser, t]);
+  }, [environmentId, closeTerminal, setStatus, serverId, sshUser, t, embedded]);
 
   const userLabel = sshUser;
   const serverName = (server.name as string) || '';
@@ -277,18 +279,18 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
     term.focus();
   };
 
-  return createPortal(
+  const content = (
     <div
-      className={cn('fixed inset-0 z-[2000] flex items-start justify-center bg-black/55',expanded ? 'p-2' : 'p-4 pt-16')}
-      onPointerDown={(e) => { if (e.target === e.currentTarget) closeTerminal(); }}
+      className={embedded ? 'min-w-0' : cn('fixed inset-0 z-[2000] flex items-start justify-center bg-black/55',expanded ? 'p-2' : 'p-4 pt-16')}
+      onPointerDown={(e) => { if (!embedded && e.target === e.currentTarget) closeTerminal(); }}
     >
       <div
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
         aria-label={t('term.dialogLabel', { name: serverName || hostname || 'server' })}
         className={cn(
           'flex w-full flex-col overflow-hidden rounded-panel border shadow-xl',
-          expanded ? 'h-[calc(100dvh-1rem)] max-w-none' : 'h-[calc(100dvh-8rem)] max-h-[48rem] max-w-[1100px]',
+          embedded ? 'h-[65dvh] min-h-[24rem]' : expanded ? 'h-[calc(100dvh-1rem)] max-w-none' : 'h-[calc(100dvh-8rem)] max-h-[48rem] max-w-[1100px]',
           isDark ? 'border-[#30363d] bg-[#0d1117]' : 'border-border-strong bg-card'
         )}
         onClick={(e) => e.stopPropagation()}
@@ -319,7 +321,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
               onClick={closeTerminal}
               aria-label={t('common.close')}
               className={cn('inline-flex h-9 w-9 items-center justify-center rounded focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring', isDark ? 'text-[#8b949e] hover:bg-[#21262d] hover:text-[#c9d1d9]' : 'text-muted-foreground hover:bg-accent hover:text-foreground')}
-              title={`${t('common.close')} (Esc)`}
+              title={embedded ? t('common.close') : `${t('common.close')} (Esc)`}
             >
               <X className="h-4 w-4" />
             </button>
@@ -342,7 +344,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
           <span className="font-mono">{session.started ? `${session.ended ? 'Session duration' : 'Connected duration'} ${duration}` : 'Session not established'}</span>
           {limits && <span>Idle: {limits.idleSeconds ? `${limits.idleSeconds/60} min` : 'off'} · Max: {limits.maxSeconds ? `${limits.maxSeconds/60} min` : 'off'}</span>}
           <details><summary className="cursor-pointer">Session and audit policy</summary><p className="mt-2 max-w-2xl">{sessionAudit ? 'Connection and disconnection metadata are recorded in the audit log. Commands and output are not recorded.' : 'Session auditing has not been confirmed by the server. Commands and output are not recorded.'} {limits ? `Idle limit: ${limits.idleSeconds ? `${limits.idleSeconds/60} minutes without input` : 'disabled'}. Maximum duration: ${limits.maxSeconds ? `${limits.maxSeconds/60} minutes` : 'disabled'}. Output does not reset inactivity. Expiry disconnects SSH and may interrupt foreground work.` : 'Session expiry policy has not been reported by this server.'} SSH host policies and connection loss may also close it. Closing this window disconnects SSH. Copy log exports the visible local terminal buffer.</p></details>
-          <button type="button" className="ml-auto inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent" aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}{expanded ? 'Restore size' : 'Expand terminal'}</button>
+          {!embedded && <button type="button" className="ml-auto inline-flex items-center gap-1.5 rounded px-2 py-1 hover:bg-accent" aria-pressed={expanded} onClick={()=>setExpanded(value=>!value)}>{expanded ? <Minimize2 className="h-3.5 w-3.5"/> : <Maximize2 className="h-3.5 w-3.5"/>}{expanded ? 'Restore size' : 'Expand terminal'}</button>}
         </div>
 
         <form className="flex flex-wrap items-center gap-2 border-b border-border px-4 py-2 text-xs" onSubmit={event=>{event.preventDefault();findInTerminal();}}>
@@ -360,7 +362,7 @@ export function SshTerminal({ server, onClose }: SshTerminalProps) {
           <div ref={containerRef} className="h-full w-full" />
         </div>
       </div>
-    </div>,
-    document.body
+    </div>
   );
+  return embedded ? content : createPortal(content, document.body);
 }

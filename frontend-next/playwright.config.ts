@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { defineConfig } from '@playwright/test';
 
 const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-e2e-'));
+process.env.FLEET_E2E_ARTIFACT_DIR ||= path.join(runtimeDir, 'artifacts');
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // Keep browser tests isolated from a developer's locally running Shipyard stack.
 // Ports can be overridden for parallel local test sessions or CI workers.
@@ -20,6 +21,8 @@ fs.cpSync(path.join(projectRoot, 'server/playbooks'), playbooksRoot, {
 
 export default defineConfig({
   testDir: './e2e',
+  outputDir: process.env.FLEET_E2E_OUTPUT_DIR || path.join(runtimeDir, 'results'),
+  reporter: process.env.CI ? [['list'], ['html', { outputFolder: process.env.FLEET_E2E_REPORT_DIR || path.join(runtimeDir, 'report'), open: 'never' }]] : [['list']],
   fullyParallel: false,
   // The browser suite intentionally exercises one shared, isolated database.
   // Running spec files in separate workers races first-user onboarding and

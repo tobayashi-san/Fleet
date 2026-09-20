@@ -1,27 +1,16 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const source = (relative: string) =>
-  readFileSync(new URL(`../${relative}`, import.meta.url), "utf8");
+const related: Record<string, string[]> = {
+  'features/servers/ServersPage.tsx': ['features/servers/useHostManagement.tsx', 'features/servers/HostInventoryRows.tsx', 'features/servers/GroupDialog.tsx', 'features/servers/HostManagementDialogs.tsx'],
+  'routes/networks.tsx': ['features/ipam/IpamSourcesDialog.tsx', 'features/ipam/CreatePrefixDialog.tsx', 'features/ipam/PrefixRows.tsx', 'features/ipam/prefix-model.ts'],
+  'routes/operations.tsx': ['features/operations/model.ts', 'features/operations/MaintenanceWindowDialog.tsx', 'features/operations/MaintenanceWindowsCard.tsx', 'features/operations/OperationList.tsx'],
+};
+const source = (relative: string) => [relative, ...(related[relative] || [])]
+  .map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n');
 
 describe("UI refactor contract", () => {
-  it("keeps IPAM and virtual machine tables on the compact shared density", () => {
-    for (const file of [
-      "routes/networks.tsx",
-      "routes/network-detail.tsx",
-      "features/infrastructure/DetailPanels.tsx",
-    ]) {
-      const contents = source(file);
-      expect(contents.match(/<table/g)?.length || 0).toBe(
-        contents.match(/data-density="compact"/g)?.length || 0,
-      );
-    }
 
-    const css = source("index.css");
-    expect(css).toContain("padding: 0.5rem 0.75rem !important");
-    expect(css).toContain("border-bottom: 1px solid hsl(var(--border-subtle))");
-    expect(css).toMatch(/nth-child\(even\)[\s\S]*?background-color: transparent/);
-  });
 
   it("uses a quiet positive status treatment and accessible secondary text", () => {
     const badge = source("components/ui/status-badge.tsx");
@@ -68,26 +57,9 @@ describe("UI refactor contract", () => {
     expect(sidebar).toContain('label="Settings"');
   });
 
-  it("shows host tools directly in the tab bar", () => {
-    const page = source("features/server-detail/ServerDetailPage.tsx");
-    expect(page.match(/<TabsTrigger value=/g)).toHaveLength(8);
-    expect(page).toContain('<TabsTrigger value="snapshots">Snapshots</TabsTrigger>');
-    expect(page).toContain('<TabsTrigger value="history">Jobs</TabsTrigger>');
-    expect(page).not.toContain('<OverflowMenu title="More host sections">');
-    for (const tab of ['settings', 'updates', 'notes', 'access']) expect(page).toContain(`<TabsTrigger value="${tab}">`);
-    expect(page).toContain('<ServerFilesTab serverId={id} profile={profile} />');
-    expect(page).toContain('setTerminalOpen(true)');
-  });
 
-  it("keeps host reachability in the page header instead of repeating it in the overview", () => {
-    const page = source("features/server-detail/ServerDetailPage.tsx");
-    const overview = source("features/server-detail/ServerOverviewTabs.tsx");
-    expect(page).toContain('server.status === "online"');
-    expect(overview).not.toContain('label="Connection"');
-    expect(overview).not.toContain("<StatusBadge");
-    expect(overview).toContain("Management mode");
-    expect(overview).not.toContain("Verwaltungsmodus");
-  });
+
+
 
 
   it("keeps comfortable density and flexible navigation user-configurable", () => {
@@ -96,27 +68,12 @@ describe("UI refactor contract", () => {
     const shell = source("components/layout/AppShell.tsx");
     expect(store).toContain("return 'comfortable'");
     expect(store).toContain("sidebarWidth: readSidebarWidth()");
-    expect(store).toContain("infrastructureTreeCollapsed");
     expect(sidebar).toContain("onPointerDown={startResize}");
     expect(sidebar).not.toContain("shipyard_recent_nav");
     expect(shell).toContain("setDensity(value)");
     expect(shell).toContain("lg:hidden\" onClick={openCommandPalette}");
   });
 
-  it("opens operational dashboard metrics as filtered work queues", () => {
-    const dashboard = source("routes/dashboard.tsx");
-    const servers = source("features/servers/ServersPage.tsx");
-    const router = source("router.tsx");
-    expect(dashboard).toContain("dataUpdatedAt");
-    expect(dashboard).toContain('label="Hosts"');
-    expect(dashboard).toContain("search={{ updates: true }}");
-    expect(dashboard).toContain("search={{ scope: 'active' }}");
-    expect(dashboard).toContain("search={{ scope: 'failed' }}");
-    expect(servers).toContain("routeSearch.updates === true");
-    expect(servers).toContain("routeSearch.attention === true");
-    expect(router).toContain("interface ServersSearch");
-    expect(router).toContain("interface OperationsSearch");
-  });
 
   it("keeps the primary host action clear and secondary actions in overflow", () => {
     const servers = source("features/servers/ServersPage.tsx");
@@ -258,14 +215,11 @@ describe("UI refactor contract", () => {
   it("keeps global, host, deployment and IPAM query failures actionable", () => {
     const shell = source("components/layout/AppShell.tsx");
     const palette = source("components/CommandPalette.tsx");
-    const tree = source("components/layout/InfrastructureTree.tsx");
     const login = source("routes/login.tsx");
-    const dashboard = source("routes/dashboard.tsx");
     const servers = source("features/servers/ServersPage.tsx");
     const audit = source("features/operations/AuditLogPanel.tsx");
     const deployment = source("routes/deployment-detail.tsx");
     const vmForm = source("features/deployments/VmFormDialog.tsx");
-    const infrastructure = source("routes/infrastructure.tsx");
     const profile = source("routes/profile.tsx");
     const createHost = source("components/CreateServerDialog.tsx");
     const locale = source("locales/en.json");
@@ -273,9 +227,7 @@ describe("UI refactor contract", () => {
     expect(shell).toContain('title="Console permissions could not be loaded"');
     expect(shell).toContain("Environments could not be loaded.");
     expect(palette).toContain("Some search results could not be loaded.");
-    expect(tree).toContain("Managed hosts could not be loaded");
     expect(login).toContain('title="Shipyard could not be reached"');
-    expect(dashboard).toContain('title="Operation counts could not be loaded"');
     expect(servers).toContain('title="Host folders could not be loaded"');
     expect(servers).toContain('title="Playbooks could not be loaded"');
     expect(audit).toContain('title="Audit filters could not be loaded"');
@@ -286,7 +238,6 @@ describe("UI refactor contract", () => {
     expect(deployment).toContain("runStateUnavailable");
     expect(vmForm).toContain('title="VM templates could not be loaded"');
     expect(vmForm).toContain('title="Pre-deploy hosts could not be loaded"');
-    expect(infrastructure).toContain("(inventoryQuery.isSuccess || !canAccessInfrastructure(profile))");
     expect(profile).toContain('title="Two-factor authentication status could not be loaded"');
     expect(createHost).toContain('title="Environments could not be loaded"');
     expect(locale).toContain('"managedHostReferencesFailed"');
@@ -329,7 +280,6 @@ describe("UI refactor contract", () => {
   it("preserves the release-candidate accessibility and operations fixes", () => {
     const operations = source("routes/operations.tsx");
     const network = source("routes/network-detail.tsx");
-    const infrastructure = source("routes/infrastructure.tsx");
     const history = source("features/server-detail/ServerOperationsTabs.tsx");
     const templates = source("features/playbooks/PlaybookTemplates.tsx");
     const profile = source("routes/profile.tsx");
@@ -347,8 +297,6 @@ describe("UI refactor contract", () => {
     expect(network).toContain('connectionRows.length === 0\n                      ? tr("noProxmoxConnection")');
     expect(history).toContain('import { historyFailureCause } from "@/lib/history-failure"');
     expect(history).not.toContain('h.output && <button');
-    expect(infrastructure).toContain('IPAM schedule</th>');
-    expect(infrastructure).toContain('Last sync</th>');
     expect(templates).toContain('htmlFor="playbook-search"');
     expect(templates).toContain('id="playbook-search"');
     expect(profile).toContain('htmlFor="profile-display-name"');

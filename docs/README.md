@@ -27,24 +27,13 @@ end-to-end recovery acceptance requirements.
 - [Development pipeline](DEVELOPMENT_PIPELINE.md) — targeted checks, CI gates,
   release candidates, and stable releases.
 
-## Historical review records
+## Test and review artifacts
 
-- [Review closure matrix](ui-review-closure.md) — September 2026 findings,
-  implementation evidence, and acceptance limits.
-- [Implementation log](ui-review-implementation.md) — chronological work record.
+New screenshots, generated fixtures, and review archives belong in ignored
+`artifacts/` or CI artifacts. Keep reusable tests in `server/test/`, frontend
+source tests, or `frontend-next/e2e/`.
 
-These are dated engineering records, not current operator instructions. Their
-evidence links are pinned to commit
-`0e6490dfb646cce5a05dfda54755f0feaa3635f6`, before generated review files were
-removed from the tracked tree. Browse the
-[September 9 evidence](https://github.com/tobayashi-san/Shipyard/tree/0e6490dfb646cce5a05dfda54755f0feaa3635f6/artifacts/ui-review-2026-09-09)
-and [September 10 evidence](https://github.com/tobayashi-san/Shipyard/tree/0e6490dfb646cce5a05dfda54755f0feaa3635f6/artifacts/ui-review-2026-09-10).
-GitHub displays HTML files as source; download the corresponding review archive
-to inspect its HTML pages locally. Unlinked `verification/...` filenames in the
-records refer to the September 9 evidence directory.
+## Repository contributions
 
-New screenshots, generated fixtures, and review archives go in ignored
-`artifacts/` or CI artifacts. Keep reusable automated tests in `server/test/`,
-frontend source tests, or `frontend-next/e2e/`. Removing generated files from the
-tracked tree does not remove earlier versions from Git history or reduce the
-size of existing full clones.
+- [Contributing](../CONTRIBUTING.md): development conventions and validation.
+- [Security policy](../SECURITY.md): private vulnerability reporting guidance.

@@ -1,22 +1,23 @@
-import { lazy, Suspense, useState } from 'react';
-const HostManagement = lazy(() => import('./ServersPage').then(module => ({default:module.ServersPage})));
-import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
-import { Plus } from 'lucide-react';
-import { api, apiFetch } from '@/lib/api';
-import { useUi } from '@/lib/store';
-import { hasCap, canAccessInfrastructure, useProfile } from '@/lib/queries';
-import { formatDateTime } from '@/lib/utils';
+import { CreateServerDialog } from '@/components/CreateServerDialog';
+import { VmId } from "@/components/VmId";
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { StatusBadge } from '@/components/ui/status-badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { ImportProxmoxVmDialog } from '@/features/infrastructure/ImportProxmoxVmDialog';
 import type { InfrastructureResponse, Vm } from '@/features/infrastructure/detail-model';
-import type { ServerRow, ServerGroup } from './server-list-utils';
+import { api, apiFetch } from '@/lib/api';
+import { canAccessInfrastructure, hasCap, useProfile } from '@/lib/queries';
+import { useUi } from '@/lib/store';
+import { formatDateTime } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
+import { Plus } from 'lucide-react';
+import { lazy, Suspense, useState } from 'react';
+import type { ServerGroup, ServerRow } from './server-list-utils';
+const HostManagement = lazy(() => import('./ServersPage').then(module => ({default:module.ServersPage})));
 
 export function HostsPage() {
   const environmentId = useUi(state => state.environmentId);
@@ -44,7 +45,7 @@ export function HostsPage() {
     {hosts.isError ? <QueryErrorState error={hosts.error} onRetry={() => void hosts.refetch()} /> : hosts.isPending ? <p role="status">Loading hosts…</p> : <div className="overflow-x-auto rounded-md border">
       <table className="w-full text-left text-sm"><thead className="border-b bg-muted/40"><tr>{['Name', 'Address', 'Connection', 'Last successful check', 'Group'].map(label => <th className="px-4 py-3 font-medium" key={label}>{label}</th>)}</tr></thead>
         <tbody>{rows.map(host => <tr key={host.id} className="border-b last:border-0 hover:bg-muted/30">
-          <td className="px-4 py-3"><Link className="font-medium text-primary hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link>{host.deployment && <Link className="block text-xs text-muted-foreground hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link>}</td>
+          <td className="px-4 py-3"><Link className="font-medium text-primary hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link> <VmId value={host.proxmox_vm_id} />{host.deployment && <Link className="block text-xs text-muted-foreground hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link>}</td>
           <td className="px-4 py-3 font-mono text-xs">{host.ip_address || host.hostname || 'Not configured'}</td>
           <td className="px-4 py-3"><StatusBadge tone={host.status === 'online' ? 'success' : ['offline','error'].includes(host.status || '') ? 'danger' : 'muted'}>{host.deployment && host.deployment.deployment_phase !== 'ready' ? !host.ip_address ? 'Waiting for IP' : host.deployment.status === 'failed' ? 'Connection or deployment failed' : host.deployment.deployment_phase === 'connect_host' ? 'Checking connection' : 'Finishing deployment' : host.status === 'online' ? 'Connected' : ['offline','error'].includes(host.status || '') ? 'Unreachable' : 'Not checked'}</StatusBadge></td>
           <td className="px-4 py-3 text-muted-foreground">{host.last_seen ? formatDateTime(host.last_seen) : 'Not checked'}</td>

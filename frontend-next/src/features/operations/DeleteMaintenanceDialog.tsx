@@ -1,11 +1,11 @@
-import {useRef,useState} from 'react';
-import {useBlocker} from '@tanstack/react-router';
-import {useQueryClient} from '@tanstack/react-query';
-import {ApiError,apiFetch} from '@/lib/api';
-import {Input} from '@/components/ui/input';
-import {Label} from '@/components/ui/label';
-import {Button} from '@/components/ui/button';
-import {Dialog,DialogContent,DialogDescription,DialogFooter,DialogHeader,DialogTitle} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { ApiError, apiFetch } from '@/lib/api';
+import { useQueryClient } from '@tanstack/react-query';
+import { useBlocker } from '@tanstack/react-router';
+import { useRef, useState } from 'react';
 type WindowTarget={id:string;name:string;revision?:string};
 type Props={mode?:'delete'|'cancel';windows:WindowTarget[];environmentId:string;onClose:()=>void;onDeleted?:(id:string)=>void};
 export function DeleteMaintenanceDialog(props:Props){return props.windows.length?<Deletion {...props}/>:null;}

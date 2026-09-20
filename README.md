@@ -122,13 +122,32 @@ the target host.
 and whose terminal you can open from Shipyard. No agent or Proxmox setup is
 required for this.
 
+## Find your way around
+
+Open a host to use **Terminal**, **Updates**, **Workloads**, and **Files** for
+SSH sessions, system maintenance, containers, and file transfers. Host settings
+are available from the button at the top right.
+
+The **Updates** menu shows system-package and Docker-image updates across your
+hosts. Filter for available updates, hosts that need checking, or required
+reboots, then open a host to take action. The overview uses the latest collected
+results; refreshing the overview reloads those results rather than starting a
+new scan on every host.
+
+### Connect Proxmox (optional)
+
+Open **Settings → Connections** to add a Proxmox API endpoint and credentials
+for the selected environment. This is also where you configure automatic IPAM
+synchronization. A Proxmox connection provides infrastructure inventory; set up
+SSH access separately when you want to manage a guest as a Linux host.
+
 ## What can I do with Shipyard?
 
 | I want to… | Shipyard provides |
 | --- | --- |
 | See which servers need attention | Host health, resource usage, pending updates, tags, groups, and environments |
 | Work on a host from my browser | SSH terminals, SSH-key management, and SFTP file transfers |
-| Manage containers and updates | Docker inventory, logs, Compose stacks, OS updates, and custom update tasks |
+| Manage containers and updates | A central system/Docker update dashboard, Docker inventory, logs, Compose stacks, and custom update tasks |
 | Repeat a task across hosts | Ansible playbooks, variables and secrets, Git integration, schedules, and maintenance windows |
 | Manage my Proxmox infrastructure | Platform and guest inventory, snapshots, power actions, and OpenTofu-managed VMs |
 | Organize access and addresses | Roles and permissions, MFA, audit history, IP prefixes, and address reservations |
@@ -193,13 +212,17 @@ data volumes.
 | [Deployment](docs/DOCKER_DEPLOYMENT.md) | LAN access, TLS, persistent storage, and configuration |
 | [Backup and recovery](docs/README.md#backup-and-recovery) | Choosing database-only or application backups and planning a restore |
 | [MFA](docs/mfa-policy.md) · [SSH keys](docs/ssh-key-import.md) · [Audit log](docs/audit-log.md) | Access configuration and operational history |
-| [All documentation](docs/README.md) | Operator guides, development workflow, and historical records |
+| [All documentation](docs/README.md) | Deployment, administration, and development workflow |
 
 ## Local development
 
 Want to work on Shipyard's code? Use **Node.js 24** and npm. The complete
 [development guide](docs/DEVELOPMENT_PIPELINE.md#local-development) covers setup,
 checks, browser tests, and releases.
+
+Read [Contributing](CONTRIBUTING.md) for code conventions, required checks, and
+browser-test failure artifacts. Follow the [security policy](SECURITY.md) to
+report vulnerabilities privately.
 
 Shipyard uses React/TypeScript in `frontend-next/` and an Express/SQLite backend
 in `server/`. The Docker installation above is the path for running the app;

@@ -1,6 +1,6 @@
 import {test,expect,type Page,type Locator} from '@playwright/test';
-import fs from 'node:fs';import path from 'node:path';import {fileURLToPath} from 'node:url';
-const shots=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../test-results/design-layout');
+import fs from 'node:fs';import path from 'node:path';
+const shots=path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, 'design-layout');
 async function login(page:Page){await page.goto('/login');await page.evaluate(async()=>{const body=JSON.stringify({username:'e2e-admin',password:'E2e-password-2026!'});let r=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body});if(!r.ok)r=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body});const data=await r.json();if(!data.token)throw Error('Isolated authentication failed');localStorage.setItem('shipyard_token',data.token);});await page.goto('/');}
 async function shot(page:Page,name:string){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,name+'.png'),fullPage:true,animations:'disabled'});}
 async function inViewport(page: Page, locator: Locator) {

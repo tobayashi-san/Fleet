@@ -1,6 +1,7 @@
 import { parseApiDate } from '@/lib/utils';
 
 export interface ServerRow {
+  proxmox_vm_id?: number | null;
   deployment?: { id: string; status: string; deployment_phase: string } | null;
   id: string;
   name: string;

@@ -1,9 +1,9 @@
 import { test, expect, type Page } from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
-import {fileURLToPath} from 'node:url';
 
-const shots = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../test-results/review-regressions');
+
+const shots = path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, 'review-regressions');
 async function signIn(page: Page) {
   await page.goto('/login');
   await page.evaluate(async () => {

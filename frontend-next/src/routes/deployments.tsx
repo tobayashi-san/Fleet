@@ -1,3 +1,4 @@
+import { VmId } from "@/components/VmId";
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -153,7 +154,7 @@ export function DeploymentsPage() {
                   <td className="px-3"><span className="font-medium">{vm.name}</span></td>
                   <td className="px-3"><StatusBadge tone={status.tone} dot>{status.label}</StatusBadge></td>
                   <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
-                  <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
+                  <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"}</span> <VmId value={vm.vm_id} /></td>
                   <td className="px-3"><div className="text-xs">{vm.last_run ? `${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}` : "No runs yet"}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run?.completed_at || vm.last_run?.started_at)}</div></td>
                   {canEdit && <td className="px-3 text-right"><Button variant="ghost" size="sm" aria-label={`Delete definition ${vm.name}`} disabled={['running', 'cancelling', 'queued', 'pending'].includes(vm.last_run?.status || '')} onClick={() => { deleteDefinition.reset(); setDeleteTarget({vm, environmentId}); }}><Trash2 />Delete definition</Button></td>}
                 </tr>;

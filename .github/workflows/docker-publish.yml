@@ -11,6 +11,9 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FLEET_E2E_OUTPUT_DIR: ${{ github.workspace }}/artifacts/browser/results
+  FLEET_E2E_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/browser/screenshots
+  FLEET_E2E_REPORT_DIR: ${{ github.workspace }}/artifacts/browser/report
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
@@ -31,19 +34,24 @@ jobs:
         working-directory: server
         run: |
           npm ci
-          npm test
-          npm run typecheck
+          npm run check
 
       - name: Install, test and build frontend
         working-directory: frontend-next
         run: |
           npm ci
-          npm run typecheck
-          npm run lint
-          npm test
           npx playwright install --with-deps firefox
-          npm run test:e2e
-          npm run build
+          npm run check
+
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/browser/
+          if-no-files-found: ignore
+          retention-days: 14
+
 
   build-and-push:
     needs: verify

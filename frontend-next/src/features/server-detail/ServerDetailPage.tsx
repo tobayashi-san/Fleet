@@ -1,121 +1,60 @@
-import { HostSnapshots } from './HostSnapshots';
-import { ComposeTemplateButton } from './components/ComposeTemplateButton';
-import { OsUpdateImpact } from './components/OsUpdateImpact';
-import { CustomUpdateDialog } from './components/CustomUpdateDialog';
-import { ComposeValidation } from "./components/ComposeValidation";
-import {
-  lazy,
-  Suspense,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  RefreshCw,
-  CircleDot,
-  Cpu,
-  HardDrive,
-  Clock,
-  HeartPulse,
-  Satellite,
-  Boxes,
-  ExternalLink,
-  Terminal,
-  Pencil,
-  ArrowUp,
-  Key,
-  Power,
-  Play,
-  Square,
-  CloudDownload,
-  RotateCw,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Settings2,
-  Eye,
-  Bot,
-  Download,
-  Shield,
-  Sliders,
-  Code2,
-  Bell,
-  Workflow,
-  X,
-  Network,
-} from "lucide-react";
-import { api, apiFetch, ApiError } from "@/lib/api";
-import { ws } from "@/lib/ws";
-import { useProfile, useSettings, hasCap, canAccessInfrastructure } from "@/lib/queries";
-import { useUi } from "@/lib/store";
-import { showToast } from "@/lib/toast";
-import { actionLabel, statusLabel } from "@/lib/history-labels";
 import { CreateServerDialog } from "@/components/CreateServerDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  ActionRunDialog
+} from "@/components/ui/action-run-dialog";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogFooter,
 } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import {
-  OverflowMenu,
   OverflowItem,
+  OverflowMenu,
   OverflowSep,
 } from "@/components/ui/overflow-menu";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metricTextClass } from "@/components/ui/metric-bar";
-import {
-  ActionRunDialog,
-  type OutputLine,
-  type RunStatus,
-} from "@/components/ui/action-run-dialog";
-import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
-import {
-  type ContainerRow,
-  type CustomTask,
-  type HistoryRow,
-  type IpamReservation,
-  type ManagedDeploymentResponse,
-  type ServerDetail,
-  type ServerInfo,
-  CapacitySummary,
-  formatBytes,
-  formatDate,
-  formatUptime,
-  HostStorageInventory,
-  RecentHostTasks,
-  SummaryField,
-} from "./server-detail-model";
-import { useServerDetailController } from "./useServerDetailController";
-import { ServerOverviewTabs } from "./ServerOverviewTabs";
-import { ServerDockerTab } from "./ServerDockerTab";
-import { ServerUpdatesTab } from "./ServerUpdatesTab";
-import { ServerOperationsTabs } from "./ServerOperationsTabs";
-import { ServerFilesTab } from "./ServerFilesTab";
+import { PageHeader } from "@/components/ui/page-header";
+import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { hasCap } from "@/lib/queries";
+import { showToast } from "@/lib/toast";
 import { useUrlTab } from "@/lib/use-url-tab";
+import { Link } from "@tanstack/react-router";
+import {
+  ArrowLeft,
+  ArrowUp,
+  Key,
+  Pencil,
+  Power,
+  Satellite,
+  Terminal,
+  Trash2
+} from "lucide-react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo
+} from "react";
+import { HostSnapshots } from './HostSnapshots';
+import { ServerDockerTab } from "./ServerDockerTab";
+import { ServerFilesTab } from "./ServerFilesTab";
+import { ServerOperationsTabs } from "./ServerOperationsTabs";
+import { ServerOverviewTabs } from "./ServerOverviewTabs";
+import { ServerUpdatesTab } from "./ServerUpdatesTab";
+import { ComposeTemplateButton } from './components/ComposeTemplateButton';
+import { ComposeValidation } from "./components/ComposeValidation";
+import { CustomUpdateDialog } from './components/CustomUpdateDialog';
+import { OsUpdateImpact } from './components/OsUpdateImpact';
+import { useServerDetailController } from "./useServerDetailController";
 
 const SshTerminal = lazy(() =>
   import("@/components/SshTerminal").then((module) => ({
@@ -129,7 +68,6 @@ export function ServerDetailPage() {
   const {
     t,
     qc,
-    params,
     id,
     navigate,
     terminalOpen,
@@ -153,40 +91,11 @@ export function ServerDetailPage() {
     actionRun,
     setActionRun,
     profile,
-    settings,
-    timeFormat,
-    hour12,
-    serverKnown,
-    canViewManagementRelationships,
-    deploymentData,
     managedDeployments,
     managedProxmoxDeployment,
-    startActionRun,
-    rawServer,
     isLoading,
     server,
     info,
-    refetchInfo,
-    fetchingInfo,
-    infoFailed,
-    infoError,
-    ipamReservationData,
-    ipamReservations,
-    dockerContainers,
-    fetchingDocker,
-    rawUpdates,
-    history,
-    notesData,
-    customTasks,
-    customTaskList,
-    imageUpdates,
-    setImageUpdates,
-    notes,
-    setNotes,
-    notesEditing,
-    setNotesEditing,
-    renderedNotes,
-    saveNotesMut,
     runUpdateMut,
     runRebootMut,
     proxmoxRebootMut,
@@ -194,28 +103,7 @@ export function ServerDetailPage() {
     resetHostKeyMut,
     deleteServerMut,
     restartContainerMut,
-    logsContainer,
-    setLogsContainer,
-    logsContent,
-    setLogsContent,
-    logsTail,
-    setLogsTail,
-    logsLoading,
-    setLogsLoading,
-    logsError,
-    setLogsError,
-    logsRequestRef,
-    loadLogs,
-    taskDialog,
-    setTaskDialog,
-    taskForm,
-    setTaskForm,
-    saveTaskMut,
     deleteTaskMut,
-    checkTaskMut,
-    runTaskMut,
-    checkImageMut,
-    checkSystemUpdatesMut,
     composeActionMut,
     composeDialog,
     setComposeDialog,
@@ -224,30 +112,13 @@ export function ServerDetailPage() {
     deleteStackMut,
     openEditCompose,
     saveComposeMut,
-    latencyMs,
-    setLatencyMs,
-    HIST_PAGE_SIZE,
-    histPage,
-    setHistPage,
-    histItems,
-    histTotal,
-    histSafe,
-    histPage_,
-    ramPct,
-    diskPct,
-    cpuPct,
-    healthThresholds,
     updatesList,
     phasedList,
-    containers,
-    activeLogContainer,
-    stacks,
   } = controller;
 
   const linkedVm = managedDeployments.find(deployment => deployment.cluster_id && deployment.vm?.node_name && deployment.vm.vm_id != null);
   const availableTabs = useMemo(() => {
     const values = ["overview", "snapshots"];
-    if (hasCap(profile, "canEditServers")) values.push("settings");
     if (hasCap(profile, "canViewDocker") && server?.docker_enabled)
       values.push("docker");
     if (
@@ -262,11 +133,14 @@ export function ServerDetailPage() {
       values.push("updates");
     if (hasCap(profile, "canViewServerHistory")) values.push("history");
     if (hasCap(profile, "canViewNotes")) values.push("notes");
-    if (hasCap(profile, "canViewFiles") || hasCap(profile, "canUseTerminal"))
-      values.push("access");
+    if (hasCap(profile, "canViewFiles")) values.push("files");
+    if (hasCap(profile, "canUseTerminal")) values.push("terminal");
     return values;
   }, [profile, server?.docker_enabled]);
   const serverTabs = useUrlTab("overview", availableTabs);
+  useEffect(() => {
+    if (serverTabs.value === 'terminal') setTerminalOpen(true);
+  }, [serverTabs.value, setTerminalOpen]);
 
   // ── Loading / not found ─────────────────────────────────────
   if (isLoading)
@@ -516,51 +390,34 @@ export function ServerDetailPage() {
       {/* ── Tabs ─────────────────────────────────────────────── */}
       <Tabs
         value={serverTabs.value}
-        onValueChange={(value) => {
-          if (value === "terminal") setTerminalOpen(true);
-          else serverTabs.onValueChange(value);
-        }}
+        onValueChange={serverTabs.onValueChange}
         className="space-y-4"
       >
         <div className="flex items-end justify-between gap-2 border-b">
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
+            {availableTabs.includes("terminal") && <TabsTrigger value="terminal">Terminal</TabsTrigger>}
+            {availableTabs.includes("updates") && <TabsTrigger value="updates">Updates</TabsTrigger>}
+            {availableTabs.includes("docker") && <TabsTrigger value="docker">Workloads</TabsTrigger>}
+            {availableTabs.includes("files") && <TabsTrigger value="files">Files</TabsTrigger>}
             <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
             {availableTabs.includes("history") && <TabsTrigger value="history">Jobs</TabsTrigger>}
-            {availableTabs.includes("settings") && <TabsTrigger value="settings">Settings</TabsTrigger>}
-            {availableTabs.includes("updates") && <TabsTrigger value="updates">Updates</TabsTrigger>}
             {availableTabs.includes("notes") && <TabsTrigger value="notes">Notes</TabsTrigger>}
-            {availableTabs.includes("access") && <TabsTrigger value="access">Advanced</TabsTrigger>}
-            {availableTabs.includes("docker") && <TabsTrigger value="docker">Workloads</TabsTrigger>}
           </TabsList>
           </div>
 
         </div>
 
         <TabsContent value="snapshots">{controller.deploymentContextLoading ? <p role="status">Loading snapshot connection…</p> : controller.deploymentContextFailed ? <div role="alert"><p>Snapshot connection could not be loaded.</p><Button variant="outline" onClick={() => void controller.refetchDeploymentContext()}>Try again</Button></div> : <HostSnapshots mapping={linkedVm} />}</TabsContent>
-        <TabsContent value="settings"><Card><CardContent className="space-y-3 p-4"><p>Manage this host’s address, SSH credentials and options.</p><Button onClick={() => setEditOpen(true)}><Pencil />Edit host</Button></CardContent></Card></TabsContent>
         <ServerOverviewTabs controller={controller} />
         <ServerDockerTab controller={controller} />
         <ServerUpdatesTab controller={controller} />
-        <TabsContent value="access" className="space-y-4">
-          {hasCap(profile, 'canUseTerminal') && <Button variant="outline" onClick={() => setConfirmResetHostKey(true)}><Key />{t('srv.resetHostKey')}</Button>}
-          {hasCap(profile, "canUseTerminal") && (
-            <Card>
-              <CardContent className="flex flex-wrap items-center gap-3 p-4">
-                <Terminal className="h-5 w-5 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold">{t("common.terminal")}</div>
-                  <p className="mt-0.5 text-xs text-muted-foreground">{t("det.terminalAccessHint")}</p>
-                </div>
-                <Button type="button" size="sm" variant="outline" onClick={() => setTerminalOpen(true)}>
-                  <Terminal className="h-4 w-4" />{t("det.openTerminal")}
-                </Button>
-              </CardContent>
-            </Card>
-          )}
-          {hasCap(profile, "canViewFiles") && <ServerFilesTab serverId={id} profile={profile} />}
-        </TabsContent>
+        {hasCap(profile, "canUseTerminal") && <TabsContent value="terminal" forceMount className="space-y-3 data-[state=inactive]:hidden">
+          <div className="flex flex-wrap justify-end gap-2"><Button variant="ghost" size="sm" onClick={() => setConfirmResetHostKey(true)}><Key />{t('srv.resetHostKey')}</Button></div>
+          {terminalOpen ? <Suspense fallback={<p role="status">{t("common.loading")}</p>}><SshTerminal key={id} embedded server={server} onClose={() => setTerminalOpen(false)} /></Suspense> : <Button onClick={() => setTerminalOpen(true)}><Terminal />{t("det.openTerminal")}</Button>}
+        </TabsContent>}
+        {hasCap(profile, "canViewFiles") && <TabsContent value="files"><ServerFilesTab serverId={id} profile={profile} /></TabsContent>}
         <ServerOperationsTabs controller={controller} />
       </Tabs>
 
@@ -659,18 +516,6 @@ export function ServerDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* SSH Terminal overlay */}
-      {terminalOpen && (
-        <Suspense
-          fallback={
-            <div className="p-4 text-sm text-muted-foreground">
-              {t("common.loading")}
-            </div>
-          }
-        >
-          <SshTerminal server={server} onClose={() => setTerminalOpen(false)} />
-        </Suspense>
-      )}
       <ActionRunDialog
         open={!!actionRun}
         title={actionRun?.title || t("det.output")}

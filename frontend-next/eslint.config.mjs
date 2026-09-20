@@ -26,4 +26,12 @@ export default tseslint.config(
       'prefer-const': 'off',
     },
   },
+  {
+    files: ['src/features/server-detail/**/*.{ts,tsx}', 'src/features/ipam/**/*.{ts,tsx}', 'src/routes/network-detail.tsx', 'src/features/updates/**/*.{ts,tsx}', 'src/routes/updates.tsx', 'src/components/VmId.tsx'],
+    rules: {
+      '@typescript-eslint/no-unused-vars': 'error',
+      'react-hooks/exhaustive-deps': 'error',
+    },
+  },
+
 );

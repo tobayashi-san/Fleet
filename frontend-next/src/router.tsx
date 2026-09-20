@@ -10,6 +10,7 @@ import { api } from '@/lib/api';
 import { canAccessDeployments, canAccessInfrastructure, canAccessNetworks, canAccessOperations, hasCap, useProfile, type Profile } from '@/lib/queries';
 
 const PlaybooksPage = lazy(() => import('@/routes/playbooks').then(module => ({ default: module.PlaybooksPage })));
+const UpdatesPage = lazy(() => import('@/routes/updates').then(module => ({ default: module.UpdatesPage })));
 const ServersPage = lazy(() => import('@/routes/servers').then(module => ({ default: module.ServersPage })));
 const ServerDetailPage = lazy(() => import('@/routes/server-detail').then(module => ({ default: module.ServerDetailPage })));
 const SettingsPage = lazy(() => import('@/routes/settings').then(module => ({ default: module.SettingsPage })));
@@ -116,6 +117,7 @@ const serversRoute    = createRoute({
   },
   component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServersPage /></LazyPage></PermissionGate>,
 });
+const updatesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/updates', component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers') && hasCap(profile, 'canViewUpdates')}><LazyPage><UpdatesPage /></LazyPage></PermissionGate> });
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServerDetailPage /></LazyPage></PermissionGate> });
 const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewPlaybooks') || hasCap(profile, 'canViewSchedules')}><LazyPage><PlaybooksPage /></LazyPage></PermissionGate> });
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });
@@ -169,6 +171,7 @@ const routeTree = rootRoute.addChildren([
   protectedLayout.addChildren([
     dashboardRoute,
     serversRoute,
+    updatesRoute,
     serverDetail,
     playbooksRoute,
     profileRoute,

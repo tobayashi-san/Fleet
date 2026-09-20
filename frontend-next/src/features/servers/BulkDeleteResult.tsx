@@ -1,6 +1,6 @@
-import type {DeleteHostOutcome} from './delete-host-batch';
-import {Button} from '@/components/ui/button';
-import {formatDateTime} from '@/lib/utils';
+import { Button } from '@/components/ui/button';
+import { formatDateTime } from '@/lib/utils';
+import type { DeleteHostOutcome } from './delete-host-batch';
 
 export function BulkDeleteResult({outcomes,completedAt,onDismiss,onSelectFailed}: {
   outcomes:DeleteHostOutcome[];completedAt:string;onDismiss:()=>void;onSelectFailed:()=>void;

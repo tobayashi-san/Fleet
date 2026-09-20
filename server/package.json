@@ -1,6 +1,6 @@
 {
   "name": "shipyard-server",
-  "version": "3.0.8-rc.40",
+  "version": "3.0.8-rc.41",
   "private": true,
   "engines": {
     "node": ">=24 <25"
@@ -12,7 +12,8 @@
     "dev": "node --watch index.js",
     "test": "node --test test/*.test.js",
     "test:ansible-integration": "node --test test/integration/ansible-variables.test.js",
-    "typecheck": "tsc -p tsconfig.opentofu.json"
+    "typecheck": "tsc -p tsconfig.opentofu.json",
+    "check": "npm test && npm run typecheck"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

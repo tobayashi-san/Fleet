@@ -1,9 +1,9 @@
-import { History } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/status-badge";
 import { metricTextClass } from "@/components/ui/metric-bar";
-import { ThresholdBar } from "./components/summary-cards";
+import { StatusBadge } from "@/components/ui/status-badge";
 import { formatDateTime } from "@/lib/utils";
+import { History } from "lucide-react";
+import { ThresholdBar } from "./components/summary-cards";
 
 export interface ServerDetail {
   deployment?: { id: string; status: string; deployment_phase: string } | null;

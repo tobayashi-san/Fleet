@@ -1,5 +1,5 @@
-import {completionStatus} from '@/lib/execution-status';
-import type {OutputLine,RunStatus} from '@/components/ui/action-run-dialog';
+import type { OutputLine, RunStatus } from '@/components/ui/action-run-dialog';
+import { completionStatus } from '@/lib/execution-status';
 interface ActionEvent {type?:unknown;historyId?:unknown;serverId?:unknown;status?:unknown;success?:unknown;data?:unknown;stream?:unknown;error?:unknown}
 export interface TrackedAction {title:string;status:RunStatus;lines:OutputLine[];historyId?:string;serverId:string;requestId:number;earlyEvents?:ActionEvent[];earlyEventsTruncated?:boolean}
 

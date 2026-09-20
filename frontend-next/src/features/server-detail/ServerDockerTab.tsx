@@ -1,236 +1,94 @@
-import { imageCatalogFreshness } from './image-catalog-freshness';
-import { containerStateTone } from './container-state';
-import { Timestamp } from "@/components/ui/timestamp";
-import {
-  lazy,
-  Suspense,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  RefreshCw,
-  CircleDot,
-  Cpu,
-  HardDrive,
-  Clock,
-  HeartPulse,
-  Box,
-  Satellite,
-  Boxes,
-  ExternalLink,
-  Info,
-  Terminal,
-  Pencil,
-  ArrowUp,
-  Key,
-  Power,
-  Play,
-  Square,
-  CloudDownload,
-  FileText,
-  RotateCw,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Settings2,
-  StickyNote,
-  Eye,
-  Bot,
-  Download,
-  Shield,
-  Sliders,
-  History,
-  Code2,
-  Bell,
-  Workflow,
-  X,
-  Network,
-} from "lucide-react";
-import { api, apiFetch, ApiError } from "@/lib/api";
-import { ws } from "@/lib/ws";
-import { useProfile, useSettings, hasCap } from "@/lib/queries";
-import { useUi } from "@/lib/store";
-import { showToast } from "@/lib/toast";
-import { actionLabel, statusLabel } from "@/lib/history-labels";
-import { CreateServerDialog } from "@/components/CreateServerDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
-  OverflowMenu,
   OverflowItem,
-  OverflowSep,
+  OverflowMenu
 } from "@/components/ui/overflow-menu";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metricTextClass } from "@/components/ui/metric-bar";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TabsContent } from "@/components/ui/tabs";
+import { Timestamp } from "@/components/ui/timestamp";
+import { hasCap } from "@/lib/queries";
 import {
-  ActionRunDialog,
-  type OutputLine,
-  type RunStatus,
-} from "@/components/ui/action-run-dialog";
-import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+  Box,
+  Boxes,
+  CloudDownload,
+  FileText,
+  Layers,
+  Play,
+  Plus,
+  RefreshCw,
+  RotateCw,
+  Square,
+  Trash2,
+  X
+} from "lucide-react";
+import { CopyButton } from "./components/summary-cards";
+import { containerStateTone } from './container-state';
+import { imageCatalogFreshness } from './image-catalog-freshness';
 import {
-  type ContainerRow,
-  type CustomTask,
-  type HistoryRow,
-  type IpamReservation,
-  type ManagedDeploymentResponse,
-  type ServerDetail,
-  type ServerInfo,
-  CapacitySummary,
-  formatBytes,
-  formatDate,
-  formatUptime,
-  HostStorageInventory,
-  RecentHostTasks,
-  SummaryField,
+  type ContainerRow
 } from "./server-detail-model";
 
 
 import type { ServerDetailController } from "./useServerDetailController";
 
-export function ServerDockerTab({ controller }: { controller: ServerDetailController }) {
+type ServerDockerTabController = Pick<ServerDetailController,
+    "activeLogContainer"
+  | "checkImageMut"
+  | "composeActionMut"
+  | "containers"
+  | "deleteStackMut"
+  | "fetchingDocker"
+  | "id"
+  | "imageCatalog"
+  | "imageUpdates"
+  | "loadLogs"
+  | "logsContainer"
+  | "logsContent"
+  | "logsError"
+  | "logsLoading"
+  | "logsTail"
+  | "openEditCompose"
+  | "profile"
+  | "qc"
+  | "server"
+  | "setComposeDialog"
+  | "setConfirmComposeDown"
+  | "setConfirmDeleteStack"
+  | "setConfirmRestartContainer"
+  | "setLogsContainer"
+  | "setLogsTail"
+  | "stacks"
+  | "t"
+>;
+
+export function ServerDockerTab({ controller }: { controller: ServerDockerTabController }) {
   const {
     t,
     qc,
-    params,
     id,
-    navigate,
-    terminalOpen,
-    setTerminalOpen,
-    editOpen,
-    setEditOpen,
-    confirmRunUpdate,
-    setConfirmRunUpdate,
-    confirmResetHostKey,
-    setConfirmResetHostKey,
-    confirmReboot,
-    setConfirmReboot,
-    confirmDelete,
-    setConfirmDelete,
-    confirmDeleteTask,
-    setConfirmDeleteTask,
-    confirmComposeDown,
     setConfirmComposeDown,
-    confirmRestartContainer,
     setConfirmRestartContainer,
-    actionRun,
-    setActionRun,
     profile,
-    settings,
-    timeFormat,
-    hour12,
-    serverKnown,
-    canViewManagementRelationships,
-    deploymentData,
-    managedDeployments,
-    managedProxmoxDeployment,
-    startActionRun,
-    rawServer,
-    isLoading,
     server,
-    info,
-    refetchInfo,
-    fetchingInfo,
-    infoFailed,
-    infoError,
-    ipamReservationData,
-    ipamReservations,
-    dockerContainers,
     fetchingDocker,
-    rawUpdates,
-    history,
-    notesData,
-    customTasks,
-    customTaskList,
     imageUpdates,
     imageCatalog,
-    setImageUpdates,
-    notes,
-    setNotes,
-    notesEditing,
-    setNotesEditing,
-    renderedNotes,
-    saveNotesMut,
-    runUpdateMut,
-    runRebootMut,
-    proxmoxRebootMut,
-    testConnMut,
-    resetHostKeyMut,
-    deleteServerMut,
-    restartContainerMut,
     logsContainer,
     setLogsContainer,
     logsContent,
-    setLogsContent,
     logsTail,
     setLogsTail,
     logsLoading,
-    setLogsLoading,
     logsError,
-    setLogsError,
-    logsRequestRef,
     loadLogs,
-    taskDialog,
-    setTaskDialog,
-    taskForm,
-    setTaskForm,
-    saveTaskMut,
-    deleteTaskMut,
-    checkTaskMut,
-    runTaskMut,
     checkImageMut,
-    checkSystemUpdatesMut,
     composeActionMut,
-    composeDialog,
     setComposeDialog,
-    confirmDeleteStack,
     setConfirmDeleteStack,
     deleteStackMut,
     openEditCompose,
-    saveComposeMut,
-    latencyMs,
-    setLatencyMs,
-    HIST_PAGE_SIZE,
-    histPage,
-    setHistPage,
-    histItems,
-    histTotal,
-    histSafe,
-    histPage_,
-    ramPct,
-    diskPct,
-    cpuPct,
-    healthThresholds,
-    updatesList,
-    phasedList,
     containers,
     activeLogContainer,
     stacks,
@@ -330,11 +188,11 @@ export function ServerDockerTab({ controller }: { controller: ServerDetailContro
         {/* ════ DOCKER ════ */}
         {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
-            {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Workload metrics: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length}/{containers.length} containers have CPU and memory samples</summary><p className="mt-2 text-muted-foreground">Source: container runtime statistics collected on this host. Missing values mean the latest collection did not return a sample; they do not mean zero usage. Stopped containers may have no live sample. Refresh the container list and inspect host connectivity/runtime access if running containers remain without samples.</p></details>}
-            {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Image comparison limitations</summary><p className="mt-2 text-muted-foreground">Cannot check: local images without a registry digest cannot be compared. Unknown: the comparison returned no verified result; check registry access, credentials and the image tag. Refresh image checks after correcting the cause.</p></details>}
+            {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Metrics available: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length}/{containers.length} containers</summary><p className="mt-2 text-muted-foreground">Missing metrics are unknown, not zero. Stopped containers may have no samples. Refresh to check again.</p></details>}
+            {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Image comparison limitations</summary><p className="mt-2 text-muted-foreground">Local images without a registry digest cannot be compared. For unknown results, check registry access and the image tag, then refresh.</p></details>}
             {hasCap(profile, "canViewUpdates") && <div className="rounded-md border p-3 text-sm text-muted-foreground" role="status">
-              <p>Image checks: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "No verified collection time available"}</p>
-              <p>{imageCatalog?.source || "Container registry digest comparison over SSH"} · {catalogFreshness.fresh ? "Within check interval" : hasCap(profile, "canPullDocker") ? "Missing or stale check; refresh image checks" : "Missing or stale check; ask an authorized operator to refresh"}. OS packages use a separate catalog.</p>
+              <p>Image checks: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "Not checked yet"}</p>
+              <p>{catalogFreshness.fresh ? "Current" : "Stale or missing — refresh image checks"}</p>
             </div>}
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">

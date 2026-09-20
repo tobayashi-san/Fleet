@@ -52,6 +52,7 @@ test('IPAM workflows remain usable across desktop and mobile layouts', async ({ 
 
   await page.getByRole('row').filter({ hasText: '10.20.1.0/24' }).getByRole('link').first().click();
   await expect(page.locator('table').getByText('254 free IPs', { exact: true })).toBeVisible();
+  await expect(page.getByRole('table')).toHaveAttribute('data-density', 'compact');
   await page.getByRole('tab', { name: /child prefixes/i }).click();
   await expect(page).toHaveURL(/#tab=children$/);
   await page.reload();

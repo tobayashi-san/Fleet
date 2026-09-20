@@ -1,11 +1,11 @@
-import { ConfirmDialog } from '@/components/ui/confirm-dialog';
-import { useEffect, useState } from 'react';
-import { hasCap } from '@/lib/queries';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import { hasCap } from '@/lib/queries';
+import { useEffect, useState } from 'react';
 import type { ServerDetailController } from '../useServerDetailController';
 import { CustomUpdatePreview } from './CustomUpdatePreview';
 

@@ -28,8 +28,8 @@ They use test credentials and anonymous container storage and remove their
 containers and anonymous volumes on completion.
 
 Generated UI-review evidence belongs in ignored `artifacts/` or CI artifacts.
-Historical reports and pinned evidence links are listed in the
-[documentation index](README.md#historical-review-records).
+See the [documentation index](README.md#test-and-review-artifacts) for artifact
+storage conventions.
 
 ## Local development
 
@@ -63,14 +63,18 @@ backend on port 3001. Local development uses HTTP unless you configure backend
 TLS variables; the production Docker deployment uses HTTPS by default.
 
 ```bash
-# From the repository root: lint, types, unit tests, and frontend build
-npm run check
+# Install browser and OS dependencies once
+npm --prefix frontend-next exec -- playwright install --with-deps firefox
 
-# Browser tests; install browser and OS dependencies once
-cd frontend-next
-npx playwright install --with-deps firefox
-npm run test:e2e
+# From the repository root: all backend and frontend checks, including browser tests
+npm run check
 ```
+
+CI and release workflows use the same `check` scripts as local development.
+Browser runs use separate temporary databases and result directories; use
+`FLEET_E2E_API_PORT` and `FLEET_E2E_WEB_PORT` for concurrent runs. Explicit
+screenshots live under `FLEET_E2E_ARTIFACT_DIR` (a unique temporary directory by
+default). Playwright prints the result path on failure.
 
 The root `npm run dev:server` and `npm --prefix server run dev` use the same
 backend command.
@@ -81,13 +85,12 @@ backend command.
 2. Make the smallest coherent change and keep public API or schema changes
    explicit in the PR description.
 3. Run local checks before opening the PR:
-   - Backend changes: `cd server && npm run typecheck && npm test`
+   - Backend changes: `npm run check:backend`
    - One backend test file: `cd server && node --test test/<file>.test.js`
-   - Frontend changes: `cd frontend-next && npm run lint && npm run typecheck && npm test && npm run build`
+   - Frontend changes: `npm run check:frontend`
    - Browser workflows: install both backend and frontend dependencies, then run
      `cd frontend-next && npm run test:e2e`.
-   - Cross-cutting changes: run `npm run check` from the repository root, followed
-     by the browser tests.
+   - Cross-cutting changes: run `npm run check` from the repository root.
 4. Open a pull request into `main`.
 5. Merge only after the GitHub CI workflow is green.
 
@@ -158,3 +161,20 @@ Before treating a release as usable:
   successfully.
 - For RCs, test the explicit RC image tag with Docker Compose.
 - For stable releases, confirm `latest` points to the new stable release.
+
+## Browser failure evidence
+
+CI, release verification and image publishing upload a `browser-failure-*`
+artifact when a job fails after producing browser evidence. It contains the
+Playwright HTML report, failed-test screenshots and retained traces, plus
+explicit UI screenshots. Artifacts are retained for 14 days; no test databases
+or runtime workspaces are uploaded.
+
+`FLEET_E2E_OUTPUT_DIR` selects Playwright's result directory and
+`FLEET_E2E_REPORT_DIR` selects the CI HTML report directory. Local runs still use
+unique temporary result directories by default. For concurrent runs, use
+separate output directories if overriding them, as well as separate API/web ports.
+
+The navigation suite uses default Playwright test mode: a failed case does not
+skip later cases. Tests establish their own session and prerequisites. One
+worker is retained because browser tests share an isolated API database.

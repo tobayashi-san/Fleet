@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
-import { Copy } from 'lucide-react';
-import { useTranslation } from 'react-i18next';
-import { showToast } from '@/lib/toast';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { MetricBar } from '@/components/ui/metric-bar';
+import { showToast } from '@/lib/toast';
+import { Copy } from 'lucide-react';
+import type { ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 
 export function ThresholdBar({ pct, warningAt }: { pct: number | null; warningAt?: number }) {
   return <MetricBar pct={pct} size="md" showTicks warningAt={warningAt} />;

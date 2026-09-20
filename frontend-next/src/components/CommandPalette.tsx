@@ -7,7 +7,7 @@ import { Command } from 'cmdk';
 import { useNavigate } from '@tanstack/react-router';
 import { useInfiniteQuery, useQuery } from '@tanstack/react-query';
 import {
-  Search, LayoutDashboard, Server, FileCode2, Settings, User,
+  Search, LayoutDashboard, Download, Server, FileCode2, Settings, User,
   HelpCircle, Sun, Moon, LogOut, Puzzle, Workflow, Network, ClipboardList,
 } from 'lucide-react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
@@ -172,6 +172,7 @@ export function CommandPalette() {
 
                 <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label="Hosts" shortcut="g d" onSelect={() => go('/')} />
+                  {hasCap(profile, 'canViewServers') && hasCap(profile, 'canViewUpdates') && <PaletteItem icon={<Download className="h-4 w-4" />} label="Updates" onSelect={() => go('/updates')} />}
                   {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
                   {canViewOperations && <PaletteItem icon={<ClipboardList className="h-4 w-4" />} label="Jobs" shortcut="g o" onSelect={() => go('/operations')} />}
                   {hasCap(profile, 'canViewPlaybooks') && <PaletteItem icon={<FileCode2 className="h-4 w-4" />} label={t('nav.playbooks')} shortcut="g p" onSelect={() => go('/playbooks')} />}

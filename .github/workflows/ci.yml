@@ -17,6 +17,9 @@ permissions:
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  FLEET_E2E_OUTPUT_DIR: ${{ github.workspace }}/artifacts/browser/results
+  FLEET_E2E_ARTIFACT_DIR: ${{ github.workspace }}/artifacts/browser/screenshots
+  FLEET_E2E_REPORT_DIR: ${{ github.workspace }}/artifacts/browser/report
 
 jobs:
   backend-tests:
@@ -37,13 +40,9 @@ jobs:
         working-directory: server
         run: npm ci
 
-      - name: Run backend tests
+      - name: Verify backend
         working-directory: server
-        run: npm test
-
-      - name: Check typed backend feature boundaries
-        working-directory: server
-        run: npm run typecheck
+        run: npm run check
 
       - name: Audit root development dependencies
         run: npm audit
@@ -70,31 +69,24 @@ jobs:
         working-directory: frontend-next
         run: npm ci
 
-      - name: Build frontend
-        working-directory: frontend-next
-        run: npm run build
-
-      - name: Check frontend types
-        working-directory: frontend-next
-        run: npm run typecheck
-
-      - name: Lint frontend
-        working-directory: frontend-next
-        run: npm run lint
-
-      - name: Run frontend tests
-        working-directory: frontend-next
-        run: npm test
-
       - name: Install backend dependencies for browser tests
         working-directory: server
         run: npm ci
 
-      - name: Run browser end-to-end tests
+      - name: Verify frontend
         working-directory: frontend-next
         run: |
           npx playwright install --with-deps firefox
-          npm run test:e2e
+          npm run check
+
+      - name: Upload browser failure evidence
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: browser-failure-${{ github.job }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: artifacts/browser/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Audit frontend dependencies, including build tools
         working-directory: frontend-next

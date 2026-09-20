@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
+  Download,
   House,
   FileCode2,
   Rocket,
@@ -124,6 +125,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       <nav className="min-h-0 flex flex-1 flex-col gap-1 overflow-y-auto p-2" aria-label="Main navigation">
         <NavItem to="/" label="Start" icon={House} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />
         {canViewServers && <NavItem to="/servers" label="Hosts" icon={Server} active={path.startsWith("/servers")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {canViewServers && hasCap(profile, "canViewUpdates") && <NavItem to="/updates" label="Updates" icon={Download} active={path === "/updates"} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewDeployments && <NavItem to="/deployments" label="Deployments" icon={Rocket} active={path.startsWith("/deployments")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewPlaybooks && <NavItem to="/playbooks" label="Automations" icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewNetworks && <NavItem to="/networks" label="Networks" icon={Network} active={path.startsWith("/networks")} collapsed={collapsed} onNavigate={onMobileClose} />}

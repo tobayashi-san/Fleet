@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 
 async function login(page: Page) {
@@ -13,7 +12,7 @@ async function login(page: Page) {
     localStorage.setItem('shipyard_token', data.token);
   });
 }
-const shots = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../test-results');
+const shots = path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, '');
 const cluster = {id:'https://pve.example', endpoint:'https://pve.example', status:'online', connections:[{id:'pve', name:'Platform'}], nodes:[{name:'pve01', status:'online', cpu:0.2, maxcpu:8, mem:1024, maxmem:8192}], vms:[{name:'vm-app01',node_name:'pve01',vm_id:101,status:'running',mem:1024,maxmem:4096}], datastores:[]};
 async function inventory(page: Page) {
   await page.route('**/api/opentofu/infrastructure?*', route => route.fulfill({json:{clusters:[cluster]}}));
@@ -23,7 +22,7 @@ async function inventory(page: Page) {
   await page.route('**/api/opentofu/proxmox-connections/pve/vm-catalog*', route => route.fulfill({json:{nodes:[{name:'pve01'}], templates:[], datastores:[], bridges:[]}}));
 }
 
-test('start is the home page with six destinations and no platform polling', async ({page}) => {
+test('start is the home page with seven destinations and no platform polling', async ({page}) => {
   await login(page); await inventory(page);
   let platformRequests = 0;
   page.on('request', request => { if (/\/api\/opentofu\/infrastructure/.test(request.url())) platformRequests++; });
@@ -37,7 +36,7 @@ test('start is the home page with six destinations and no platform polling', asy
     await page.setViewportSize({width,height:900});
     if (width < 1024) await page.getByRole('button',{name:'Open navigation',exact:true}).click();
     const nav = page.getByRole('navigation',{name:'Main navigation'});
-    for (const name of ['Start','Hosts','Deployments','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
+    for (const name of ['Start','Hosts','Updates','Deployments','Automations','Networks','Jobs']) await expect(nav.getByRole('link',{name,exact:true})).toBeVisible();
     if (width < 1024) await page.getByRole('button',{name:'Close navigation',exact:true}).last().click();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
     await page.screenshot({path:path.join(shots, `hosts-${width}.png`),fullPage:true,animations:'disabled'});
@@ -120,16 +119,36 @@ test('a host shows host facts and snapshots without VM hardware or inventory req
     await page.route('**/api/opentofu/proxmox-connections/pve/audit?*', route => route.fulfill({json:{events:[],total:0,offset:0,limit:20}}));
     let inventoryRequests = 0;
     page.on('request', request => { if (request.url().includes('/api/opentofu/infrastructure?')) inventoryRequests++; });
+    let terminalConnections = 0;
+    await page.routeWebSocket('**/ws/ssh?*', socket => {
+      terminalConnections++;
+      socket.send(JSON.stringify({type:'ready'}));
+    });
     await page.goto(`/servers/${host.id}`);
     await expect(page.getByRole('heading',{name:'pve01-canonical',exact:true})).toBeVisible();
-    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs','Settings','Updates','Notes','Advanced']);
+    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Terminal','Updates','Files','Overview','Snapshots','Jobs','Notes']);
+    await expect(page.getByRole('tabpanel').getByText('Connection', {exact:true})).toHaveCount(0);
+    await expect(page.getByRole('tabpanel').getByText('Management mode', {exact:true})).toBeVisible();
     await expect(page.getByText('Recent capacity',{exact:true})).toHaveCount(0);
     await expect(page.getByText('Virtual machines',{exact:true})).toHaveCount(0);
+    await page.getByRole('tab',{name:'Terminal',exact:true}).click();
+    const terminal = page.getByRole('region',{name:/terminal/i});
+    await expect(terminal).toBeVisible();
+    await expect.poll(() => terminalConnections).toBe(1);
+    await page.keyboard.press('Escape');
+    await expect(terminal).toBeVisible();
+    await page.getByRole('tab',{name:'Updates',exact:true}).click();
+    await expect(terminal).toBeHidden();
+    await page.getByRole('tab',{name:'Terminal',exact:true}).click();
+    await expect(terminal).toBeVisible();
+    expect(terminalConnections).toBe(1);
+    await terminal.getByRole('button',{name:'Close',exact:true}).click();
+    await expect(terminal).toHaveCount(0);
     await page.getByRole('tab',{name:'Snapshots',exact:true}).click();
     await expect(page.getByText('Snapshots are available for hosts linked to a Proxmox guest.')).toBeVisible();
     expect(inventoryRequests).toBe(0);
     await page.setViewportSize({width:390,height:844});
-    const advanced = page.getByRole('tab',{name:'Advanced',exact:true});
+    const advanced = page.getByRole('tab',{name:'Files',exact:true});
     await advanced.scrollIntoViewIfNeeded();
     await advanced.click();
     await expect(advanced).toHaveAttribute('data-state','active');

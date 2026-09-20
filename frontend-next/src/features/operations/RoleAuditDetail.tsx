@@ -1,4 +1,4 @@
-import {formatDateTime} from '@/lib/utils';
+import { formatDateTime } from '@/lib/utils';
 const timestampLabels = new Set(['Start (UTC)', 'End (UTC)', 'Cancelled at (UTC)']);
 interface RoleChange {
   kind: 'role-change' | 'user-change' | 'maintenance-change' | 'ssh-key-change' | 'host-change'; version: 1;

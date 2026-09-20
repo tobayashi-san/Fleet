@@ -1,247 +1,100 @@
-import { imageCatalogFreshness } from './image-catalog-freshness';
-import { managementLabel } from '@/lib/resource-model';
-import { summarizeUpdates } from './update-summary';
-import {
-  lazy,
-  Suspense,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  RefreshCw,
-  CircleDot,
-  Cpu,
-  HardDrive,
-  Clock,
-  HeartPulse,
-  Box,
-  Satellite,
-  Boxes,
-  ExternalLink,
-  Info,
-  Terminal,
-  Pencil,
-  ArrowUp,
-  Key,
-  Power,
-  Play,
-  Square,
-  CloudDownload,
-  FileText,
-  RotateCw,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Settings2,
-  StickyNote,
-  Eye,
-  Bot,
-  Download,
-  Shield,
-  Sliders,
-  History,
-  Code2,
-  Bell,
-  Workflow,
-  X,
-  Network,
-  TriangleAlert,
-} from "lucide-react";
-import { api, apiFetch, ApiError } from "@/lib/api";
-import { ws } from "@/lib/ws";
-import { useProfile, useSettings, hasCap } from "@/lib/queries";
-import { useUi } from "@/lib/store";
-import { showToast } from "@/lib/toast";
-import { actionLabel, statusLabel } from "@/lib/history-labels";
-import { CreateServerDialog } from "@/components/CreateServerDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { PageHeader } from "@/components/ui/page-header";
-import { LiveDot } from "@/components/ui/status-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TabsContent } from "@/components/ui/tabs";
+import { ApiError } from "@/lib/api";
+import { hasCap } from "@/lib/queries";
+import { managementLabel } from '@/lib/resource-model';
+import { Link } from "@tanstack/react-router";
 import {
-  OverflowMenu,
-  OverflowItem,
-  OverflowSep,
-} from "@/components/ui/overflow-menu";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metricTextClass } from "@/components/ui/metric-bar";
+  Cpu,
+  ExternalLink,
+  HardDrive,
+  HeartPulse,
+  Network,
+  RefreshCw,
+  Settings2,
+  TriangleAlert
+} from "lucide-react";
+import { CopyButton } from "./components/summary-cards";
+import { imageCatalogFreshness } from './image-catalog-freshness';
 import {
-  ActionRunDialog,
-  type OutputLine,
-  type RunStatus,
-} from "@/components/ui/action-run-dialog";
-import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
-import {
-  type ContainerRow,
-  type CustomTask,
-  type HistoryRow,
-  type IpamReservation,
-  type ManagedDeploymentResponse,
-  type ServerDetail,
-  type ServerInfo,
   CapacitySummary,
   formatBytes,
   formatDate,
   formatUptime,
   HostStorageInventory,
   RecentHostTasks,
-  SummaryField,
+  SummaryField
 } from "./server-detail-model";
+import { summarizeUpdates } from './update-summary';
 
 
 import type { ServerDetailController } from "./useServerDetailController";
 
-export function ServerOverviewTabs({ controller }: { controller: ServerDetailController }) {
+type ServerOverviewTabsController = Pick<ServerDetailController,
+    "canViewManagementRelationships"
+  | "containers"
+  | "cpuPct"
+  | "customTaskList"
+  | "customTasksFailed"
+  | "customTasksLoading"
+  | "deploymentContextFailed"
+  | "deploymentContextLoading"
+  | "diskPct"
+  | "fetchingInfo"
+  | "healthThresholds"
+  | "histItems"
+  | "hour12"
+  | "imageCatalog"
+  | "imageUpdates"
+  | "info"
+  | "infoError"
+  | "infoFailed"
+  | "ipamReservations"
+  | "latencyCheckedAt"
+  | "latencyMs"
+  | "managedDeployments"
+  | "profile"
+  | "ramPct"
+  | "rawUpdates"
+  | "refetchInfo"
+  | "server"
+  | "t"
+  | "updatesList"
+>;
+
+export function ServerOverviewTabs({ controller }: { controller: ServerOverviewTabsController }) {
   const {
     t,
-    qc,
-    params,
-    id,
-    navigate,
-    terminalOpen,
-    setTerminalOpen,
-    editOpen,
-    setEditOpen,
-    confirmRunUpdate,
-    setConfirmRunUpdate,
-    confirmResetHostKey,
-    setConfirmResetHostKey,
-    confirmReboot,
-    setConfirmReboot,
-    confirmDelete,
-    setConfirmDelete,
-    confirmDeleteTask,
-    setConfirmDeleteTask,
-    confirmComposeDown,
-    setConfirmComposeDown,
-    confirmRestartContainer,
-    setConfirmRestartContainer,
-    actionRun,
-    setActionRun,
     profile,
-    settings,
-    timeFormat,
     hour12,
-    serverKnown,
     canViewManagementRelationships,
-    deploymentData,
     managedDeployments,
     deploymentContextLoading,
     deploymentContextFailed,
-    refetchDeploymentContext,
-    managedProxmoxDeployment,
-    startActionRun,
-    rawServer,
-    isLoading,
     server,
     info,
     refetchInfo,
     fetchingInfo,
     infoFailed,
     infoError,
-    ipamReservationData,
     ipamReservations,
-    dockerContainers,
-    fetchingDocker,
     rawUpdates,
-    history,
-    notesData,
-    customTasks,
     customTaskList,
     customTasksLoading,
     customTasksFailed,
     imageUpdates,
     imageCatalog,
-    setImageUpdates,
-    notes,
-    setNotes,
-    notesEditing,
-    setNotesEditing,
-    renderedNotes,
-    saveNotesMut,
-    runUpdateMut,
-    runRebootMut,
-    proxmoxRebootMut,
-    testConnMut,
-    resetHostKeyMut,
-    deleteServerMut,
-    restartContainerMut,
-    logsContainer,
-    setLogsContainer,
-    logsContent,
-    setLogsContent,
-    logsTail,
-    setLogsTail,
-    logsLoading,
-    setLogsLoading,
-    logsError,
-    setLogsError,
-    logsRequestRef,
-    loadLogs,
-    taskDialog,
-    setTaskDialog,
-    taskForm,
-    setTaskForm,
-    saveTaskMut,
-    deleteTaskMut,
-    checkTaskMut,
-    runTaskMut,
-    checkImageMut,
-    checkSystemUpdatesMut,
-    composeActionMut,
-    composeDialog,
-    setComposeDialog,
-    confirmDeleteStack,
-    setConfirmDeleteStack,
-    deleteStackMut,
-    openEditCompose,
-    saveComposeMut,
     latencyMs,
-    setLatencyMs,
     latencyCheckedAt,
-    HIST_PAGE_SIZE,
-    histPage,
-    setHistPage,
     histItems,
-    histTotal,
-    histSafe,
-    histPage_,
     ramPct,
     diskPct,
     cpuPct,
     healthThresholds,
     updatesList,
-    phasedList,
     containers,
-    activeLogContainer,
-    stacks,
   } = controller;
 
   if (!server) return null;

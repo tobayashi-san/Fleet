@@ -71,8 +71,6 @@ interface UiState {
   setSidebar: (collapsed: boolean) => void;
   sidebarWidth: number;
   setSidebarWidth: (width: number) => void;
-  infrastructureTreeCollapsed: boolean;
-  toggleInfrastructureTree: () => void;
   showInfrastructureVmIds: boolean;
   setShowInfrastructureVmIds: (show: boolean) => void;
   density: UiDensity;
@@ -83,8 +81,6 @@ interface UiState {
   setThemePreset: (preset: ThemePreset) => void;
   timeFormat: TimeFormat;
   setTimeFormat: (f: TimeFormat) => void;
-  dashAttentionOnly: boolean;
-  setDashAttentionOnly: (v: boolean) => void;
   environmentId: string;
   setEnvironmentId: (id: string) => void;
 }
@@ -93,11 +89,9 @@ const THEME_KEY = 'shipyard_theme_next';
 const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
 const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
 const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
-const TREE_COLLAPSED_KEY = 'shipyard_tree_collapsed_next';
 const TREE_VM_IDS_KEY = 'shipyard_tree_show_vm_ids';
 const DENSITY_KEY = 'shipyard_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
-const DASH_ATTENTION_KEY = 'shipyard_dash_attention';
 const ENVIRONMENT_KEY = 'shipyard_environment';
 
 function readTheme(): Theme {
@@ -159,9 +153,7 @@ function readTimeFormat(): TimeFormat {
   return '24h';
 }
 
-function readDashAttention(): boolean {
-  try { return localStorage.getItem(DASH_ATTENTION_KEY) === '1'; } catch { return false; }
-}
+
 function readEnvironment(): string { try { return localStorage.getItem(ENVIRONMENT_KEY) || 'default'; } catch { return 'default'; } }
 
 export function resolveVisibleEnvironmentId(
@@ -191,12 +183,6 @@ export const useUi = create<UiState>((set) => ({
     const next = normalizeSidebarWidth(width);
     try { localStorage.setItem(SIDEBAR_WIDTH_KEY, String(next)); } catch { /* ignore */ }
     return { sidebarWidth: next };
-  }),
-  infrastructureTreeCollapsed: (() => { try { return localStorage.getItem(TREE_COLLAPSED_KEY) === '1'; } catch { return false; } })(),
-  toggleInfrastructureTree: () => set((state) => {
-    const next = !state.infrastructureTreeCollapsed;
-    try { localStorage.setItem(TREE_COLLAPSED_KEY, next ? '1' : '0'); } catch { /* ignore */ }
-    return { infrastructureTreeCollapsed: next };
   }),
   showInfrastructureVmIds: (() => { try { return localStorage.getItem(TREE_VM_IDS_KEY) !== '0'; } catch { return true; } })(),
   setShowInfrastructureVmIds: (show) => set(() => {
@@ -231,12 +217,6 @@ export const useUi = create<UiState>((set) => ({
     set(() => {
       try { localStorage.setItem(TIME_FORMAT_KEY, f); } catch { /* ignore */ }
       return { timeFormat: f };
-    }),
-  dashAttentionOnly: readDashAttention(),
-  setDashAttentionOnly: (v) =>
-    set(() => {
-      try { localStorage.setItem(DASH_ATTENTION_KEY, v ? '1' : '0'); } catch { /* ignore */ }
-      return { dashAttentionOnly: v };
     }),
   environmentId: readEnvironment(),
   setEnvironmentId: (id) => set(() => {

@@ -1,116 +1,35 @@
-import { historyIdentity } from "@/lib/history-identity";
-import { historyFailureCause } from "@/lib/history-failure";
-import { Timestamp } from '@/components/ui/timestamp';
-import {
-  lazy,
-  Suspense,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  RefreshCw,
-  CircleDot,
-  Cpu,
-  HardDrive,
-  Clock,
-  HeartPulse,
-  Box,
-  Satellite,
-  Boxes,
-  ExternalLink,
-  Info,
-  Terminal,
-  Pencil,
-  ArrowUp,
-  Key,
-  Power,
-  Play,
-  Square,
-  CloudDownload,
-  FileText,
-  RotateCw,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Settings2,
-  StickyNote,
-  Eye,
-  Bot,
-  Download,
-  Shield,
-  Sliders,
-  History,
-  Code2,
-  Bell,
-  Workflow,
-  X,
-  Network,
-} from "lucide-react";
-import { formatDateTime, parseApiDate } from "@/lib/utils";
-import { api, apiFetch, ApiError } from "@/lib/api";
-import { ws } from "@/lib/ws";
-import { useProfile, useSettings, hasCap } from "@/lib/queries";
-import { useUi } from "@/lib/store";
-import { showToast } from "@/lib/toast";
-import { actionLabel, statusLabel } from "@/lib/history-labels";
-import { CreateServerDialog } from "@/components/CreateServerDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Dialog,
   DialogContent,
   DialogHeader,
-  DialogTitle,
-  DialogFooter,
+  DialogTitle
 } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
+import { Input } from "@/components/ui/input";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TabsContent } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
+import { Timestamp } from '@/components/ui/timestamp';
+import { apiFetch } from "@/lib/api";
+import { historyFailureCause } from "@/lib/history-failure";
+import { historyIdentity } from "@/lib/history-identity";
+import { actionLabel, statusLabel } from "@/lib/history-labels";
+import { hasCap } from "@/lib/queries";
+import { formatDateTime, parseApiDate } from "@/lib/utils";
+import { useQuery } from "@tanstack/react-query";
 import {
-  OverflowMenu,
-  OverflowItem,
-  OverflowSep,
-} from "@/components/ui/overflow-menu";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metricTextClass } from "@/components/ui/metric-bar";
+  Code2,
+  Eye,
+  History,
+  Pencil,
+  StickyNote
+} from "lucide-react";
 import {
-  ActionRunDialog,
-  type OutputLine,
-  type RunStatus,
-} from "@/components/ui/action-run-dialog";
-import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
+  useState
+} from "react";
 import {
-  type ContainerRow,
-  type CustomTask,
-  type HistoryRow,
-  type IpamReservation,
-  type ManagedDeploymentResponse,
-  type ServerDetail,
-  type ServerInfo,
-  CapacitySummary,
-  formatBytes,
-  formatUptime,
-  HostStorageInventory,
-  RecentHostTasks,
-  SummaryField,
+  type HistoryRow
 } from "./server-detail-model";
 
 
@@ -124,7 +43,43 @@ function historyDuration(item: Partial<HistoryRow>) {
   return seconds < 60 ? `${seconds}s` : `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
 }
 
-export function ServerOperationsTabs({ controller }: { controller: ServerDetailController }) {
+type ServerOperationsTabsController = Pick<ServerDetailController,
+    "HIST_PAGE_SIZE"
+  | "histItems"
+  | "histPage"
+  | "histPage_"
+  | "histSafe"
+  | "histTotal"
+  | "historyActions"
+  | "historyCount"
+  | "historyFailed"
+  | "historyFetching"
+  | "historyFilters"
+  | "historyLoading"
+  | "historyMatchCount"
+  | "hour12"
+  | "id"
+  | "notes"
+  | "notesBaseline"
+  | "notesData"
+  | "notesDirty"
+  | "notesEditing"
+  | "notesFailed"
+  | "notesReady"
+  | "profile"
+  | "refetchHistory"
+  | "refetchNotes"
+  | "reloadNotesMut"
+  | "renderedNotes"
+  | "saveNotesMut"
+  | "setHistPage"
+  | "setHistoryFilters"
+  | "setNotes"
+  | "setNotesEditing"
+  | "t"
+>;
+
+export function ServerOperationsTabs({ controller }: { controller: ServerOperationsTabsController }) {
   const [historySelection, setHistorySelection] = useState<{ host: string; row: HistoryRow } | null>(null);
   const setSelectedHistory = (row: HistoryRow | null) => setHistorySelection(row ? {host:controller.id,row} : null);
   const selectedSnapshot = historySelection?.host === controller.id ? historySelection.row : null;
@@ -137,54 +92,9 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
   const selectedHistory = selectedSnapshot ? selectedRunQuery.data || selectedSnapshot : null;
   const {
     t,
-    qc,
-    params,
     id,
-    navigate,
-    terminalOpen,
-    setTerminalOpen,
-    editOpen,
-    setEditOpen,
-    confirmRunUpdate,
-    setConfirmRunUpdate,
-    confirmResetHostKey,
-    setConfirmResetHostKey,
-    confirmReboot,
-    setConfirmReboot,
-    confirmDelete,
-    setConfirmDelete,
-    confirmDeleteTask,
-    setConfirmDeleteTask,
-    confirmComposeDown,
-    setConfirmComposeDown,
-    confirmRestartContainer,
-    setConfirmRestartContainer,
-    actionRun,
-    setActionRun,
     profile,
-    settings,
-    timeFormat,
     hour12,
-    serverKnown,
-    canViewManagementRelationships,
-    deploymentData,
-    managedDeployments,
-    managedProxmoxDeployment,
-    startActionRun,
-    rawServer,
-    isLoading,
-    server,
-    info,
-    refetchInfo,
-    fetchingInfo,
-    infoFailed,
-    infoError,
-    ipamReservationData,
-    ipamReservations,
-    dockerContainers,
-    fetchingDocker,
-    rawUpdates,
-    history,
     notesData,
     notesBaseline,
     notesFailed,
@@ -192,55 +102,12 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     notesReady,
     notesDirty,
     reloadNotesMut,
-    customTasks,
-    customTaskList,
-    imageUpdates,
-    setImageUpdates,
     notes,
     setNotes,
     notesEditing,
     setNotesEditing,
     renderedNotes,
     saveNotesMut,
-    runUpdateMut,
-    runRebootMut,
-    proxmoxRebootMut,
-    testConnMut,
-    resetHostKeyMut,
-    deleteServerMut,
-    restartContainerMut,
-    logsContainer,
-    setLogsContainer,
-    logsContent,
-    setLogsContent,
-    logsTail,
-    setLogsTail,
-    logsLoading,
-    setLogsLoading,
-    logsError,
-    setLogsError,
-    logsRequestRef,
-    loadLogs,
-    taskDialog,
-    setTaskDialog,
-    taskForm,
-    setTaskForm,
-    saveTaskMut,
-    deleteTaskMut,
-    checkTaskMut,
-    runTaskMut,
-    checkImageMut,
-    checkSystemUpdatesMut,
-    composeActionMut,
-    composeDialog,
-    setComposeDialog,
-    confirmDeleteStack,
-    setConfirmDeleteStack,
-    deleteStackMut,
-    openEditCompose,
-    saveComposeMut,
-    latencyMs,
-    setLatencyMs,
     HIST_PAGE_SIZE,
     histPage,
     setHistPage,
@@ -256,15 +123,6 @@ export function ServerOperationsTabs({ controller }: { controller: ServerDetailC
     histTotal,
     histSafe,
     histPage_,
-    ramPct,
-    diskPct,
-    cpuPct,
-    healthThresholds,
-    updatesList,
-    phasedList,
-    containers,
-    activeLogContainer,
-    stacks,
   } = controller;
 
   return (

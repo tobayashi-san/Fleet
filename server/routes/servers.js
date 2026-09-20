@@ -172,6 +172,24 @@ function accessibleGroupsForEnvironment(permissions, environmentId) {
     .filter(group => canAccessServerGroup(permissions, group));
 }
 
+// VM identity belongs to an already authorized host; no live inventory lookup.
+function hostVmId(serverId) {
+  const exists = name => db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name);
+  if (exists('proxmox_inventory_servers')) {
+    const imported = db.db.prepare('SELECT vm_id FROM proxmox_inventory_servers WHERE server_id=?').get(serverId);
+    if (imported) return imported.vm_id;
+  }
+  if (exists('tofu_managed_servers') && exists('tofu_proxmox_vms')) {
+    const managed = db.db.prepare(`SELECT vm.config, vm.vm_numeric_id FROM tofu_managed_servers mapping
+      JOIN tofu_proxmox_vms vm ON vm.workspace_id=mapping.workspace_id
+        AND mapping.resource_key='resource:proxmox_virtual_environment_vm.' || vm.name
+      WHERE mapping.server_id=? LIMIT 1`).get(serverId);
+    if (managed?.vm_numeric_id) return managed.vm_numeric_id;
+    try { return JSON.parse(managed?.config || '{}').vm_id || null; } catch { return null; }
+  }
+  return null;
+}
+
 // GET /api/servers - List all servers
 // Cached operating state shared by inventory and host detail; never starts SSH work.
 function serverOperatingState(server, perms) {
@@ -211,6 +229,7 @@ function serverOperatingState(server, perms) {
     });
     return {
       deployment,
+      proxmox_vm_id: hostVmId(server.id),
       attention,
       ...(canViewUpdates ? {
         updates_count: updates === null ? null : updates.filter(update => !update.phased).length,
@@ -227,6 +246,8 @@ function serverOperatingState(server, perms) {
       info_cached_at: info?.updated_at || null,
     };
 }
+
+router.get('/update-dashboard', require('../features/updates/dashboard'));
 
 router.get('/', guard('canViewServers'), (req, res) => {
   try {

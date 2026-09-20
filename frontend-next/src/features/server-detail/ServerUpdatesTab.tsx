@@ -1,243 +1,71 @@
-import { imageCatalogFreshness as catalogFreshness } from './image-catalog-freshness';
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  OverflowItem,
+  OverflowMenu,
+  OverflowSep,
+} from "@/components/ui/overflow-menu";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TabsContent } from "@/components/ui/tabs";
+import { hasCap } from "@/lib/queries";
+import { formatDateTime } from '@/lib/utils';
+import {
+  ArrowUp,
+  Pencil,
+  Play,
+  Plus,
+  RefreshCw,
+  Trash2
+} from "lucide-react";
 import { OsUpdateImpact } from './components/OsUpdateImpact';
 import { OsUpdatePreview } from './components/OsUpdatePreview';
 import { PackageVersionChange } from './components/PackageVersionChange';
-import { formatDateTime } from '@/lib/utils';
-import {
-  lazy,
-  Suspense,
-  useState,
-  useEffect,
-  useCallback,
-  useMemo,
-  useRef,
-} from "react";
-import { useTranslation } from "react-i18next";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useParams, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  RefreshCw,
-  CircleDot,
-  Cpu,
-  HardDrive,
-  Clock,
-  HeartPulse,
-  Box,
-  Satellite,
-  Boxes,
-  ExternalLink,
-  Info,
-  Terminal,
-  Pencil,
-  ArrowUp,
-  Key,
-  Power,
-  Play,
-  Square,
-  CloudDownload,
-  FileText,
-  RotateCw,
-  Plus,
-  Trash2,
-  ChevronDown,
-  ChevronRight,
-  Layers,
-  Settings2,
-  StickyNote,
-  Eye,
-  Bot,
-  Download,
-  Shield,
-  Sliders,
-  History,
-  Code2,
-  Bell,
-  Workflow,
-  X,
-  Network,
-} from "lucide-react";
-import { api, apiFetch, ApiError } from "@/lib/api";
-import { ws } from "@/lib/ws";
-import { useProfile, useSettings, hasCap } from "@/lib/queries";
-import { useUi } from "@/lib/store";
-import { showToast } from "@/lib/toast";
-import { actionLabel, statusLabel } from "@/lib/history-labels";
-import { CreateServerDialog } from "@/components/CreateServerDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
-import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
-import { PageHeader } from "@/components/ui/page-header";
-import { StatusBadge, LiveDot } from "@/components/ui/status-badge";
-import { Skeleton, SkeletonRow } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
-import {
-  OverflowMenu,
-  OverflowItem,
-  OverflowSep,
-} from "@/components/ui/overflow-menu";
-import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { metricTextClass } from "@/components/ui/metric-bar";
-import {
-  ActionRunDialog,
-  type OutputLine,
-  type RunStatus,
-} from "@/components/ui/action-run-dialog";
-import { CopyButton, StatCard, ThresholdBar } from "./components/summary-cards";
-import { marked } from "marked";
-import DOMPurify from "dompurify";
-import {
-  type ContainerRow,
-  type CustomTask,
-  type HistoryRow,
-  type IpamReservation,
-  type ManagedDeploymentResponse,
-  type ServerDetail,
-  type ServerInfo,
-  CapacitySummary,
-  formatBytes,
-  formatDate,
-  formatUptime,
-  HostStorageInventory,
-  RecentHostTasks,
-  SummaryField,
-} from "./server-detail-model";
+import { imageCatalogFreshness as catalogFreshness } from './image-catalog-freshness';
 
 
 import type { ServerDetailController } from "./useServerDetailController";
 
-export function ServerUpdatesTab({ controller }: { controller: ServerDetailController }) {
+type ServerUpdatesTabController = Pick<ServerDetailController,
+    "checkSystemUpdatesMut"
+  | "checkTaskMut"
+  | "customTaskList"
+  | "customTasksFailed"
+  | "customTasksLoading"
+  | "id"
+  | "info"
+  | "phasedList"
+  | "profile"
+  | "rawUpdates"
+  | "refetchCustomTasks"
+  | "runTaskMut"
+  | "runUpdateMut"
+  | "setConfirmDeleteTask"
+  | "setConfirmRunUpdate"
+  | "setTaskDialog"
+  | "t"
+  | "updatesList"
+>;
+
+export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabController }) {
   const {
     t,
-    qc,
-    params,
     id,
-    navigate,
-    terminalOpen,
-    setTerminalOpen,
-    editOpen,
-    setEditOpen,
-    confirmRunUpdate,
     setConfirmRunUpdate,
-    confirmResetHostKey,
-    setConfirmResetHostKey,
-    confirmReboot,
-    setConfirmReboot,
-    confirmDelete,
-    setConfirmDelete,
-    confirmDeleteTask,
     setConfirmDeleteTask,
-    confirmComposeDown,
-    setConfirmComposeDown,
-    confirmRestartContainer,
-    setConfirmRestartContainer,
-    actionRun,
-    setActionRun,
     profile,
-    settings,
-    timeFormat,
-    hour12,
-    serverKnown,
-    canViewManagementRelationships,
-    deploymentData,
-    managedDeployments,
-    managedProxmoxDeployment,
-    startActionRun,
-    rawServer,
-    isLoading,
-    server,
     info,
-    refetchInfo,
-    fetchingInfo,
-    infoFailed,
-    infoError,
-    ipamReservationData,
-    ipamReservations,
-    dockerContainers,
-    fetchingDocker,
     rawUpdates,
-    history,
-    notesData,
-    customTasks,
     customTaskList,
     customTasksLoading,
     customTasksFailed,
     refetchCustomTasks,
-    imageUpdates,
-    setImageUpdates,
-    notes,
-    setNotes,
-    notesEditing,
-    setNotesEditing,
-    renderedNotes,
-    saveNotesMut,
     runUpdateMut,
-    runRebootMut,
-    proxmoxRebootMut,
-    testConnMut,
-    resetHostKeyMut,
-    deleteServerMut,
-    restartContainerMut,
-    logsContainer,
-    setLogsContainer,
-    logsContent,
-    setLogsContent,
-    logsTail,
-    setLogsTail,
-    logsLoading,
-    setLogsLoading,
-    logsError,
-    setLogsError,
-    logsRequestRef,
-    loadLogs,
-    taskDialog,
     setTaskDialog,
-    taskForm,
-    setTaskForm,
-    saveTaskMut,
-    deleteTaskMut,
     checkTaskMut,
     runTaskMut,
-    checkImageMut,
     checkSystemUpdatesMut,
-    composeActionMut,
-    composeDialog,
-    setComposeDialog,
-    confirmDeleteStack,
-    setConfirmDeleteStack,
-    deleteStackMut,
-    openEditCompose,
-    saveComposeMut,
-    latencyMs,
-    setLatencyMs,
-    HIST_PAGE_SIZE,
-    histPage,
-    setHistPage,
-    histItems,
-    histTotal,
-    histSafe,
-    histPage_,
-    ramPct,
-    diskPct,
-    cpuPct,
-    healthThresholds,
     updatesList,
     phasedList,
-    containers,
-    activeLogContainer,
-    stacks,
   } = controller;
 
   return (
@@ -254,9 +82,8 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
             {hasCap(profile, "canViewUpdates") && (
               <Card>
                 {rawUpdates && !Array.isArray(rawUpdates) && <div className="border-b px-4 py-3 text-xs text-muted-foreground">
-                  <p>{rawUpdates.source} · Last successful check: {formatDateTime(rawUpdates.updated_at)} · Stale after {Math.round(rawUpdates.stale_after_seconds / 60)} minutes</p>
-                  <p className={rawUpdates.stale ? 'mt-1 text-warning' : 'mt-1'}>{rawUpdates.stale ? 'Catalog is stale or has no timestamp. Refresh before planning updates.' : rawUpdates.cached ? 'Stored result; a background refresh may still be running.' : 'Result from the latest requested check.'}</p>
-                  <p className="mt-1">Host packages, Proxmox node packages and container images are separate catalogs and may have different refresh times.</p>
+                  <p>Last check: {formatDateTime(rawUpdates.updated_at)}{rawUpdates.stale && <span className="text-warning"> · Stale — refresh before updating</span>}</p>
+                  <details className="mt-1"><summary className="cursor-pointer">Check details</summary><p className="mt-1">{rawUpdates.source} · Refresh interval: {Math.round(rawUpdates.stale_after_seconds / 60)} min{rawUpdates.cached ? ' · Cached result' : ''}. OS packages and container images are checked separately.</p></details>
                 </div>}
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                   <CardTitle className="text-sm">
@@ -299,7 +126,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerDetailContr
                   {rawUpdates == null ? (
                     <p className="px-4 py-3 text-sm text-muted-foreground">OS update catalog unavailable. Refresh to retry.</p>
                   ) : updatesList.length === 0 && phasedList.length > 0 ? (
-                    <p className="px-4 py-3 text-sm text-muted-foreground">All listed OS package updates are currently held back by the simulated upgrade. Review the deferred packages below.</p>
+                    <p className="px-4 py-3 text-sm text-muted-foreground">All available updates are deferred. See packages below.</p>
                   ) : updatesList.length === 0 ? (
                     <div className="flex items-center gap-2 px-4 py-3 text-sm text-emerald-500">
                       <span>✓</span> {t("det.allUpToDate")}

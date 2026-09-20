@@ -1,7 +1,7 @@
+import { Button } from '@/components/ui/button';
+import { api } from '@/lib/api';
 import { useUi } from '@/lib/store';
 import { useMutation } from '@tanstack/react-query';
-import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
 
 export function CustomUpdatePreview({ serverId, draft, disabled = false }: { serverId: string; draft: Record<string, unknown>; disabled?: boolean }) {
   const environmentId = useUi(state => state.environmentId);

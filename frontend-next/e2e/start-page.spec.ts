@@ -1,5 +1,4 @@
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { test, expect, type Page } from '@playwright/test';
 async function login(page:Page) {
   await page.goto('/login');
@@ -40,7 +39,7 @@ test('start is compact, links to objects and jobs, and never requests live infra
   for(const width of [1440,390]) {
     await page.setViewportSize({width,height:900});
     expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth+1)).toBe(true);
-    await page.screenshot({path:path.resolve(path.dirname(fileURLToPath(import.meta.url)), `../../test-results/start-${width}.png`),fullPage:true,animations:'disabled'});
+    await page.screenshot({path:path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, `start-${width}.png`),fullPage:true,animations:'disabled'});
   }
   expect(forbidden).toEqual([]);
 });

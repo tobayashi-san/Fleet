@@ -14,7 +14,7 @@ const gitSync = require("./git-sync");
 const { resolveTargets } = require("../utils/validate");
 const resourceAlerts = require("./resource-alerts");
 const { syncProxmoxIpam } = require('../features/opentofu/proxmox-ipam-sync');
-const { syncIpamSource } = require("../routes/ipam");
+const { syncIpamSource } = require("../features/ipam/source-sync");
 
 // In-memory map: scheduleId -> cron task
 const jobs = new Map();

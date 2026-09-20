@@ -1,22 +1,22 @@
-import { filterFileEntries, describePermissions } from "./file-list";
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ArrowRightLeft, Download, File, Folder, FolderUp, RefreshCw, Upload } from 'lucide-react';
-import { api, apiDownload, apiFetch, apiUploadFile } from '@/lib/api';
-import { hasCap, type Profile } from '@/lib/queries';
-import { showToast } from '@/lib/toast';
-import { useUi } from '@/lib/store';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { EmptyState } from '@/components/ui/empty-state';
-import { QueryErrorState } from '@/components/ui/query-error-state';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
 import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
+import { QueryErrorState } from '@/components/ui/query-error-state';
+import { Switch } from '@/components/ui/switch';
+import { api, apiDownload, apiFetch, apiUploadFile } from '@/lib/api';
+import { hasCap, type Profile } from '@/lib/queries';
+import { useUi } from '@/lib/store';
+import { showToast } from '@/lib/toast';
 import { formatDateTime } from '@/lib/utils';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { ArrowRightLeft, Download, File, Folder, FolderUp, RefreshCw, Upload } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { describePermissions, filterFileEntries } from "./file-list";
 
 interface FileEntry {
   name: string;

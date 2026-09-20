@@ -1,4 +1,4 @@
-import type {Profile} from '@/lib/queries';
+import type { Profile } from '@/lib/queries';
 
 /** Matches backend folder scope; visible ancestors do not grant administration. */
 export function hasHostFolderScope(profile:Profile | null | undefined, groupId:string | null):boolean {

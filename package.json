@@ -1,6 +1,6 @@
 {
   "name": "shipyard",
-  "version": "3.0.8-rc.40",
+  "version": "3.0.8-rc.41",
   "description": "Modern Linux Server Management Dashboard",
   "license": "MIT",
   "private": true,
@@ -19,7 +19,9 @@
     "typecheck": "npm --prefix server run typecheck && npm --prefix frontend-next run typecheck",
     "lint": "npm --prefix frontend-next run lint",
     "audit": "npm audit && npm --prefix server audit && npm --prefix frontend-next audit",
-    "check": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check": "npm run check:backend && npm run check:frontend",
+    "check:backend": "npm --prefix server run check",
+    "check:frontend": "npm --prefix frontend-next run check"
   },
   "devDependencies": {
     "concurrently": "^9.1.2"

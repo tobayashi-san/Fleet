@@ -1,28 +1,28 @@
-import {parseRoleChange, RoleAuditDetail} from './RoleAuditDetail';
-import { Input } from "@/components/ui/input";
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useMutation, useQuery } from "@tanstack/react-query";
-import {
-  Download,
-  ScrollText,
-  RotateCw,
-  ClipboardList,
-  Settings2,
-} from "lucide-react";
-import { api } from "@/lib/api";
 import { Button } from "@/components/ui/button";
-import { StatusBadge } from "@/components/ui/status-badge";
-import { SkeletonRow } from "@/components/ui/skeleton";
-import { EmptyState } from "@/components/ui/empty-state";
-import { QueryErrorState } from "@/components/ui/query-error-state";
-import { TablePagination } from "@/components/ui/table-pagination";
-import { ActiveFilterChips } from "@/components/ui/filter-chips";
 import { DateTextInput } from "@/components/ui/date-input";
-import { guestAuditPresentation, auditActionLabel, normalizeAuditIp, parseAuditDetail, gitPolicyChanges } from "@/lib/audit-display";
+import { EmptyState } from "@/components/ui/empty-state";
+import { ActiveFilterChips } from "@/components/ui/filter-chips";
+import { Input } from "@/components/ui/input";
+import { QueryErrorState } from "@/components/ui/query-error-state";
+import { SkeletonRow } from "@/components/ui/skeleton";
+import { StatusBadge } from "@/components/ui/status-badge";
+import { TablePagination } from "@/components/ui/table-pagination";
+import { api } from "@/lib/api";
+import { auditActionLabel, gitPolicyChanges, guestAuditPresentation, normalizeAuditIp, parseAuditDetail } from "@/lib/audit-display";
+import { useUi } from "@/lib/store";
 import { asArray, formatDateTime } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
-import { useUi } from "@/lib/store";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import {
+	ClipboardList,
+	Download,
+	RotateCw,
+	ScrollText,
+	Settings2,
+} from "lucide-react";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { parseRoleChange, RoleAuditDetail } from './RoleAuditDetail';
 
 interface AuditMeta {
   actions?: string[];

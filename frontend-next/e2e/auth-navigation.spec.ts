@@ -10,7 +10,8 @@ import { withFreshOnboardingApi } from './fixtures/onboarding-api';
 const PROXMOX_E2E_KEY = Buffer.from('LS0tLS1CRUdJTiBQUklWQVRFIEtFWS0tLS0tCk1JSUV2d0lCQURBTkJna3Foa2lHOXcwQkFRRUZBQVNDQktrd2dnU2xBZ0VBQW9JQkFRQ2hJRzdFRWJLOCtNWnAKdzBkWUgvUVVvZVFVTDdQS0drVmF2Y081eGJWeUdmQndzOTIySTRENEpPOW92U2l4dnlVdSt4MlFGdXZyREhwZApkcEp2U3RhdWVjN2lWeFIvNW4rbkVCaGpoRXpjWUw3Ni9mRDNTTVZudEdIR3IxTmdiRitVLzJQMG1HMUlxWjAvCiszYmFaaUZ1ckVuTHlZVVNDeWdkd1NuaXlFR0tLTmJpYnA0U1VOMzIvRWNoNlg4cjBSejkxTnROUkMrdUZPdWkKdlE4UnUrRnN0OXpGQlRxNi9KYWxscDV5M3VEZi8zM3MzSENva1pPQXN3VkhtV0ZCN0Q1U2VCS0p4ck5mUUNtMgpLdzBieWhhSmt0UEl4VzB4czFHeDZkb1dnUXZ6cC8wek9HMCt4UlhSNGFPQXVQZGx1dTJadmFjVU1DZlhpTVNTCmhkSjIzUVlWQWdNQkFBRUNnZ0VBSWplT2ZrSFo2TXFWN0REbHJqKys2RURHL0VoekVGaks0SzNLNm1Fam1yTUsKZmd5Y2FVa1o0dGlKSlArQ3JGaVF6MnpSaHQ5dlEwKzNqckNYQVY1dHY4aXJXQ0t3L2taWFZvV1RBRk5BdFU0dwpVSUhzRWIrWStHQjBvU3ByZE44ZTN6ZnJKSzdZQ21YR3VLY3d3c21Na1FHeWZEM3o3ZlNEbE9vSCtKcVpYSHJmCituS0E5bmxrYWVGaFhOcW1ORlZuYy9pbStBeXdLV1RiTSt5eEZGbi9ES2Z1Tkx3REUzWjh1NlVZWVZJN1BWeEcKME1VUUYrUGJHSk9tUDFvQ2s2ang2c1RCSFkzR0k4aHVaaEYySndnV3FGYUhFeDBnTHZrNU1jcnFWVS9OaXdHNwp5NmF3aHBpMVZydTRqaWc1RHlUYllSbEg2dkJJeDNyRzRja29BaDh3TVFLQmdRRGl2cldCT3I5R3MwOXBVWThHCmJSN1dDaTE5OVR0N1hQb1hPQ2hSVUlwUE1mNE5HMytGSUJ0ZnU0b2ZVbUVUQjJoQlowL3JSTzNxQVgrUzFTYzcKbGlPWkU0b1ZuK3BFenNPenRpcTUyd2poaGlWWG1SRjFLZTZPQjNaYWtWV29KUjFEZTNQUDVhQjFVZHdKM0JnTAo5SUthUEJKTHlPbkpmVUV4bWRDNzBTSWN1UUtCZ1FDMTZtRTZMbHJURVZwUEtjdG10YlY0OHdJTzBOTkJveUlNCk0xTzZLR2JPT21uYXdvL1d2aEVHd1l4VGM1OGRYTEpyYjF2UTQ0SERFenR6cElUa1htcnh5Zm9NSTE5TmFzdWIKZ1c4Wmc1TjUwV0lTdXZZTFV1Mjc3a2xma01GWnV2Y3BrTG9QOTBFb1M3Q0ZxUDM0dFBVMjNYTkZ6a0Z2V0EySQp0elNMaHhLZVBRS0JnUUNZSDd6a2E4YWlwM0NTeDA0KzBIME11eDFVVVhCTHp0QlhQYTBIQ1JNU0dRZEtRZlduCkdpaGpiUTQ0LzJyemVsZSs4WkpUMVJZTmxsM0I1RklERHpMbzQ0d1VBQXNMaVBFUnBCazhRakRPSmRMdDExczQKRVI3a21Tc1Zqa1k2bmxQb3oyMmV3SCtMMXBUYTVKZ1poVDBPUDFsREVST1F4QUUyUnUwYzVTMk91UUtCZ1FDWgpEd1FSTk5GY1IzeHBvT3V2bG5HQ3UwdmU5VnJhSGd6V29SVHdTMi84VW0rZ0RSV0RBOVpGamZHb2dWNitFTEZaCjdZOGVHVjJqcVhuYkdmQnFTUHJJUnoxb214WmpoOWlhRlhSSnprZjJOZkxEZWFUczhEQndiOVF5WVJRZGtFN0gKSFNzL3BiU2YxOWRGRG1QcHJ5K21vdnFMSURnMEc2ei9lODN0RzQvUnJRS0JnUUNRcEpWb3BhVmpoWWJHaENjegpiTzBqNjFKdVpvZTFDVDFFeWFnYlhDdlQ1V3dwVk50U2VUb0U2TDZLNjFXY0Z0cVE0RW0vU3g3SVdjYWM3WnRtCklWSjJLT2dnaS9pZEQ1MkZra0hSUjdjTDIzVk45cGlzbzlMSS93V2RYcUNub3lUWFkvWml0bVZWZHBRQjlLQkEKenFrS0NwbXNJKzZObloxVlpvWFVXci9YK3c9PQotLS0tLUVORCBQUklWQVRFIEtFWS0tLS0tCg==', 'base64').toString('utf8');
 const PROXMOX_E2E_CERT = Buffer.from('LS0tLS1CRUdJTiBDRVJUSUZJQ0FURS0tLS0tCk1JSURDVENDQWZHZ0F3SUJBZ0lVUWdOSG0zcGJidm54UThvMlRrM0xoallqcThFd0RRWUpLb1pJaHZjTkFRRUwKQlFBd0ZERVNNQkFHQTFVRUF3d0pNVEkzTGpBdU1DNHhNQjRYRFRJMk1EZ3hNVEl5TWpnek5Gb1hEVEkyTURneApNakl5TWpnek5Gb3dGREVTTUJBR0ExVUVBd3dKTVRJM0xqQXVNQzR4TUlJQklqQU5CZ2txaGtpRzl3MEJBUUVGCkFBT0NBUThBTUlJQkNnS0NBUUVBb1NCdXhCR3l2UGpHYWNOSFdCLzBGS0hrRkMrenlocEZXcjNEdWNXMWNobncKY0xQZHRpT0ErQ1R2YUwwb3NiOGxMdnNka0JicjZ3eDZYWGFTYjByV3Jubk80bGNVZitaL3B4QVlZNFJNM0dDKwordjN3OTBqRlo3Umh4cTlUWUd4ZmxQOWo5Smh0U0ttZFAvdDIybVloYnF4Snk4bUZFZ3NvSGNFcDRzaEJpaWpXCjRtNmVFbERkOXZ4SEllbC9LOUVjL2RUYlRVUXZyaFRyb3IwUEVidmhiTGZjeFFVNnV2eVdwWmFlY3Q3ZzMvOTkKN054d3FKR1RnTE1GUjVsaFFldytVbmdTaWNhelgwQXB0aXNORzhvV2laTFR5TVZ0TWJOUnNlbmFGb0VMODZmOQpNemh0UHNVVjBlR2pnTGozWmJydG1iMm5GREFuMTRqRWtvWFNkdDBHRlFJREFRQUJvMU13VVRBZEJnTlZIUTRFCkZnUVVIZDdaRnhQYkdxenhtcHNraUdjZkxUajFadEF3SHdZRFZSMGpCQmd3Rm9BVUhkN1pGeFBiR3F6eG1wc2sKaUdjZkxUajFadEF3RHdZRFZSMFRBUUgvQkFVd0F3RUIvekFOQmdrcWhraUc5dzBCQVFzRkFBT0NBUUVBRkhueAoyWDIrV29rUVQ1Z2ppbW5reGtZNURuV0ZJV2hVeWhNQlY3YkxIdm9TYlJOeU1sS3lMYWtVYis4L3VTS2R4bzlyCjJIVTNzVkJ5a25JNlNESHlHR0VLV3E4R3VGZkpNQzJkdTlsRnhMZUFpMWFtc2lOVFlQRGNDYWhkWDV6NDkyanMKVmpOSC8rNTk3c1pHOFJjcFJCVGkvcFIreVphQ1FzQit6OER0NHV6NEtwc0sxR0U4NUZDZXBXeUo4REhkbXlXRgp1ZHZBSXlsMXRXcVQvcVl3ZXVxUUZYSXU3bEpVUExNMWw5M3JGdldFRVp4c0VKY3hLcC9ZK2hiS2tvcHBxckpUCk1EVHJZdm5Pb05Ma1kyVHNGUXpUV1I0MXY2UytTR1hhTG9KdHgyeDNsT0NCVTRWSEhHanlNZEpvSS9OV3BXMDEKOE04eDFwa0dWZTBHcUlrZzJ3PT0KLS0tLS1FTkQgQ0VSVElGSUNBVEUtLS0tLQo=', 'base64').toString('utf8');
 
-test.describe.configure({ mode: 'serial' });
+// Each test establishes its own session. Keep default mode so a failure does
+// not skip later cases; the shared test API still uses one worker.
 
 async function loginForIsolatedTest(page: Page) {
   await page.goto('/login');
@@ -370,11 +371,10 @@ test('host management works without agent controls', async ({ page }) => {
     return String((await response.json()).id);
   });
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Overview', 'Snapshots', 'Jobs', 'Settings', 'Updates', 'Notes', 'Advanced']);
+  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Terminal', 'Updates', 'Files', 'Overview', 'Snapshots', 'Jobs', 'Notes']);
   await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toBeVisible();
-  await page.getByRole('tab', { name: 'Advanced', exact: true }).click();
-  await page.getByRole('button', { name: /open terminal/i }).click();
-  const terminalDialog = page.getByRole('dialog', { name: /terminal/i });
+  await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
+  const terminalDialog = page.getByRole('region', { name: /terminal/i });
   await expect(terminalDialog).toBeVisible();
   await terminalDialog.getByRole('button', { name: /close/i }).click();
   await expect(terminalDialog).toHaveCount(0);
@@ -1020,7 +1020,7 @@ test('Proxmox import creates a host with a dedicated snapshot tab', async ({ pag
     await page.getByRole('link',{name:'e2e-import-vm',exact:true}).click();
     await expect(page).toHaveURL(/\/servers\//);
     const vmTabs = page.getByRole('tablist',{name:'Host sections'});
-    await expect(vmTabs.getByRole('tab')).toHaveText(['Overview','Snapshots','Jobs','Settings','Updates','Notes','Advanced']);
+    await expect(vmTabs.getByRole('tab')).toHaveText(['Terminal','Updates','Files','Overview','Snapshots','Jobs','Notes']);
     await vmTabs.getByRole('tab',{name:'Snapshots',exact:true}).click();
     await expect(page.getByText('No snapshots yet.',{exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'Create snapshot',exact:true})).toBeVisible();

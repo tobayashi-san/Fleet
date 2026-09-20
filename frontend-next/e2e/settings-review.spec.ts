@@ -1,8 +1,8 @@
 import {test,expect,type Page} from '@playwright/test';
 import path from 'node:path';
 import fs from 'node:fs';
-import {fileURLToPath} from 'node:url';
-const shots=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'../../test-results/settings-regressions');
+
+const shots=path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, 'settings-regressions');
 async function signIn(page:Page){
  await page.goto('/login');
  await page.evaluate(async()=>{const credentials={username:'e2e-admin',password:'E2e-password-2026!'};let response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});if(!response.ok)response=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});const result=await response.json();if(!result.token)throw new Error('Isolated login failed');localStorage.setItem('shipyard_token',result.token);});
@@ -29,7 +29,7 @@ test('settings drafts, explicit SMTP modes, application data and personal naviga
  await events.click();await page.getByRole('button',{name:'Save notification preferences'}).click();await expect(page.getByRole('button',{name:'Save notification preferences'})).toBeDisabled();expect((await api(page,'/system/settings')).notifPlaybookFailed).toBe(!saved.notifPlaybookFailed);
  await page.locator('summary').filter({hasText:'Email (SMTP)'}).click();await page.getByRole('combobox',{name:'SMTP transport',exact:true}).selectOption('starttls');await page.getByRole('textbox',{name:'SMTP Host',exact:true}).fill('smtp.example.invalid');await page.getByRole('button',{name:'Save email settings'}).click();await expect(page.getByRole('button',{name:'Save email settings'})).toBeDisabled();expect((await api(page,'/system/settings')).smtpSecurity).toBe('starttls');
  await shot(page,'notifications-desktop');
- await page.goto('/settings/appearance');await expect(page.getByRole('switch',{name:'Show VM IDs in infrastructure tree'})).toHaveCount(0);await page.goto('/profile');await expect(page.getByRole('switch',{name:'Show VM IDs in infrastructure tree'})).toBeVisible();
+ await page.goto('/settings/appearance');await expect(page.getByRole('switch',{name:'Show VM IDs'})).toHaveCount(0);await page.goto('/profile');await expect(page.getByRole('switch',{name:'Show VM IDs'})).toBeVisible();
  await page.goto('/settings/backup');await expect(page.getByText('Record an external backup or recovery test',{exact:true})).toHaveCount(0);await expect(page.getByRole('heading',{name:'Encrypted database backup'})).toBeVisible();await shot(page,'application-data-desktop');
  await page.setViewportSize({width:390,height:844});await page.goto('/settings/notifications');await page.locator('summary').filter({hasText:'Email (SMTP)'}).click();await expect(page.getByRole('combobox',{name:'SMTP transport',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);await shot(page,'notifications-mobile');await page.goto('/settings/backup');await expect(page.getByRole('heading',{name:'Encrypted database backup',exact:true})).toBeVisible();expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);await shot(page,'recovery-mobile');
 });

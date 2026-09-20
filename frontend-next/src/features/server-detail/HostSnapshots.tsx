@@ -1,14 +1,14 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { apiFetch } from '@/lib/api';
-import { hasCap, useProfile } from '@/lib/queries';
-import { useUi } from '@/lib/store';
-import { formatDateTime } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { CreateSnapshotDialog } from '@/features/infrastructure/CreateSnapshotDialog';
 import { DeleteSnapshotDialog } from '@/features/infrastructure/DeleteSnapshotDialog';
 import { RestoreSnapshotDialog } from '@/features/infrastructure/RestoreSnapshotDialog';
+import { apiFetch } from '@/lib/api';
+import { hasCap, useProfile } from '@/lib/queries';
+import { useUi } from '@/lib/store';
+import { formatDateTime } from '@/lib/utils';
+import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import type { ManagedDeployment } from './server-detail-model';
 
 type Snapshot = { name: string; description?: string; snaptime?: number };

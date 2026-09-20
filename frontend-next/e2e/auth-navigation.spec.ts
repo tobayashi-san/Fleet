@@ -910,7 +910,10 @@ test('IPAM sources can be configured and synced through the browser', async ({ p
     const allocationRow = page.getByRole('row').filter({ hasText: '10.199.0.20' });
     await expect(allocationRow.getByText('DHCP', { exact: true })).toBeVisible();
     await expect(allocationRow.getByText('Managed by pfSense', { exact: true })).toBeVisible();
-    await expect(allocationRow.getByRole('checkbox')).toBeDisabled();
+    await allocationRow.getByRole('checkbox').check();
+    await expect(allocationRow.getByRole('checkbox')).toBeChecked();
+    await expect(page.getByText(/selected addresses are managed by a source/)).toBeVisible();
+    await allocationRow.getByRole('checkbox').uncheck();
     await expect(page.getByLabel('Edit 10.199.0.20')).toHaveCount(0);
     await expect(page.getByLabel('Release 10.199.0.20')).toHaveCount(0);
     const outsideDhcpRow = page.getByRole('row').filter({ hasText: '10.199.0.35' });
@@ -1129,7 +1132,7 @@ test('an isolated VM uses a platform source and never exposes VM destruction', a
     await expect(page).toHaveURL(new RegExp(`/deployments/${vmId}$`));
     await expect(page.getByRole('heading', { name: vmName })).toBeVisible();
     await page.getByRole('tab', { name: 'Configuration', exact: true }).click();
-    await page.locator('summary').filter({ hasText: /^More actions$/ }).click();
+    await expect(page.getByRole('button', { name: 'Delete definition', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Destroy VM' })).toHaveCount(0);
     const rejected = await page.evaluate(async id => {
       const response = await fetch(`/api/opentofu/vms/${id}/destroy`, {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({confirmation:'DESTROY anything'})});

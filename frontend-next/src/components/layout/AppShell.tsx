@@ -1,4 +1,3 @@
-import { ContextHelp } from '@/components/ContextHelp';
 import { commandModifier } from '@/lib/keyboard';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -31,7 +30,6 @@ export function AppShell({ children }: { children: ReactNode }) {
   const profile = profileQuery.data;
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [guideOpen, setGuideOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement>(null);
   const helpMenuRef = useRef<HTMLDivElement>(null);
@@ -246,7 +244,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="mt-0.5 text-xs text-muted-foreground">{t('shell.projectSupport')}</div>
                 </div>
                 <div className="space-y-0.5 py-1.5">
-                  <button type="button" onClick={() => { setHelpOpen(false); setGuideOpen(true); }} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent"><HelpCircle className="h-4 w-4" />Guide for this page</button>
                   <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
                     <Github className="h-4 w-4 text-muted-foreground" /> {t('shell.githubRepository')}
                   </button>
@@ -276,7 +273,6 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <UserRoundCog className="h-4 w-4 text-muted-foreground" /> {t('shell.accountSecurity')}
                   </Link>
                   <div className="mt-1 space-y-0.5 border-t pt-1 lg:hidden">
-                    <button type="button" onClick={() => { setProfileOpen(false); setGuideOpen(true); }} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><HelpCircle className="h-4 w-4 text-muted-foreground" />Guide for this page</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Github className="h-4 w-4 text-muted-foreground" />{t('shell.githubRepository')}</button>
                     <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard/issues')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Bug className="h-4 w-4 text-muted-foreground" />{t('shell.reportIssue')}</button>
                   </div>
@@ -312,7 +308,6 @@ export function AppShell({ children }: { children: ReactNode }) {
       <main className="min-h-0 min-w-0 flex-1 overflow-auto overscroll-contain bg-[hsl(var(--surface-1))] px-3 py-3 sm:px-4 lg:px-6 lg:py-5">{children}</main>
       </div>
       <CommandPalette />
-      <ContextHelp open={guideOpen} onClose={() => setGuideOpen(false)} />
       <RenameEnvironmentDialog error={renameEnvironment.error?.message} environment={environmentToRename} isPending={renameEnvironment.isPending} onClose={() => setEnvironmentToRename(null)} onRename={(name) => renameEnvironment.mutate({ id: environmentToRename!.id, name }, { onSuccess: () => setEnvironmentToRename(null) })} />
       <ConfirmDialog closeOnConfirm={false} error={removeEnvironment.error?.message} targetEnvironmentId={environmentToDelete?.id} open={Boolean(environmentToDelete)} onOpenChange={(open) => !open && !removeEnvironment.isPending && setEnvironmentToDelete(null)} title={t('shell.deleteEnvironmentQuestion')} description={environmentToDelete ? <>{t('shell.deleteEnvironmentDescription', { name: environmentToDelete.name })}</> : ''} confirmLabel={t('shell.deleteEnvironment')} cancelLabel={t('common.cancel')} variant="destructive" confirmTextValue={environmentToDelete?.name} confirmInputLabel={t('shell.confirmEnvironmentName')} onConfirm={() => { if (environmentToDelete) removeEnvironment.mutate(environmentToDelete.id); }} isPending={removeEnvironment.isPending} />
     </div>

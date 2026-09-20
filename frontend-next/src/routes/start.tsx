@@ -32,7 +32,7 @@ function entryStatus(status: string): { label: string; tone: StatusTone; icon: t
   if (status === 'online') return { label: 'Connected', tone: 'success', icon: CircleCheck };
   if (['scheduled', 'queued', 'pending'].includes(status)) return { label: status === 'scheduled' ? 'Scheduled' : status === 'queued' ? 'Queued' : 'Pending', tone: 'info', icon: Clock3 };
   if (['running', 'cancelling'].includes(status)) return { label: status === 'running' ? 'Running' : 'Cancelling', tone: 'neutral', icon: LoaderCircle };
-  return { label: 'Prüfen', tone: 'muted', icon: CircleHelp };
+  return { label: 'Check', tone: 'muted', icon: CircleHelp };
 }
 function Entries({ entries, empty }: { entries: Entry[]; empty: string }) {
   return entries.length ? <ul className="space-y-2">{entries.slice(0,5).map(entry => {
@@ -85,7 +85,7 @@ export function StartPage() {
   if (profilePending) return <p role="status">Loading your overview…</p>;
   return <div className="space-y-5">
     <PageHeader title="Start" description={`Environment: ${environments?.find(item=>item.id===environmentId)?.name || environmentId}`} />
-    <div className="space-y-2"><h2 className="text-2xl font-semibold">{hour<12 ? 'Good morning' : hour<18 ? 'Good afternoon' : 'Good evening'}</h2>{viewHosts && hosts.isSuccess && <p className="text-muted-foreground">{hostRows.length} hosts · <span className="[color:hsl(var(--success))]">{hostRows.filter(host=>host.status==='online').length} connected</span> · {hostRows.filter(host=>['offline','error'].includes(host.status || '')).length} unreachable{hostRows.some(host=>!['online','offline','error'].includes(host.status || '')) ? ` · ${hostRows.filter(host=>!['online','offline','error'].includes(host.status || '')).length} Prüfen` : ''}</p>}</div>
+    <div className="space-y-2"><h2 className="text-2xl font-semibold">{hour<12 ? 'Good morning' : hour<18 ? 'Good afternoon' : 'Good evening'}</h2>{viewHosts && hosts.isSuccess && <p className="text-muted-foreground">{hostRows.length} hosts · <span className="[color:hsl(var(--success))]">{hostRows.filter(host=>host.status==='online').length} connected</span> · {hostRows.filter(host=>['offline','error'].includes(host.status || '')).length} unreachable{hostRows.some(host=>!['online','offline','error'].includes(host.status || '')) ? ` · ${hostRows.filter(host=>!['online','offline','error'].includes(host.status || '')).length} Check` : ''}</p>}</div>
     {errors.filter(item=>item.allowed && item.query.isError).map(item=><QueryErrorState key={item.label} compact title={`${item.label} could not be loaded`} error={item.query.error} onRetry={()=>void item.query.refetch()} />)}
     {pending && <p role="status" className="text-sm text-muted-foreground">Loading your overview…</p>}
     {viewHosts && hosts.isSuccess && !hostRows.length && <Card><CardContent className="flex flex-wrap items-center justify-between gap-3 p-5"><p>{hasCap(profile,'canAddServers') ? 'Add your first host.' : 'No hosts are available in your scope.'}</p>{hasCap(profile,'canAddServers') && <Button onClick={()=>setHostOpen(true)}><Plus />Add host</Button>}</CardContent></Card>}

@@ -110,8 +110,7 @@ test('connection credentials and disabled TLS have separate status and edit acti
  await signIn(page);
  await page.route('**/api/opentofu/proxmox-connections?*',route=>route.fulfill({json:[{id:'review',name:'Review platform',endpoint:'https://192.0.2.99:8006',api_token_configured:true,insecure:true,auto_sync:false}]}));
  await page.goto('/settings/connections');
- await page.getByRole('button',{name:'Manage connections'}).click();
- const dialog=page.getByRole('dialog',{name:'Platform connections'});
+ const dialog=page.getByRole('region',{name:'Proxmox connections'});
  await expect(dialog.getByText('Token stored',{exact:true})).toBeVisible();
  const warning=dialog.getByRole('button',{name:'Certificate verification off'});
  await expect(warning).toBeVisible();

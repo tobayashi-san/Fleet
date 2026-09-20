@@ -13,6 +13,7 @@ const { parseImageUpdateReport } = require("../utils/parse-image-updates");
 const gitSync = require("./git-sync");
 const { resolveTargets } = require("../utils/validate");
 const resourceAlerts = require("./resource-alerts");
+const { syncProxmoxIpam } = require('../features/opentofu/proxmox-ipam-sync');
 const { syncIpamSource } = require("../routes/ipam");
 
 // In-memory map: scheduleId -> cron task
@@ -108,6 +109,8 @@ async function pollIpamSources() {
         `SELECT * FROM ipam_sync_sources WHERE enabled = 1 AND COALESCE(auto_sync, 1) = 1`,
       )
       .all();
+    const hasProxmox = db.db.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'tofu_proxmox_connections'").get();
+    if (hasProxmox) sources.push(...db.db.prepare('SELECT *, last_ipam_synced_at AS last_synced_at FROM tofu_proxmox_connections WHERE auto_sync_ipam = 1').all().map(source => ({...source, proxmox: true})));
     const due = sources.filter((source) => {
       const interval =
         Math.min(
@@ -120,7 +123,7 @@ async function pollIpamSources() {
       return !Number.isFinite(last) || now - last >= interval;
     });
     const sourceResults = await Promise.allSettled(
-      due.map(source => collectionQueue.run('ipam', {id:`ipam-source-${source.id}`}, () => syncIpamSource(source, {actor:'scheduler'}))),
+      due.map(source => collectionQueue.run('ipam', {id:`ipam-source-${source.id}`}, () => source.proxmox ? syncProxmoxIpam(source.id, {actor:'scheduler'}) : syncIpamSource(source, {actor:'scheduler'}))),
     );
     const sourceFailed = sourceResults.filter(
       (result) => result.status === "rejected",

@@ -105,7 +105,17 @@ async function syncProxmoxIpam(connectionId, { subnetId = null, actor = 'schedul
   try {
     const connection = readConnection(source);
     const resources = await requestProxmoxApi(connection, '/cluster/resources?type=vm');
-    const guests = (Array.isArray(resources) ? resources : [])
+    if (!Array.isArray(resources) || resources.some(resource => !resource || !['qemu', 'lxc'].includes(resource.type) || !resource.node || !Number.isInteger(Number(resource.vmid)) || Number(resource.vmid) <= 0)) {
+      throw new Error('Invalid Proxmox guest inventory; existing IPAM addresses were retained.');
+    }
+    // A restricted token may see only part of the cluster. Only a complete
+    // inventory can prove that a formerly synchronized guest was deleted.
+    let canRemoveMissing = false;
+    try {
+      const permissions = await requestProxmoxApi(connection, '/access/permissions?path=/');
+      canRemoveMissing = Boolean(permissions?.['/']?.['VM.Audit']);
+    } catch {}
+    const guests = resources
       .filter(resource => ['qemu', 'lxc'].includes(String(resource?.type || '').toLowerCase()))
       .map(resource => ({ name: resource.name, node_name: String(resource.node || ''), vm_id: Number(resource.vmid), guest_type: String(resource.type).toLowerCase() }))
       .filter(guest => guest.node_name && Number.isInteger(guest.vm_id));
@@ -127,14 +137,28 @@ async function syncProxmoxIpam(connectionId, { subnetId = null, actor = 'schedul
         log.warn({ err: error, connection: source.name, nodeName: vm.node_name, vmId: vm.vm_id }, 'Could not read Proxmox guest addresses for IPAM sync');
       }
     }
-    const total = { discovered: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, failed, prefixes: subnets.length };
-    for (const subnet of subnets) {
-      const stats = reconcileSubnet(source, subnet, observationsBySubnet.get(subnet.id), mappedServers);
-      for (const key of ['discovered', 'created', 'updated', 'conflicts', 'skipped']) total[key] += stats[key];
-    }
-    const now = new Date().toISOString();
-    db.db.prepare("UPDATE tofu_proxmox_connections SET last_ipam_synced_at = ?, last_ipam_status = 'success', last_ipam_error = '', updated_at = datetime('now') WHERE id = ?").run(now, source.id);
-    writeObjectAudit(db, source, null, 'ipam.proxmox_sync', `source_id=${JSON.stringify(source.id)} source=${JSON.stringify(source.name)} prefixes=${subnets.length} discovered=${total.discovered} created=${total.created} updated=${total.updated}`, ip, actor);
+    const current = db.db.prepare('SELECT * FROM tofu_proxmox_connections WHERE id = ?').get(source.id);
+    if (!current || ['environment_id', 'endpoint', 'api_token'].some(key => current[key] !== source[key])) throw new Error('Proxmox connection changed during synchronization. Retry with the current connection.');
+    const guestIds = new Set(guests.map(guest => String(guest.vm_id)));
+    const total = { removed: 0, discovered: 0, created: 0, updated: 0, conflicts: 0, skipped: 0, failed, prefixes: subnets.length };
+    db.db.transaction(() => {
+      for (const subnet of subnets) {
+        if (canRemoveMissing) {
+          const owned = db.db.prepare("SELECT id, source_ref FROM ipam_reservations WHERE subnet_id = ? AND source_type = 'proxmox'").all(subnet.id);
+          for (const reservation of owned) {
+            if (!String(reservation.source_ref || '').startsWith(`${source.id}:`)) continue;
+            const ref = reservation.source_ref.slice(source.id.length + 1).match(/^([^:]+):(\d+)$/);
+            // VM IDs are cluster-wide: migration to another node is not deletion.
+            if (ref && !guestIds.has(String(Number(ref[2])))) total.removed += db.db.prepare('DELETE FROM ipam_reservations WHERE id = ?').run(reservation.id).changes;
+          }
+        }
+        const stats = reconcileSubnet(source, subnet, observationsBySubnet.get(subnet.id), mappedServers);
+        for (const key of ['discovered', 'created', 'updated', 'conflicts', 'skipped']) total[key] += stats[key];
+      }
+      const now = new Date().toISOString();
+      db.db.prepare("UPDATE tofu_proxmox_connections SET last_ipam_synced_at = ?, last_ipam_status = 'success', last_ipam_error = '', updated_at = datetime('now') WHERE id = ?").run(now, source.id);
+      writeObjectAudit(db, source, null, 'ipam.proxmox_sync', `source_id=${JSON.stringify(source.id)} source=${JSON.stringify(source.name)} prefixes=${subnets.length} discovered=${total.discovered} created=${total.created} updated=${total.updated} removed=${total.removed}`, ip, actor);
+    })();
     return total;
   } catch (error) {
     db.db.prepare("UPDATE tofu_proxmox_connections SET last_ipam_status = 'failed', last_ipam_error = ?, updated_at = datetime('now') WHERE id = ?").run(String(error.message || 'Sync failed').slice(0, 500), source.id);

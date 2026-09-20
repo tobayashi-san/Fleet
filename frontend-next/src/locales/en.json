@@ -1778,6 +1778,7 @@
     "allocationsPagination": "allocations",
     "prefixesPagination": "prefixes",
     "savingReservation": "Saving reservation in {{cidr}}…",
+    "protectedSelection": "{{count}} selected addresses are managed by a source or the system. Release applies only to manual allocations. Synchronize Proxmox to remove addresses of deleted guests.",
     "bulkReleasePartial": "{{released}} released; {{failed}} could not be confirmed. {{details}} Review the refreshed inventory before retrying.",
     "releaseUnconfirmed": "Release could not be confirmed. Refresh the inventory before retrying.",
     "prefixChangedWhileEditing": "This prefix changed while you were editing. Your draft is still shown. Close and reopen the editor to review the latest values before saving.",

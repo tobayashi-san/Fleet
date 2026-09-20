@@ -115,7 +115,7 @@ function AdminSettingsPage() {
           <SettingsDisclosure title="SSH credentials" open={params.tab === 'ssh'}><SshTab /></SettingsDisclosure>
         </>}
         {activeId === 'connections' && <>
-          <ManageConnections />
+          <ManageConnections inline />
           <SettingsDisclosure title="Playbook Git" open={params.tab === 'git'}><GitTab /></SettingsDisclosure>
           <SettingsDisclosure title="Notifications" open={params.tab === 'notifications'}><NotificationsTab /></SettingsDisclosure>
         </>}

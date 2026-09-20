@@ -92,7 +92,8 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
             ssh_public_key: sshKey,
             ca_certificate: caCertificate,
             insecure,
-            auto_sync_ipam: false,
+            auto_sync_ipam: autoSyncIpam,
+            sync_interval_min: Number(syncIntervalMin),
 
           },
         },
@@ -271,6 +272,11 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
             </span>
           </label>
             {fieldError('insecure')}
+          <div className="space-y-2 rounded-md border p-3 text-sm">
+            <label className="flex items-center gap-2"><input type="checkbox" checked={autoSyncIpam} onChange={event => setAutoSyncIpam(event.target.checked)} />Automatically synchronize IPAM</label>
+            <p className="text-xs text-muted-foreground">Refresh guest addresses and release IPs of deleted VMs and containers. Requires VM.Audit for the entire cluster to detect deleted guests.</p>
+            {autoSyncIpam && <div className="space-y-1"><Label htmlFor="proxmox-ipam-interval">Sync interval (minutes)</Label><Input id="proxmox-ipam-interval" type="number" min={5} max={1440} step={1} required value={syncIntervalMin} onChange={event => setSyncIntervalMin(event.target.value)} />{fieldError('sync_interval_min')}</div>}
+          </div>
           </fieldset>
           <div className="mt-4 space-y-2 rounded-md border p-3 text-sm">
             <div className="flex flex-wrap items-center justify-between gap-2"><div><strong>Connection and permission check</strong><p className="text-xs text-muted-foreground">Read-only requests verify authentication, node inventory and reported privileges before saving.</p></div><Button type="button" variant="outline" disabled={connectionTest.isPending || !endpoint.trim() || (!isEdit && !apiToken.trim()) || contextChanged || discardRequested} onClick={() => connectionTest.mutate()}>{connectionTest.isPending ? <RefreshCw className="animate-spin" /> : <ShieldCheck />}Test connection</Button></div>

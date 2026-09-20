@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { RefreshCw, Server, Settings2, TriangleAlert, Workflow } from "lucide-react";
+import { RefreshCw, Server, Settings2, Trash2, TriangleAlert, Workflow } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -71,6 +71,7 @@ export function DeploymentsPage() {
   const queryClient = useQueryClient();
   const profileQuery = useProfile();
   const canEdit = hasCap(profileQuery.data, "canEditDeployments");
+  const [deleteTarget, setDeleteTarget] = useState<{ vm: ManagedVm; environmentId: string } | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [legacyToMigrate, setLegacyToMigrate] = useState<LegacyWorkspace | null>(null);
   const vmsQuery = useQuery({
@@ -95,6 +96,10 @@ export function DeploymentsPage() {
     mutationFn: (workspace: LegacyWorkspace) => apiFetch(`/opentofu/legacy-workspaces/${encodeURIComponent(workspace.id)}/migrate-vms`, { method: "POST", body: { confirmation: `MIGRATE ${workspace.name}` } }),
     onSuccess: () => { setLegacyToMigrate(null); showToast("VM states were isolated successfully.", "success"); refresh(); },
     onError: (error: Error) => showToast(error.message, "error"),
+  });
+  const deleteDefinition = useMutation({
+    mutationFn: (target: { vm: ManagedVm; environmentId: string }) => apiFetch(`/opentofu/vms/${encodeURIComponent(target.vm.id)}/forget`, { method: 'POST', environmentId: target.environmentId, body: { confirmation: `FORGET ${target.vm.name}` } }),
+    onSuccess: () => { setDeleteTarget(null); showToast('VM definition deleted. Existing Proxmox VM retained.', 'success'); refresh(); },
   });
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
 
@@ -126,7 +131,7 @@ export function DeploymentsPage() {
         <CardContent className="p-0">
           <div className="table-scroll">
             <table data-density="compact" className="w-full min-w-[850px] text-sm">
-              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th></tr></thead>
+              <thead><tr><th className="px-3">Name</th><th className="px-3">Status</th><th className="px-3">Platform</th><th className="px-3">Proxmox</th><th className="px-3">Last run</th>{canEdit && <th className="px-3 text-right">Actions</th>}</tr></thead>
               <tbody>{vms.map((vm) => {
                 const status = vmStatus(vm);
                 const openVm = () => void navigate({ to: "/deployments/$id", params: { id: vm.id } });
@@ -150,6 +155,7 @@ export function DeploymentsPage() {
                   <td className="px-3"><div className="font-medium">{vm.platform?.name || "—"}</div><div className="max-w-[14rem] truncate text-xs text-muted-foreground">{vm.platform?.endpoint?.replace(/^https?:\/\//, "") || "Platform unavailable"}</div></td>
                   <td className="px-3"><span className="font-mono text-xs">{vm.node_name || "—"} · {vm.vm_id || "auto"}</span></td>
                   <td className="px-3"><div className="text-xs">{vm.last_run ? `${vm.last_run.action || "Run"} · ${vm.last_run.status || "unknown"}` : "No runs yet"}</div><div className="text-xs text-muted-foreground">{formatDate(vm.last_run?.completed_at || vm.last_run?.started_at)}</div></td>
+                  {canEdit && <td className="px-3 text-right"><Button variant="ghost" size="sm" aria-label={`Delete definition ${vm.name}`} disabled={['running', 'cancelling', 'queued', 'pending'].includes(vm.last_run?.status || '')} onClick={() => { deleteDefinition.reset(); setDeleteTarget({vm, environmentId}); }}><Trash2 />Delete definition</Button></td>}
                 </tr>;
               })}</tbody>
             </table>
@@ -163,6 +169,7 @@ export function DeploymentsPage() {
         ? <EmptyState icon={<TriangleAlert className="h-5 w-5" />} title="VM templates could not be loaded" description="No template data is being shown." action={<Button variant="outline" onClick={() => void templatesQuery.refetch()}><RefreshCw />Try again</Button>} />
         : templates.length === 0 ? <p className="text-sm text-muted-foreground">No templates yet. Save the current values as a template while creating or editing a VM.</p> : <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{templates.map((template) => <div key={template.id} className="rounded-md border p-3"><div className="font-medium">{template.name}</div><div className="mt-1 text-xs text-muted-foreground">{template.config?.cpu_cores || "—"} CPU · {template.config?.memory_mb || "—"} MB · {template.config?.disk_size_gb || "—"} GB</div></div>)}</div>}</CardContent>
     </Card>
+    <ConfirmDialog open={Boolean(deleteTarget)} onOpenChange={open => { if (!open) setDeleteTarget(null); }} title="Delete VM definition?" description={<>Remove {deleteTarget?.vm.name} from Shipyard and OpenTofu management. An existing VM in Proxmox is kept.</>} confirmLabel="Delete definition" confirmTextValue={deleteTarget?.vm.name} targetEnvironmentId={deleteTarget?.environmentId} closeOnConfirm={false} error={deleteDefinition.error?.message} isPending={deleteDefinition.isPending} onConfirm={() => { if (deleteTarget) deleteDefinition.mutate(deleteTarget); }} />
     <CreateDeploymentDialog onConfigurePlatforms={() => void navigate({to:'/settings/$tab',params:{tab:'connections'}})} environmentId={environmentId} open={createOpen} onOpenChange={setCreateOpen} />
     <ConfirmDialog open={Boolean(legacyToMigrate)} onOpenChange={(next) => !next && setLegacyToMigrate(null)} title="Split legacy state by VM?" description="Shipyard locks the legacy deployment, backs up its local state, moves each VM resource to an independent state, and validates that no VM would be created or destroyed. Remote backends are rejected and require a backend-specific migration." confirmLabel="Migrate VM states" variant="warning" confirmTextValue={legacyToMigrate ? `MIGRATE ${legacyToMigrate.name}` : undefined} confirmInputHelp={legacyToMigrate ? <>Enter <code className="font-mono">MIGRATE {legacyToMigrate.name}</code>.</> : undefined} onConfirm={() => legacyToMigrate && migrateMutation.mutate(legacyToMigrate)} isPending={migrateMutation.isPending} />
   </div>;

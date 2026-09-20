@@ -36,6 +36,8 @@ let storageInventory = [{ storage: 'local-zfs', type: 'zfspool', active: 1, used
 const originalRequest = https.request;
 let inventory = [{ type: 'qemu', node: 'pve001', vmid: 101, name: 'app-01' }];
 let lxcInterfacesAvailable = true;
+let guestAgentStatus = 200;
+let clusterAudit = 1;
 let beforeInventoryResponse = null;
 let storageHttpStatus = 200;
 let networkHttpStatus = 200;
@@ -58,12 +60,12 @@ function installProxmoxMock() {
       }
       calls.push({ path: parsed.pathname, search: parsed.search, method: options.method, body, authorization: options.headers.Authorization });
       const response = new EventEmitter();
-      response.statusCode = parsed.pathname.endsWith('/storage') ? storageHttpStatus : parsed.pathname.endsWith('/network') ? networkHttpStatus : 200;
+      response.statusCode = parsed.pathname.endsWith('/agent/network-get-interfaces') ? guestAgentStatus : parsed.pathname.endsWith('/storage') ? storageHttpStatus : parsed.pathname.endsWith('/network') ? networkHttpStatus : 200;
       response.setEncoding = () => {};
       callback(response);
       const data = parsed.pathname.includes('/tasks/') && parsed.pathname.endsWith('/status') ? taskStatusResponse
         : parsed.pathname.endsWith('/version') ? { version: '8.4.2' }
-        : parsed.pathname.endsWith('/access/permissions') ? { '/': { 'Sys.Audit': 1, 'VM.Audit': 1, 'Datastore.Audit': 1 }, '/vms/101': { 'VM.PowerMgmt': 1 } }
+        : parsed.pathname.endsWith('/access/permissions') ? { '/': { 'Sys.Audit': 1, 'VM.Audit': clusterAudit, 'Datastore.Audit': 1 }, '/vms/101': { 'VM.PowerMgmt': 1 } }
         : parsed.pathname.endsWith('/snapshot') && options.method === 'GET' ? recoveryPoints
         : parsed.pathname.endsWith('/cluster/resources') ? inventory
         : parsed.pathname.endsWith('/nodes') ? [{ node: 'pve001', status: 'online' }]
@@ -423,14 +425,20 @@ test('Proxmox IPAM synchronization without a prefix processes every environment 
   assert.ok(connection.last_ipam_synced_at);
 });
 
-test('scheduler never polls Proxmox inventory, including previously enabled connections', async () => {
+test('scheduler synchronizes enabled Proxmox IPAM connections and respects disabled connections', async () => {
+  db.db.prepare("INSERT INTO ipam_reservations (id, subnet_id, address, source_type, source_ref) VALUES ('scheduler-deleted-guest', 'platform-actions-ipam-prefix', '10.20.1.60', 'proxmox', ?)").run(`${connectionId}:pve001:404`);
   db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 1, sync_interval_min = 5, last_ipam_synced_at = NULL, last_ipam_status = '' WHERE id = ?")
     .run(connectionId);
   await scheduler.pollIpamSources();
   assert.equal(
     db.db.prepare('SELECT last_ipam_status FROM tofu_proxmox_connections WHERE id = ?').get(connectionId).last_ipam_status,
-    '',
+    'success',
   );
+
+  assert.equal(db.db.prepare("SELECT id FROM ipam_reservations WHERE id = 'scheduler-deleted-guest'").get(), undefined);
+  const callsAfterSync = calls.length;
+  await scheduler.pollIpamSources();
+  assert.equal(calls.length, callsAfterSync, 'not due yet');
 
   db.db.prepare("UPDATE tofu_proxmox_connections SET auto_sync_ipam = 0, last_ipam_synced_at = NULL, last_ipam_status = 'disabled' WHERE id = ?")
     .run(connectionId);
@@ -439,6 +447,41 @@ test('scheduler never polls Proxmox inventory, including previously enabled conn
     db.db.prepare('SELECT last_ipam_status FROM tofu_proxmox_connections WHERE id = ?').get(connectionId).last_ipam_status,
     'disabled',
   );
+});
+
+test('Proxmox IPAM removes deleted guests but preserves unrelated and existing guest addresses', async () => {
+  const subnet = 'platform-actions-ipam-prefix';
+  const insert = db.db.prepare("INSERT INTO ipam_reservations (id, subnet_id, address, source_type, source_ref) VALUES (?, ?, ?, ?, ?)");
+  insert.run('deleted-guest', subnet, '10.20.1.61', 'proxmox', `${connectionId}:pve001:303`);
+  insert.run('migrated-guest', subnet, '10.20.1.62', 'proxmox', `${connectionId}:old-node:101`);
+  insert.run('manual-guest', subnet, '10.20.1.63', 'manual', '');
+  insert.run('other-source-guest', subnet, '10.20.1.64', 'proxmox', 'other-connection:pve001:303');
+  insert.run('other-prefix-guest', 'platform-actions-second-prefix', '10.30.1.61', 'proxmox', `${connectionId}:pve001:303`);
+  inventory = [{type:'qemu', node:'pve001', vmid:101, name:'app-01', status:'stopped'}];
+  guestAgentStatus = 500;
+  const sync = () => request(app).post(`/api/opentofu/proxmox-connections/${connectionId}/sync-ipam`).set('Authorization', `Bearer ${token}`).send({subnet_id:subnet});
+  try {
+    const result = await sync();
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    assert.equal(result.body.removed, 1);
+    assert.equal(result.body.failed, 1);
+    assert.equal(db.db.prepare('SELECT id FROM ipam_reservations WHERE id = ?').get('deleted-guest'), undefined);
+    for (const id of ['migrated-guest', 'manual-guest', 'other-source-guest', 'other-prefix-guest']) assert.ok(db.db.prepare('SELECT id FROM ipam_reservations WHERE id = ?').get(id), id);
+    for (const invalid of [null, {}, [{type:'qemu', node:'pve001'}]]) {
+      inventory = invalid;
+      assert.notEqual((await sync()).status, 200);
+      assert.ok(db.db.prepare('SELECT id FROM ipam_reservations WHERE id = ?').get('migrated-guest'));
+    }
+    inventory = [];
+    clusterAudit = 0;
+    assert.equal((await sync()).body.removed, 0, 'restricted inventory must not delete addresses');
+    clusterAudit = 1;
+    assert.equal((await sync()).body.removed, 2, 'valid empty cluster releases both addresses of the deleted guest');
+  } finally {
+    guestAgentStatus = 200; clusterAudit = 1;
+    inventory = [{type:'qemu', node:'pve001', vmid:101, name:'app-01'}];
+    db.db.prepare("DELETE FROM ipam_reservations WHERE id IN ('deleted-guest','migrated-guest','manual-guest','other-source-guest','other-prefix-guest')").run();
+  }
 });
 
 test('connection writes reject invalid inputs without silently truncating or clamping stored values', async () => {

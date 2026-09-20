@@ -8,7 +8,7 @@ import { platformInventoryId } from '@/lib/platform-inventory-id';
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, CheckCircle2, History, Pencil, Play, RefreshCw, RotateCcw, Server, ShieldCheck, Trash2, TriangleAlert, Unlink } from "lucide-react";
+import { ArrowLeft, CheckCircle2, History, Pencil, Play, RefreshCw, RotateCcw, Server, ShieldCheck, Trash2, TriangleAlert } from "lucide-react";
 import { apiFetch } from "@/lib/api";
 import { showToast } from "@/lib/toast";
 import { Button } from "@/components/ui/button";
@@ -261,15 +261,15 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
       </div>
     </CardContent></Card>
 
-    <details className="rounded-md border p-4"><summary className="cursor-pointer text-sm">More actions</summary><Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
-      <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Unlink />Stop managing</Button>
+    <div><Card className="border-destructive/30"><CardHeader><CardTitle className="text-base">Lifecycle</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">
+      <Button variant="outline" onClick={() => setConfirmForget(true)} disabled={!canEdit || Boolean(activeRun) || runStateUnavailable}><Trash2 />Delete definition</Button>
     </CardContent></Card>
 
-    </details>
+    </div>
     </>}
     <VmFormDialog vmId={vm.id} environmentId={vm.environment_id} connectionId={vm.connection_id} initialVm={vm} open={editOpen} onOpenChange={setEditOpen} />
     <ConfirmDialog open={confirmApply} onOpenChange={setConfirmApply} title="Deploy VM?" description={approvedPlan ? `OpenTofu will apply only the saved, isolation-checked plan for ${vm.name}: ${summaryLabel(approvedPlan.plan_summary)}.` : "No safe reviewed plan is available."} confirmLabel="Deploy" onConfirm={() => { setConfirmApply(false); runMutation.mutate("apply"); }} isPending={runMutation.isPending} />
-    <ConfirmDialog open={confirmForget} onOpenChange={setConfirmForget} title="Stop managing this VM?" description="Shipyard removes the VM from OpenTofu state and management. The existing VM remains unchanged in Proxmox." confirmLabel="Stop managing" variant="warning" confirmTextValue={`FORGET ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">FORGET {vm.name}</code>.</>} onConfirm={() => forgetMutation.mutate()} isPending={forgetMutation.isPending} />
+    <ConfirmDialog open={confirmForget} onOpenChange={setConfirmForget} title="Delete VM definition?" description="Shipyard removes the VM from OpenTofu state and management. The existing VM remains unchanged in Proxmox." confirmLabel="Delete definition" closeOnConfirm={false} error={forgetMutation.error?.message} variant="warning" confirmTextValue={`FORGET ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">FORGET {vm.name}</code>.</>} onConfirm={() => forgetMutation.mutate()} isPending={forgetMutation.isPending} />
     <ConfirmDialog open={confirmRestore} onOpenChange={setConfirmRestore} title="Restore OpenTofu state?" description="This replaces Shipyard's current management state with the selected encrypted backup. It does not change the VM in Proxmox. Create and review a new plan immediately afterwards." confirmLabel="Restore state" variant="warning" confirmTextValue={`RESTORE STATE ${vm.name}`} confirmInputHelp={<>Enter <code className="font-mono">RESTORE STATE {vm.name}</code>.</>} onConfirm={() => restoreStateMutation.mutate()} isPending={restoreStateMutation.isPending} />
   </div>;
 }

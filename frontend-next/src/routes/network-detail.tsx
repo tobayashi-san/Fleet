@@ -1369,14 +1369,15 @@ function AllocationTable({
   const isProtected = (row: Allocation) =>
     row.kind === "address" &&
     (row.system_managed || Boolean(row.source_type && row.source_type !== "manual"));
-  const selectableRows = visibleRows.filter((row) => !isProtected(row));
+  const selectableRows = visibleRows;
   const selectedRows = selectableRows.filter((row) => selected.has(keyFor(row)));
+  const releasableRows = selectedRows.filter(row => !isProtected(row));
+  const protectedCount = selectedRows.length - releasableRows.length;
   const allSelected =
     selectableRows.length > 0 && selectedRows.length === selectableRows.length;
   const someSelected = selectedRows.length > 0 && !allSelected;
   const toggle = (row: Allocation) =>
     setSelected((current) => {
-      if (isProtected(row)) return current;
       const next = new Set(current);
       const key = keyFor(row);
       if (next.has(key)) next.delete(key);
@@ -1456,8 +1457,8 @@ function AllocationTable({
             </Button>
             {canEdit && selectedRows.length > 0 && (
               <OverflowMenu title={tr("bulkActions")} trigger={`${tr("bulkActions")} · ${selectedRows.length}`}>
-                <OverflowItem icon={Trash2} danger onClick={() => { setReleaseEnvironment(environmentId); setReleaseTargets([...selectedRows]); setReleaseError(""); setConfirmRelease(true); }}>
-                  {tr("release")} {selectedRows.length}
+                <OverflowItem icon={Trash2} danger disabled={!releasableRows.length} onClick={() => { setReleaseEnvironment(environmentId); setReleaseTargets([...releasableRows]); setReleaseError(""); setConfirmRelease(true); }}>
+                  {tr("release")} {releasableRows.length}
                 </OverflowItem>
               </OverflowMenu>
             )}
@@ -1498,6 +1499,7 @@ function AllocationTable({
             )}
           </div>
         )}
+        {canEdit && protectedCount > 0 && <p role="status" className="border-t px-4 py-2 text-sm text-muted-foreground">{tr("protectedSelection", { count: protectedCount })}</p>}
         <ActiveFilterChips
           className="rounded-none border-x-0 border-b-0"
           filters={statusFilter !== "all" ? [{
@@ -1611,7 +1613,6 @@ function AllocationTable({
                             type="checkbox"
                             aria-label={tr("selectAllocation", { allocation: label })}
                             checked={checked}
-                            disabled={isProtected(row)}
                             onChange={() => toggle(row)}
                           />
                         </td>}
@@ -1767,7 +1768,7 @@ function AllocationTable({
                 row.source_type !== "manual",
             ) ? (
               <span className="mt-2 block">
-                {tr("externalReleaseWarning")}
+                {tr("protectedSelection", { count: protectedCount })}
               </span>
             ) : null}
           </>
@@ -1983,7 +1984,6 @@ function AllocationMobileRow({
           type="checkbox"
           aria-label={tr("selectAllocation", { allocation: label })}
           checked={checked}
-          disabled={protectedRow}
           onChange={onToggle}
         />}
         <div className="min-w-0 flex-1">

@@ -8,6 +8,7 @@
 </p>
 
 <p align="center">
+  <a href="https://tobayashi-san.github.io/Shipyard/">Website</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="#connect-your-first-host">Your first host</a> ·
   <a href="#what-can-i-do-with-shipyard">Features</a> ·

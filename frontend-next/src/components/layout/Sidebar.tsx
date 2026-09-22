@@ -1,3 +1,4 @@
+import { BrandMark } from '@/components/BrandMark';
 import {
   canAccessDeployments,
   canAccessNetworks,
@@ -6,7 +7,9 @@ import {
   useProfile,
   useEnvironments,
 } from "@/lib/queries";
+import { apiFetch } from "@/lib/api";
 import { useUi } from "@/lib/store";
+import { useQuery } from "@tanstack/react-query";
 import { cn } from "@/lib/utils";
 import { Link, useRouterState } from "@tanstack/react-router";
 import {
@@ -77,6 +80,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
   const canViewDeployments = canAccessDeployments(profile);
   const canViewNetworks = canAccessNetworks(profile);
   const canViewOperations = canAccessOperations(profile);
+  // Platform features stay out of the way until they are set up: Deployments
+  // need Proxmox (or existing definitions), Networks need prefixes or Proxmox.
+  const connections = useQuery({ queryKey: ["opentofu", "proxmox-connections", environmentId], queryFn: () => apiFetch<unknown[]>(`/opentofu/proxmox-connections?environment_id=${encodeURIComponent(environmentId)}`, { environmentId }), enabled: canViewDeployments || canViewNetworks, staleTime: 60_000 });
+  const definitions = useQuery({ queryKey: ["opentofu", "vms", environmentId, "navigation"], queryFn: () => apiFetch<unknown[]>(`/opentofu/vms?environment_id=${encodeURIComponent(environmentId)}`, { environmentId }), enabled: canViewDeployments, staleTime: 60_000 });
+  const prefixes = useQuery({ queryKey: ["ipam", "subnets", environmentId, "navigation"], queryFn: () => apiFetch<{ total: number }>(`/ipam/subnets?environment_id=${encodeURIComponent(environmentId)}&paginated=1&page=1&page_size=1&status=all`, { environmentId }), enabled: canViewNetworks, staleTime: 60_000 });
+  const hasPlatform = Array.isArray(connections.data) && connections.data.length > 0;
+  const showDeployments = canViewDeployments && (hasPlatform || (Array.isArray(definitions.data) && definitions.data.length > 0) || path.startsWith("/deployments"));
+  const showNetworks = canViewNetworks && (hasPlatform || Number(prefixes.data?.total) > 0 || path.startsWith("/networks"));
 
   useEffect(() => {
     if (path === previousPath.current) return;
@@ -116,7 +127,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       style={{ width: collapsed ? undefined : `min(85vw, ${sidebarWidth}px)` }}
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 lg:hidden">
-        <span className="min-w-0"><span className="block font-mono text-xs font-semibold uppercase tracking-[0.16em]">Shipyard</span><span className="block truncate text-xs text-muted-foreground" title={String(activeEnvironment)}>{String(activeEnvironment)}</span></span>
+        <span className="flex min-w-0 items-center gap-2"><BrandMark className="h-5 w-5" /><span className="min-w-0"><span className="block text-sm font-semibold tracking-tight">Shipyard</span><span className="block truncate text-xs text-muted-foreground" title={String(activeEnvironment)}>{String(activeEnvironment)}</span></span></span>
           <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")} title={t("shell.closeNavigation")}>
           <X className="h-4 w-4" />
         </button>
@@ -126,9 +137,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
         <NavItem to="/" label="Start" icon={House} active={path === "/"} collapsed={collapsed} onNavigate={onMobileClose} />
         {canViewServers && <NavItem to="/servers" label="Hosts" icon={Server} active={path.startsWith("/servers")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewServers && hasCap(profile, "canViewUpdates") && <NavItem to="/updates" label="Updates" icon={Download} active={path === "/updates"} collapsed={collapsed} onNavigate={onMobileClose} />}
-        {canViewDeployments && <NavItem to="/deployments" label="Deployments" icon={Rocket} active={path.startsWith("/deployments")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {showDeployments && <NavItem to="/deployments" label="Deployments" icon={Rocket} active={path.startsWith("/deployments")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewPlaybooks && <NavItem to="/playbooks" label="Automations" icon={FileCode2} active={path === "/playbooks"} collapsed={collapsed} onNavigate={onMobileClose} />}
-        {canViewNetworks && <NavItem to="/networks" label="Networks" icon={Network} active={path.startsWith("/networks")} collapsed={collapsed} onNavigate={onMobileClose} />}
+        {showNetworks && <NavItem to="/networks" label="Networks" icon={Network} active={path.startsWith("/networks")} collapsed={collapsed} onNavigate={onMobileClose} />}
         {canViewOperations && <NavItem to="/operations" search={{ section: "tasks" }} label="Jobs" icon={Activity} active={path.startsWith("/operations")} collapsed={collapsed} onNavigate={onMobileClose} />}
       </nav>
 

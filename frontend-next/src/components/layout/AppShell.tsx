@@ -1,3 +1,4 @@
+import { BrandMark } from '@/components/BrandMark';
 import { commandModifier } from '@/lib/keyboard';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -172,8 +173,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-11 shrink-0 items-center border-b border-border-strong/80 bg-[hsl(var(--surface-2))] shadow-[0_1px_2px_hsl(var(--foreground)/0.06)]">
         <div style={{ width: collapsed ? undefined : `${sidebarWidth}px` }} className={cn('hidden h-full max-w-[28vw] shrink-0 items-center border-r border-border-strong/70 px-4 lg:flex', collapsed ? 'w-16 justify-center px-2' : '')}>
-          {!collapsed && <span className="truncate font-mono text-[12px] font-bold tracking-[0.15em] text-foreground">{(appName || 'Shipyard').toUpperCase()}</span>}
-          {collapsed && <span className="font-mono text-sm font-semibold tracking-[0.08em]">S</span>}
+          <span className="flex min-w-0 items-center gap-2.5"><BrandMark />{!collapsed && <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">{appName || 'Shipyard'}</span>}</span>
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 lg:px-3">
           <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label={t('shell.openNavigation')}>

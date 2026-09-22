@@ -197,6 +197,7 @@ test('failed activity can be acknowledged without removing its history', async (
     .set(headers);
   assert.equal(openFailures.status, 200);
   assert.equal(openFailures.body.counts.failed, 0);
+  assert.equal(openFailures.body.counts.failed_total, 1, 'period totals keep acknowledged failures');
   assert.equal(openFailures.body.items.length, 0);
 
   const history = await request(app)

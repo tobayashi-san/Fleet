@@ -264,13 +264,16 @@ export function OperationList({
                   <Timestamp value={row.time} />
                 </td>
                 <td className="min-w-0">
-                  <button type="button" className="line-clamp-2 break-words text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}>{row.name}</button>
+                  <div className="flex min-w-0 items-start gap-1.5">
+                    <button type="button" className="min-w-0 text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}><span className="line-clamp-2 break-words">{row.name}</span></button>
+                    <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="mt-0.5 shrink-0 rounded-sm text-muted-foreground hover:text-primary" title={row.executions?.length ? "Open latest execution" : "Open execution"} aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}><ExternalLink className="h-3.5 w-3.5" /></Link>
+                  </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    {operationSourceLabel(row.source)} · {row.initiator} · <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="whitespace-nowrap text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
+                    {operationSourceLabel(row.source)} · {row.initiator}
                   </div>
                   <GroupedExecutionLinks row={row} />
                 </td>
-                <td className="max-w-[10rem] truncate">
+                <td className="max-w-[12rem] break-words">
                   <OperationTarget row={row} />
                 </td>
                 <td className="whitespace-nowrap">

@@ -116,6 +116,10 @@ function AdminSettingsPage() {
         </>}
         {activeId === 'connections' && <>
           <ManageConnections inline />
+          <div className="flex flex-wrap items-center justify-between gap-3 rounded-panel border bg-card px-4 py-3">
+            <div><p className="text-sm font-medium">IP address management</p><p className="text-xs text-muted-foreground">Track prefixes and address reservations. Proxmox connections sync addresses automatically.</p></div>
+            <Button asChild variant="outline" size="sm"><Link to="/networks">Open Networks</Link></Button>
+          </div>
           <SettingsDisclosure title="Playbook Git" open={params.tab === 'git'}><GitTab /></SettingsDisclosure>
           <SettingsDisclosure title="Notifications" open={params.tab === 'notifications'}><NotificationsTab /></SettingsDisclosure>
         </>}

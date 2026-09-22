@@ -279,6 +279,8 @@ router.get('/', (req, res) => {
     all: commonFiltered.length,
     active: commonFiltered.filter(row => ['running', 'queued', 'pending', 'cancelling'].includes(String(row.status).toLowerCase())).length,
     failed: commonFiltered.filter(isOpenFailure).length,
+    // Includes acknowledged failures; used for period summaries.
+    failed_total: commonFiltered.filter(row => statusTone(row.status) === 'danger').length,
   };
   const scope = ['active', 'failed', 'completed'].includes(String(req.query.scope || ''))
     ? String(req.query.scope)

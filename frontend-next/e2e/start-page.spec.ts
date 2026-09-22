@@ -33,8 +33,9 @@ test('start is compact, links to objects and jobs, and never requests live infra
   await expect(current.getByText('Nightly updates')).toBeVisible();
   await expect(current.getByRole('link',{name:'Open deployment'})).toHaveAttribute('href','/deployments/vm2');
   await expect(current.getByRole('link',{name:'Open automation'})).toHaveAttribute('href',/schedule=schedule1/);
-  await expect(page.getByRole('region',{name:'Recent jobs'}).getByRole('listitem')).toHaveCount(5);
-  await expect(page.getByRole('region',{name:'Recent jobs'}).getByRole('link',{name:'View run log'}).first()).toHaveAttribute('href',/operations\/executions\/completed-0/);
+  await expect(page.getByRole('region',{name:'Last 7 days'})).toContainText('5 jobs · none failed');
+  await expect(page.getByRole('region',{name:'Last 7 days'}).getByRole('link',{name:'All jobs'})).toHaveAttribute('href',/operations\?from=/);
+  await expect(page.getByRole('region',{name:'Quick access'})).toHaveCount(0);
   await expect(page.locator('main table')).toHaveCount(0);
   for(const width of [1440,390]) {
     await page.setViewportSize({width,height:900});

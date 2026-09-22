@@ -39,6 +39,11 @@ interface ServersSearch {
   updates?: boolean;
 }
 
+export interface UpdatesSearch {
+  tab?: 'packages' | 'history';
+  host?: string;
+}
+
 interface OperationsSearch {
   scope?: 'active' | 'failed';
   section?: 'tasks' | 'audit';
@@ -117,7 +122,14 @@ const serversRoute    = createRoute({
   },
   component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServersPage /></LazyPage></PermissionGate>,
 });
-const updatesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/updates', component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers') && hasCap(profile, 'canViewUpdates')}><LazyPage><UpdatesPage /></LazyPage></PermissionGate> });
+const updatesRoute = createRoute({ getParentRoute: () => protectedLayout, path: '/updates',
+  validateSearch: (search: Record<string, unknown>): UpdatesSearch => {
+    const result: UpdatesSearch = {};
+    if (search.tab === 'packages' || search.tab === 'history') result.tab = search.tab;
+    if (typeof search.host === 'string' && search.host.trim()) result.host = search.host.trim().slice(0, 200);
+    return result;
+  },
+  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers') && hasCap(profile, 'canViewUpdates')}><LazyPage><UpdatesPage /></LazyPage></PermissionGate> });
 const serverDetail    = createRoute({ getParentRoute: () => protectedLayout, path: '/servers/$id',  component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewServers')}><LazyPage><ServerDetailPage /></LazyPage></PermissionGate> });
 const playbooksRoute  = createRoute({ getParentRoute: () => protectedLayout, path: '/playbooks',    component: () => <PermissionGate allow={profile => hasCap(profile, 'canViewPlaybooks') || hasCap(profile, 'canViewSchedules')}><LazyPage><PlaybooksPage /></LazyPage></PermissionGate> });
 const profileRoute    = createRoute({ getParentRoute: () => protectedLayout, path: '/profile',      component: () => <LazyPage><ProfilePage /></LazyPage> });

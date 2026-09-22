@@ -250,11 +250,14 @@ function serverOperatingState(server, perms) {
         ram_total_mb: info.ram_total_mb ?? null,
         disk_used_gb: info.disk_used_gb ?? null,
         disk_total_gb: info.disk_total_gb ?? null,
+        os: info.os || null,
+        uptime_seconds: info.uptime_seconds ?? null,
       } : null,
     };
 }
 
 router.get('/update-dashboard', require('../features/updates/dashboard'));
+router.get('/update-history', require('../features/updates/history'));
 
 router.get('/', guard('canViewServers'), (req, res) => {
   try {

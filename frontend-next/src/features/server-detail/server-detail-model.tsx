@@ -1,3 +1,4 @@
+import { Timestamp } from "@/components/ui/timestamp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { metricTextClass } from "@/components/ui/metric-bar";
 import { StatusBadge } from "@/components/ui/status-badge";
@@ -284,10 +285,10 @@ export function RecentHostTasks({
             {recent.map((item) => (
               <div
                 key={item.id}
-                className="grid gap-x-4 gap-y-1 px-4 py-2.5 sm:grid-cols-[minmax(10rem,.7fr)_minmax(12rem,1fr)_auto] sm:items-center"
+                className="grid gap-x-4 gap-y-1 px-4 py-2.5 sm:grid-cols-[9rem_minmax(0,1fr)_7rem] sm:items-center"
               >
-                <div className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                  {formatDate(item.started_at, hour12)}
+                <div className="text-xs text-muted-foreground">
+                  <Timestamp value={item.started_at} hour12={hour12} />
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-medium">
@@ -301,6 +302,7 @@ export function RecentHostTasks({
                   </div>
                 </div>
                 <StatusBadge
+                  className="sm:justify-self-end"
                   tone={
                     item.status === "success"
                       ? "success"

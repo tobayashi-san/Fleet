@@ -60,3 +60,23 @@ test('host inventory exposes imported and managed VM IDs without live Proxmox re
   assert.equal(response.body.find(item => item.id === first.id).proxmox_vm_id, 123);
   assert.equal(response.body.find(item => item.id === second.id).proxmox_vm_id, 456);
 });
+
+test('update history lists host updates, reboots and bulk runs within the caller scope', async () => {
+  const update = db.updateHistory.create(first.id, 'system_update', 'tester');
+  db.updateHistory.updateStatus(update, 'failed', 'secret-output');
+  db.updateHistory.create(second.id, 'reboot', 'tester');
+  db.updateHistory.create(first.id, 'docker_pull', 'tester');
+  db.scheduleHistory.create(null, 'Bulk system update', 'update.yml', `${first.name},${second.name}`, { environmentId: 'default', triggeredBy: 'tester' });
+  db.scheduleHistory.create(null, 'Other playbook', 'other.yml', first.name, { environmentId: 'default' });
+  const response = await request(app).get('/servers/update-history');
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.body.map(item => item.name).sort(), ['Bulk system update', 'Reboot', 'System update']);
+  assert.equal(response.body.find(item => item.name === 'System update').status, 'failed');
+  assert.ok(!JSON.stringify(response.body).includes('secret-output'));
+  assert.deepEqual(response.body.find(item => item.name === 'Bulk system update').hosts, [first.name, second.name]);
+
+  const reader = db.roles.create('First host update reader', { canViewServers: true, canViewUpdates: true, servers: { servers: [first.id], groups: [] } });
+  const scoped = await request(app).get('/servers/update-history').set('x-role', reader.id);
+  assert.deepEqual(scoped.body.map(item => item.name), ['System update']);
+  assert.deepEqual((await request(app).get('/servers/update-history').set('x-environment', 'stage')).body, []);
+});

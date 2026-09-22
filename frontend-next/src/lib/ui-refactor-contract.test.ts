@@ -135,7 +135,6 @@ describe("UI refactor contract", () => {
     const operations = source("routes/operations.tsx");
     expect(operations).toContain("operationsQuery.isError ? (");
     expect(operations).toContain('title="Activity could not be loaded"');
-    expect(operations).toContain("operationsQuery.isSuccess && <OperationsContext");
   });
 
   it("distinguishes infrastructure detail failures from confirmed empty inventory", () => {

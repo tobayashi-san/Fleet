@@ -1,5 +1,5 @@
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
 	DateTextInput
 } from "@/components/ui/date-input";
@@ -17,7 +17,6 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
 import { OperationsResponse, Workspace } from '@/features/operations/model';
 import { OperationDetail, OperationList, TaskScopeButton } from '@/features/operations/OperationList';
-import { OperationsContext } from '@/features/operations/OperationsContext';
 import { apiFetch } from "@/lib/api";
 import {
 	canAccessDeployments,
@@ -34,8 +33,6 @@ import {
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
 	CheckCircle2,
-	ClipboardList,
-	ExternalLink,
 	Search
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -49,7 +46,6 @@ export function OperationsPage() {
   const environmentId = useUi((state) => state.environmentId);
   const { data: profile } = useProfile();
   const canViewDeployments = canAccessDeployments(profile);
-  const canViewSchedules = hasCap(profile, "canViewSchedules");
   const canViewAudit = hasCap(profile, "canViewAudit");
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
     routeSearch.scope || "all",
@@ -192,53 +188,12 @@ export function OperationsPage() {
         title="Jobs"
         description="Runs and scheduled changes."
       />
-      {activeSection === "tasks" && operationsQuery.isSuccess && <OperationsContext
-        activeOperations={activeOperationCount}
-        failedOperations={failedOperationCount}
-        onShowFailures={() => {
-          setTaskScope("failed");
-          setSelectedOperationId(null);
-          document
-            .getElementById("operation-tasks")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
-        }}
-      />}
       <nav className="flex gap-1 overflow-x-auto rounded-panel border bg-card p-1" aria-label="Operations sections">
         <Button asChild size="sm" variant={activeSection === "tasks" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Activity</Link></Button>
         {canViewAudit && <Button asChild size="sm" variant={activeSection === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
       </nav>
       <div className="flex flex-col gap-5">
         {activeSection === "tasks" && <Card id="operation-tasks" className="scroll-mt-16">
-          <CardHeader className="flex-row flex-wrap items-center justify-between gap-3 border-b bg-muted/15 py-3">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <ClipboardList className="h-4 w-4" />
-                Activity
-              </CardTitle>
-              <p className="mt-0.5 text-xs text-muted-foreground">
-                Running tasks appear first. Select a task to review its context.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-1">
-              {canViewDeployments && (
-                <Button asChild size="sm" variant="outline">
-                  <Link to="/deployments">
-                    Deployment
-                    <ExternalLink />
-                  </Link>
-                </Button>
-              )}
-              {canViewSchedules && (
-                <Button asChild size="sm" variant="ghost">
-                  <Link to="/playbooks">
-                    Workflows
-                    <ExternalLink />
-                  </Link>
-                </Button>
-              )}
-              {canViewAudit && <Button asChild size="sm" variant="ghost"><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit log</Link></Button>}
-            </div>
-          </CardHeader>
           <CardContent className="p-0">
             {operationsQuery.isLoading ? (
               <div className="p-5 text-sm text-muted-foreground">
@@ -272,7 +227,7 @@ export function OperationsPage() {
                     active={taskScope === "failed"}
                     onClick={() => setTaskScope("failed")}
                   >
-                    Failed <span>{failedOperationCount}</span>
+                    Failed <span className={failedOperationCount > 0 ? "rounded-full bg-destructive px-1.5 text-[11px] font-semibold text-destructive-foreground" : undefined}>{failedOperationCount}</span>
                   </TaskScopeButton>
                   {failedOperationCount > 0 && (
                     <Button

@@ -4,7 +4,6 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TabsContent } from "@/components/ui/tabs";
 import { ApiError } from "@/lib/api";
-import { hasCap } from "@/lib/queries";
 import { managementLabel } from '@/lib/resource-model';
 import { Link } from "@tanstack/react-router";
 import {
@@ -18,7 +17,6 @@ import {
   TriangleAlert
 } from "lucide-react";
 import { CopyButton } from "./components/summary-cards";
-import { imageCatalogFreshness } from './image-catalog-freshness';
 import {
   CapacitySummary,
   formatBytes,
@@ -27,18 +25,13 @@ import {
   RecentHostTasks,
   SummaryField
 } from "./server-detail-model";
-import { summarizeUpdates } from './update-summary';
 
 
 import type { ServerDetailController } from "./useServerDetailController";
 
 type ServerOverviewTabsController = Pick<ServerDetailController,
     "canViewManagementRelationships"
-  | "containers"
   | "cpuPct"
-  | "customTaskList"
-  | "customTasksFailed"
-  | "customTasksLoading"
   | "deploymentContextFailed"
   | "deploymentContextLoading"
   | "diskPct"
@@ -46,27 +39,21 @@ type ServerOverviewTabsController = Pick<ServerDetailController,
   | "healthThresholds"
   | "histItems"
   | "hour12"
-  | "imageCatalog"
-  | "imageUpdates"
   | "info"
   | "infoError"
   | "infoFailed"
   | "ipamReservations"
   | "latencyMs"
   | "managedDeployments"
-  | "profile"
   | "ramPct"
-  | "rawUpdates"
   | "refetchInfo"
   | "server"
   | "t"
-  | "updatesList"
 >;
 
 export function ServerOverviewTabs({ controller }: { controller: ServerOverviewTabsController }) {
   const {
     t,
-    profile,
     hour12,
     canViewManagementRelationships,
     managedDeployments,
@@ -79,20 +66,12 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
     infoFailed,
     infoError,
     ipamReservations,
-    rawUpdates,
-    customTaskList,
-    customTasksLoading,
-    customTasksFailed,
-    imageUpdates,
-    imageCatalog,
     latencyMs,
     histItems,
     ramPct,
     diskPct,
     cpuPct,
     healthThresholds,
-    updatesList,
-    containers,
   } = controller;
 
   if (!server) return null;
@@ -100,17 +79,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
     : deploymentContextFailed ? "Management context unavailable"
     : deploymentContextLoading ? "Loading management context…"
     : managementLabel(server.id, managedDeployments.some(deployment => deployment.kind !== "inventory"));
-  const updateSummary = summarizeUpdates({
-    offline: server.status === 'offline',
-    osCount: rawUpdates == null ? null : updatesList.length,
-    reasons: server.attention?.reasons,
-    imageCount: hasCap(profile, "canViewDocker") && hasCap(profile, "canViewUpdates") ? containers.filter(container => (imageUpdates[container.container_name] || imageUpdates[container.image] || imageUpdates[container.image + ":latest"]) === "update_available").length : undefined,
-    imageStale: hasCap(profile, "canViewDocker") && hasCap(profile, "canViewUpdates") && !imageCatalogFreshness(imageCatalog).fresh,
-    customCount: hasCap(profile, "canViewCustomUpdates") ? customTaskList.filter(task => task.has_update).length : undefined,
-    customFailed: hasCap(profile, "canViewCustomUpdates") && customTaskList.some(task => Boolean(task.last_check_error)),
-    customStale: hasCap(profile, "canViewCustomUpdates") && (customTasksLoading || customTasksFailed || customTaskList.some(task => !imageCatalogFreshness({ updated_at: task.last_checked_at, stale: task.stale }).fresh)),
-    stale: rawUpdates && !Array.isArray(rawUpdates) ? rawUpdates.stale : undefined,
-  });
 
   return (
     <>
@@ -156,15 +124,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                   </div>
                 </div>
                 <dl className="console-object-info-grid xl:grid-cols-3">
-                  <SummaryField
-                    label={t("det.tabUpdates")}
-                    value={updateSummary.label}
-                    tone={updateSummary.tone}
-                  />
-                  <SummaryField
-                    label="Management"
-                    value={managementSummary}
-                  />
                   <SummaryField label={t("det.os")} value={info?.os || "—"} />
                   <SummaryField label={t("det.cpu")} value={info?.cpu || "—"} />
                   <SummaryField
@@ -176,6 +135,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                     }
                     mono
                   />
+                  <SummaryField label="Tags" value={Array.isArray(server.tags) && server.tags.length ? server.tags.join(", ") : "—"} />
+                  <SummaryField label="Owner" value={server.owner ? String(server.owner) : "—"} />
                 </dl>
               </div>
               <div className="console-object-capacity border-t xl:border-l xl:border-t-0">

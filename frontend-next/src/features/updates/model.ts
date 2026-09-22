@@ -37,3 +37,44 @@ export function catalogStatus(catalog: Catalog, kind: 'system' | 'docker'): { la
   const count = pendingUpdates(catalog, kind).length;
   return { label: count ? `${count} available` : 'Up to date', tone: count ? 'warning' : 'success', needsCheck: false };
 }
+
+export interface PackageRow {
+  key: string;
+  kind: 'system' | 'docker';
+  name: string;
+  versions: string[];
+  hosts: { id: string; name: string; detail: string }[];
+}
+
+/** Groups pending updates by package or image so one question ("where is openssl outdated?") has one row. */
+export function packageIndex(hosts: UpdateHost[], includeDocker: boolean): PackageRow[] {
+  const rows = new Map<string, PackageRow>();
+  const add = (kind: PackageRow['kind'], name: string, host: UpdateHost, detail: string, version?: string) => {
+    const key = `${kind}:${name}`;
+    const row = rows.get(key) || { key, kind, name, versions: [], hosts: [] };
+    if (version && !row.versions.includes(version)) row.versions.push(version);
+    if (!row.hosts.some(item => item.id === host.id && item.detail === detail)) row.hosts.push({ id: host.id, name: host.name, detail });
+    rows.set(key, row);
+  };
+  for (const host of hosts) {
+    for (const item of pendingUpdates(host.system, 'system')) {
+      if (item.package) add('system', item.package, host, item.current_version ? `${item.current_version} → ${item.version || 'newer'}` : item.version || '', item.version);
+    }
+    if (includeDocker && host.docker) {
+      for (const item of pendingUpdates(host.docker, 'docker')) {
+        const image = item.image || item.container_name;
+        if (image) add('docker', image, host, item.container_name || '');
+      }
+    }
+  }
+  return [...rows.values()].sort((a, b) => b.hosts.length - a.hosts.length || a.name.localeCompare(b.name));
+}
+
+/** A host needs action when updates wait or its latest check cannot be trusted. */
+export function needsAction(host: UpdateHost, includeDocker: boolean) {
+  const catalogs = [host.system, ...(includeDocker && host.docker ? [host.docker] : [])];
+  return host.reboot_required || catalogs.some((catalog, index) => {
+    const status = catalogStatus(catalog, index === 0 ? 'system' : 'docker');
+    return status.needsCheck || pendingUpdates(catalog, index === 0 ? 'system' : 'docker').length > 0;
+  });
+}

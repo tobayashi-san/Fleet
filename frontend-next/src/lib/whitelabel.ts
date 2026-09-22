@@ -65,7 +65,10 @@ function buildFaviconDataUrl(accent: string): string {
   // Keep the shipyard mark recognizable at browser-tab size while allowing
   // the configured accent colour to carry through white-label installations.
   const safeAccent = /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT;
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path fill="${safeAccent}" d="M28 13h8v18h11v7h-3l-4 11H24l-4-11h-3v-7h11zm-6 25 4.2 8h11.6l4.2-8z"/></svg>`;
+  // Dark glyph on light accents, white glyph on dark ones.
+  const [r, g, b] = [1, 3, 5].map(index => parseInt(safeAccent.slice(index, index + 2), 16));
+  const glyph = 0.2126 * r + 0.7152 * g + 0.0722 * b > 150 ? '#10231b' : '#ffffff';
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40"><rect width="40" height="40" rx="10" fill="${safeAccent}"/><g fill="${glyph}"><rect x="14" y="8.5" width="12" height="5.5" rx="1.3"/><rect x="10.5" y="15.5" width="19" height="5.5" rx="1.3"/><path d="M6.5 23h27l-3.6 7.4a2.4 2.4 0 0 1-2.16 1.35H12.26a2.4 2.4 0 0 1-2.16-1.35z"/></g><g fill="${safeAccent}"><circle cx="16.6" cy="11.25" r="1"/><circle cx="13.1" cy="18.25" r="1"/></g></svg>`;
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
 }
 

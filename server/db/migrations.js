@@ -15,7 +15,6 @@ const REQUIRED_COLUMNS = {
   ipam_device_names: ['environment_id', 'mac_address', 'name'],
   ipam_ip_ranges: ['id', 'subnet_id', 'start_address', 'end_address'],
   ipam_sync_sources: ['id', 'environment_id', 'auto_sync', 'sync_interval_min', 'last_record_count', 'last_ignored_count'],
-  maintenance_windows: ['id', 'environment_id', 'starts_at', 'ends_at', 'affected_resources', 'timezone', 'owner'],
   ssh_key_assignments: ['id', 'key_name', 'target_type', 'target_id', 'environment_id'],
   server_alert_settings: ['server_id', 'enabled', 'thresholds_json'],
   resource_alerts: ['id', 'server_id', 'type', 'status'],
@@ -366,20 +365,9 @@ function applyMigrations(db) {
     );
   } catch {}
   try { db.exec("ALTER TABLE ipam_proxmox_sync_conflicts ADD COLUMN mac_address TEXT DEFAULT ''"); } catch {}
-  try {
-    db.exec(`CREATE TABLE IF NOT EXISTS maintenance_windows (
-      id TEXT PRIMARY KEY, environment_id TEXT NOT NULL DEFAULT 'default', name TEXT NOT NULL,
-      starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, description TEXT DEFAULT '', created_by TEXT DEFAULT '',
-      affected_resources TEXT DEFAULT '', timezone TEXT NOT NULL DEFAULT 'Europe/Zurich', owner TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')), FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
-    )`);
-    db.exec(
-      "CREATE INDEX IF NOT EXISTS idx_maintenance_windows_environment_time ON maintenance_windows(environment_id, starts_at, ends_at)",
-    );
-  } catch {}
-  try { db.exec("ALTER TABLE maintenance_windows ADD COLUMN affected_resources TEXT DEFAULT ''"); } catch {}
-  try { db.exec("ALTER TABLE maintenance_windows ADD COLUMN timezone TEXT NOT NULL DEFAULT 'Europe/Zurich'"); } catch {}
-  try { db.exec("ALTER TABLE maintenance_windows ADD COLUMN owner TEXT DEFAULT ''"); } catch {}
+  // Maintenance windows were retired; remove their table and notification preference.
+  db.exec('DROP TABLE IF EXISTS maintenance_windows');
+  try { db.exec("DELETE FROM app_settings WHERE key = 'notify_suppress_maintenance'"); } catch {}
   // SSH keys are stored centrally; this mapping makes their permitted hosts,
   // deployments and VM templates visible without coupling the core schema to
   // an optional OpenTofu installation.

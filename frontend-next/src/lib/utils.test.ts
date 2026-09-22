@@ -1,10 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import {
-  formatZonedDateTimeLocal,
-  parseZonedDateTimeLocal,
   asArray,
   DISPLAY_TIME_ZONE,
   formatDateInput,
+  formatDateTimeWithZone,
   formatDateTime,
   formatZonedDateTimeInput,
   parseDateInput,
@@ -48,9 +47,10 @@ describe('formatDateTime', () => {
     expect(formatted).toContain('13:30');
   });
 
-  it('renders maintenance timestamps unambiguously with a 24-hour clock', () => {
+  it('renders timestamps unambiguously with a 24-hour clock', () => {
     const formatted = formatDateTime('2026-09-02T17:30:00.000Z');
-    expect(formatted).toMatch(/^2 Sept? 2026, 19:30 \(Europe\/Zurich\)$/);
+    expect(formatted).toMatch(/^2 Sept? 2026, 19:30$/);
+    expect(formatDateTimeWithZone('2026-09-02T17:30:00.000Z')).toMatch(/^2 Sept? 2026, 19:30 \(Europe\/Zurich\)$/);
     expect(formatted).not.toMatch(/AM|PM/i);
   });
 
@@ -59,7 +59,8 @@ describe('formatDateTime', () => {
     expect(formatDateTime('2026-09-09 01:00:00')).toBe(expected);
     expect(formatDateTime('2026-09-09T01:00:00')).toBe(expected);
     expect(formatDateTime('2026-09-09T03:00:00+02:00')).toBe(expected);
-    expect(expected).toContain('03:00 (Europe/Zurich)');
+    expect(expected).toContain('03:00');
+    expect(expected).not.toContain('Europe/Zurich');
     expect(formatDateTime('2026-01-09 01:00:00')).toContain('02:00');
   });
 
@@ -86,19 +87,5 @@ describe('deterministic date inputs', () => {
   it('rejects ambiguous browser-style and nonexistent wall times', () => {
     expect(parseDateInput('09/02/2026, 07:30 PM')).toBeNull();
     expect(parseZonedDateTimeInput('29/03/2026, 02:30', 'Europe/Zurich')).toBeNull();
-  });
-});
-
-
-describe('native maintenance date/time conversion', () => {
-  it('interprets keyboard/picker input in the chosen zone, independently of browser timezone', () => {
-    expect(parseZonedDateTimeLocal('2026-07-10T09:30', 'Europe/Zurich')).toBe('2026-07-10T07:30:00.000Z');
-    expect(formatZonedDateTimeLocal('2026-07-10T07:30:00.000Z', 'Asia/Kathmandu')).toBe('2026-07-10T13:15');
-    expect(parseZonedDateTimeLocal('2026-07-10T13:15', 'Asia/Kathmandu')).toBe('2026-07-10T07:30:00.000Z');
-  });
-  it('rejects impossible calendar dates and times skipped by daylight saving', () => {
-    expect(parseZonedDateTimeLocal('2026-03-29T02:30', 'Europe/Zurich')).toBeNull();
-    expect(parseZonedDateTimeLocal('2026-02-30T10:00', 'UTC')).toBeNull();
-    expect(parseZonedDateTimeLocal('2026-07-10T25:00', 'UTC')).toBeNull();
   });
 });

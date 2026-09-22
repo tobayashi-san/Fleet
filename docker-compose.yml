@@ -14,6 +14,9 @@ services:
       - "${SHIPYARD_BIND_ADDRESS:-127.0.0.1}:${SHIPYARD_PORT:-443}:8443"
     volumes:
       - shipyard-data:/app/server/data
+      # Secrets generated on first start. Kept apart from the data volume so
+      # application backups never include the key that decrypts them.
+      - shipyard-secrets:/app/secrets
       - shipyard-workspaces:/workspaces
       - ./playbooks:/app/server/playbooks
       # To use a host directory for OpenTofu instead, replace the
@@ -27,8 +30,9 @@ services:
       - TZ=${TZ:-Europe/Zurich}
       - SHIPYARD_TIMEZONE=${SHIPYARD_TIMEZONE:-Europe/Zurich}
       - SHIPYARD_MAX_FILE_TRANSFER_BYTES=${SHIPYARD_MAX_FILE_TRANSFER_BYTES:-1073741824}
-      - JWT_SECRET=${JWT_SECRET:?Create a .env file with JWT_SECRET — see README}
-      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:?Create a .env file with SHIPYARD_KEY_SECRET — see README}
+      # Optional: generated automatically on first start when left empty.
+      - JWT_SECRET=${JWT_SECRET:-}
+      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:-}
       - CERT_SANS=${CERT_SANS:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - TRUST_PROXY=${TRUST_PROXY:-0}
@@ -55,4 +59,5 @@ services:
 
 volumes:
   shipyard-data:
+  shipyard-secrets:
   shipyard-workspaces:

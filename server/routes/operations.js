@@ -15,7 +15,7 @@ const router = express.Router();
 const SOURCE_NAMES = new Set(['Host', 'Deployment', 'Workflow']);
 const OPERATION_CAPABILITIES = [
   'canViewDeployments', 'canManageDeployments', 'canViewSchedules',
-  'canViewAudit', 'canViewMaintenance', 'canViewServerHistory', 'canViewUpdates',
+  'canViewAudit', 'canViewServerHistory', 'canViewUpdates',
 ];
 
 function numericTime(value) {

@@ -805,15 +805,6 @@ export function NodeUpdatesCard({
   );
   const connectionId = cluster.connections?.[0]?.id || "";
   const packages = node.available_updates || [];
-  const maintenance = useQuery({
-    queryKey: ["maintenance-windows", environmentId, "node-updates"],
-    queryFn: () => apiFetch<Array<{id:string;name:string;starts_at:string;ends_at:string;state?:string;resource_ids?:string[]}>>(`/maintenance-windows?environment_id=${encodeURIComponent(environmentId)}`, { environmentId }),
-    enabled: canRunUpdates,
-    staleTime: 15_000,
-  });
-  const relevantMaintenance = (Array.isArray(maintenance.data) ? maintenance.data : [])
-    .filter(window => (window.state === "active" || window.state === "scheduled") && (!window.resource_ids?.length || (node.fleet_server_id && window.resource_ids.includes(node.fleet_server_id))))
-    .sort((left, right) => left.starts_at.localeCompare(right.starts_at))[0];
   const refresh = useMutation({
     mutationFn: () =>
       apiFetch(`/opentofu/proxmox-connections/${encodeURIComponent(connectionId)}/nodes/${encodeURIComponent(node.name)}/updates/refresh`, { method: "POST" }),
@@ -883,7 +874,6 @@ export function NodeUpdatesCard({
           {packages.length > 0 && <div className="space-y-2 border-b bg-warning/[0.04] px-4 py-3 text-sm">
             <p className="font-medium">Operational impact</p>
             <p className="text-muted-foreground">A full system upgrade may restart services and may require a reboot. Package metadata cannot predict every maintainer-script restart; review the package changes and validate services afterwards.</p>
-            <p>{relevantMaintenance ? <>Covered by <strong>{relevantMaintenance.name}</strong> · {formatDateTime(relevantMaintenance.starts_at)} – {formatDateTime(relevantMaintenance.ends_at)}</> : "No active or upcoming maintenance window covers this node."} <Link to="/operations" search={{section:"maintenance"}} className="text-primary hover:underline">Review maintenance</Link></p>
           </div>}
           {install.isSuccess && <div role="status" className="border-b bg-success/5 px-4 py-3 text-sm">Update request accepted for {node.name}. Track its result and log in <Link to="/operations" className="text-primary hover:underline">Operations</Link>.</div>}
           {install.isError && <div role="alert" className="border-b bg-destructive/5 px-4 py-3 text-sm text-destructive">Update request failed: {install.error.message}</div>}

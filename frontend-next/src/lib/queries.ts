@@ -68,12 +68,11 @@ export function canAccessDeployments(profile: Profile | undefined | null): boole
     || hasCap(profile, 'canManageDeploymentPlatforms');
 }
 
-/** Shared navigation rule for the operational workbench and maintenance windows. */
+/** Shared navigation rule for the operational workbench. */
 export function canAccessOperations(profile: Profile | undefined | null): boolean {
   return canAccessDeployments(profile)
     || hasCap(profile, 'canViewSchedules')
     || hasCap(profile, 'canViewAudit')
-    || hasCap(profile, 'canViewMaintenance')
     || hasCap(profile, 'canViewServerHistory')
     || hasCap(profile, 'canViewUpdates');
 }

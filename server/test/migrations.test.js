@@ -19,13 +19,14 @@ test('database migrations are transactional, versioned, and idempotent', () => {
   }
 });
 
-test('database migrations preserve rows while restoring legacy columns and tables', () => {
+test('database migrations preserve rows, restore legacy columns and drop retired tables', () => {
   const db = new Database(':memory:');
   try {
     applySchema(db);
     db.prepare(`INSERT INTO servers (id, name, hostname, ip_address)
       VALUES ('legacy-server', 'Legacy server', 'legacy-server', '10.0.0.8')`).run();
-    db.exec('DROP TABLE maintenance_windows');
+    db.exec(`CREATE TABLE maintenance_windows (id TEXT PRIMARY KEY)`);
+    db.prepare("INSERT INTO app_settings (key, value) VALUES ('notify_suppress_maintenance', '1')").run();
     db.exec('ALTER TABLE servers DROP COLUMN host_fingerprint');
     db.exec('ALTER TABLE servers DROP COLUMN docker_enabled');
 
@@ -35,7 +36,8 @@ test('database migrations preserve rows while restoring legacy columns and table
     assert.equal(columns.has('host_fingerprint'), true);
     assert.equal(columns.has('docker_enabled'), true);
     assert.equal(db.prepare('SELECT name FROM servers WHERE id = ?').get('legacy-server').name, 'Legacy server');
-    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'maintenance_windows'").get().name, 'maintenance_windows');
+    assert.equal(db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'maintenance_windows'").get(), undefined);
+    assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'notify_suppress_maintenance'").get(), undefined);
   } finally {
     db.close();
   }

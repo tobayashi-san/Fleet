@@ -19,7 +19,6 @@ const serversRouter = require('../routes/servers');
 const dashboardRouter = require('../routes/dashboard');
 const alertsRouter = require('../routes/alerts');
 const systemRouter = require('../routes/system');
-const maintenanceRouter = require('../routes/maintenance-windows');
 const ansibleVarsRouter = require('../routes/ansible-vars');
 const schedulesRouter = require('../routes/schedules');
 const scheduleHistoryRouter = require('../routes/schedule-history');
@@ -33,7 +32,6 @@ app.use('/api/servers', serversRouter);
 app.use('/api/dashboard', dashboardRouter);
 app.use('/api/alerts', alertsRouter);
 app.use('/api/system', systemRouter);
-app.use('/api/maintenance-windows', maintenanceRouter);
 app.use('/api/ansible-vars', ansibleVarsRouter);
 app.use('/api/schedules', schedulesRouter);
 app.use('/api/schedule-history', scheduleHistoryRouter);
@@ -44,7 +42,7 @@ let envA;
 let envB;
 let serverA;
 let serverB;
-let windowB;
+let scheduleA;
 let subnetB;
 let scheduleB;
 
@@ -74,12 +72,9 @@ before(async () => {
 
   db.ansibleVars.create('ENV_ONLY', 'value-a', '', { environmentId: envA });
   db.ansibleVars.create('ENV_ONLY', 'value-b', '', { environmentId: envB });
-  db.schedules.create('Schedule A', 'update.yml', serverA.name, '0 0 * * *', { environmentId: envA });
+  scheduleA = db.schedules.create('Schedule A', 'update.yml', serverA.name, '0 0 * * *', { environmentId: envA });
   scheduleB = db.schedules.create('Schedule B', 'update.yml', serverB.name, '0 0 * * *', { environmentId: envB });
 
-  windowB = db.uuidv4();
-  db.db.prepare('INSERT INTO maintenance_windows (id, environment_id, name, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')
-    .run(windowB, envB, 'Window B', '2030-01-01T00:00:00.000Z', '2030-01-01T01:00:00.000Z');
   subnetB = db.uuidv4();
   db.db.prepare('INSERT INTO ipam_subnets (id, environment_id, name, cidr) VALUES (?, ?, ?, ?)')
     .run(subnetB, envB, 'Subnet B', '10.91.0.0/24');
@@ -138,14 +133,6 @@ test('cross-environment IDs and contradictory parameters cannot reveal data', as
     assert.equal(response.status, 404, endpoint);
   }
 
-  const maintenance = await request(app).put(`/api/maintenance-windows/${windowB}`).set(auth).send({
-    name: 'Must remain hidden',
-    starts_at: '2030-01-01T00:00:00.000Z',
-    ends_at: '2030-01-01T01:00:00.000Z',
-  });
-  assert.equal(maintenance.status, 404);
-  assert.equal(db.db.prepare('SELECT name FROM maintenance_windows WHERE id = ?').get(windowB).name, 'Window B');
-
   const schedule = await request(app).get(`/api/schedules/${scheduleB}`).set(auth);
   assert.ok([403, 404].includes(schedule.status));
   assert.notEqual(schedule.status, 200);
@@ -155,16 +142,11 @@ test('cross-environment IDs and contradictory parameters cannot reveal data', as
 });
 
 test('request-generated audit entries inherit the active environment', async () => {
-  const created = await request(app).post('/api/maintenance-windows').set(scoped(envA)).send({
-    environment_id: envA,
-    name: 'Window A',
-    starts_at: '2031-01-01T00:00:00.000Z',
-    ends_at: '2031-01-01T01:00:00.000Z',
-  });
-  assert.equal(created.status, 201);
+  const toggled = await request(app).post(`/api/schedules/${scheduleA}/toggle`).set(scoped(envA));
+  assert.equal(toggled.status, 200);
 
-  const inA = db.auditLog.query({ environmentId: envA, action: 'maintenance_window.create' });
-  const inB = db.auditLog.query({ environmentId: envB, action: 'maintenance_window.create' });
+  const inA = db.auditLog.query({ environmentId: envA, action: 'schedule.toggle' });
+  const inB = db.auditLog.query({ environmentId: envB, action: 'schedule.toggle' });
   assert.equal(inA.length, 1);
   assert.equal(inB.length, 0);
 });

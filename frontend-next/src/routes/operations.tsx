@@ -15,10 +15,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { TablePagination } from "@/components/ui/table-pagination";
 import { AuditLogPanel } from "@/features/operations/AuditLogPanel";
-import { DeleteMaintenanceDialog } from '@/features/operations/DeleteMaintenanceDialog';
-import { MaintenanceWindowDialog } from '@/features/operations/MaintenanceWindowDialog';
-import { MaintenanceWindowsCard } from '@/features/operations/MaintenanceWindowsCard';
-import { MaintenanceWindow, OperationsResponse, Workspace } from '@/features/operations/model';
+import { OperationsResponse, Workspace } from '@/features/operations/model';
 import { OperationDetail, OperationList, TaskScopeButton } from '@/features/operations/OperationList';
 import { OperationsContext } from '@/features/operations/OperationsContext';
 import { apiFetch } from "@/lib/api";
@@ -39,7 +36,6 @@ import {
 	CheckCircle2,
 	ClipboardList,
 	ExternalLink,
-	RefreshCw,
 	Search
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -55,8 +51,6 @@ export function OperationsPage() {
   const canViewDeployments = canAccessDeployments(profile);
   const canViewSchedules = hasCap(profile, "canViewSchedules");
   const canViewAudit = hasCap(profile, "canViewAudit");
-  const canViewMaintenance = hasCap(profile, "canViewMaintenance");
-  const canManageMaintenance = hasCap(profile, "canEditMaintenance");
   const [taskScope, setTaskScope] = useState<"all" | "active" | "failed">(
     routeSearch.scope || "all",
   );
@@ -72,11 +66,6 @@ export function OperationsPage() {
   const [selectedOperationId, setSelectedOperationId] = useState<string | null>(
     null,
   );
-  const [maintenanceDialog, setMaintenanceDialog] = useState<
-    MaintenanceWindow | "new" | null
-  >(null);
-  const [windowToDelete, setWindowToDelete] =
-    useState<MaintenanceWindow | null>(null);
   const workspaceQuery = useQuery({
     queryKey: ["opentofu", "workspaces", environmentId],
     queryFn: () =>
@@ -133,6 +122,8 @@ export function OperationsPage() {
       return apiFetch<OperationsResponse>(`/operations?${params}`);
     },
     staleTime: 10_000,
+    // Keep the list current without a manual refresh; poll faster while work is running.
+    refetchInterval: query => query.state.data?.counts.active ? 15_000 : 30_000,
   });
   const refreshOperations = async () => {
     await Promise.all([
@@ -161,26 +152,6 @@ export function OperationsPage() {
     },
     onError: (error: Error) => showToast(error.message, "error"),
   });
-  const maintenanceQuery = useQuery({
-    queryKey: ["maintenance-windows", environmentId],
-    queryFn: () =>
-      apiFetch<MaintenanceWindow[]>(
-        `/maintenance-windows?environment_id=${encodeURIComponent(environmentId)}`,
-      ),
-    enabled: canViewMaintenance,
-    staleTime: 15_000,
-  });
-  const maintenanceWindows = Array.isArray(maintenanceQuery.data)
-    ? maintenanceQuery.data
-    : [];
-  const activeMaintenance = maintenanceWindows.find(
-    (window) => window.state === "active",
-  );
-  const nextMaintenance = maintenanceWindows
-    .filter((window) => window.state === "scheduled")
-    .sort((left, right) =>
-      String(left.starts_at).localeCompare(String(right.starts_at)),
-    )[0];
   const operationRows = Array.isArray(operationsQuery.data?.items)
     ? operationsQuery.data.items
     : [];
@@ -215,32 +186,13 @@ export function OperationsPage() {
     )
       setSelectedOperationId(null);
   }, [operationRows, selectedOperationId]);
-  const refresh = () => {
-    void queryClient.invalidateQueries({ queryKey: ["opentofu"] });
-    void queryClient.invalidateQueries({ queryKey: ["operations"] });
-    void queryClient.invalidateQueries({ queryKey: ["audit-log"] });
-    void queryClient.invalidateQueries({ queryKey: ["maintenance-windows"] });
-  };
-  const isRefreshing =
-    workspaceQuery.isFetching ||
-    operationsQuery.isFetching ||
-    maintenanceQuery.isFetching;
   return (
     <div className="space-y-5">
       <PageHeader
         title="Jobs"
         description="Runs and scheduled changes."
-        actions={
-          <Button variant="outline" onClick={refresh} disabled={isRefreshing}>
-            <RefreshCw className={isRefreshing ? "animate-spin" : undefined} />
-            Refresh
-          </Button>
-        }
       />
-      {activeSection === "tasks" && operationsQuery.isSuccess && (!canViewMaintenance || maintenanceQuery.isSuccess) && <OperationsContext
-        canViewMaintenance={canViewMaintenance}
-        active={activeMaintenance}
-        next={nextMaintenance}
+      {activeSection === "tasks" && operationsQuery.isSuccess && <OperationsContext
         activeOperations={activeOperationCount}
         failedOperations={failedOperationCount}
         onShowFailures={() => {
@@ -253,7 +205,6 @@ export function OperationsPage() {
       />}
       <nav className="flex gap-1 overflow-x-auto rounded-panel border bg-card p-1" aria-label="Operations sections">
         <Button asChild size="sm" variant={activeSection === "tasks" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Activity</Link></Button>
-        {canViewMaintenance && <Button asChild size="sm" variant={activeSection === "maintenance" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "maintenance" }}>Maintenance</Link></Button>}
         {canViewAudit && <Button asChild size="sm" variant={activeSection === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
       </nav>
       <div className="flex flex-col gap-5">
@@ -374,12 +325,14 @@ export function OperationsPage() {
                 </div>
                 {operationRows.length ? (
                   <>
-                    <div className="grid xl:grid-cols-[minmax(30rem,1.2fr)_minmax(22rem,.8fr)]">
-                      <OperationList
-                        rows={operationRows}
-                        selectedId={selectedOperation?.id}
-                        onSelect={setSelectedOperationId}
-                      />
+                    <div className="grid xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+                      <div className="min-w-0">
+                        <OperationList
+                          rows={operationRows}
+                          selectedId={selectedOperation?.id}
+                          onSelect={setSelectedOperationId}
+                        />
+                      </div>
                       <OperationDetail
                         className="hidden xl:block"
                         row={selectedOperation}
@@ -424,31 +377,8 @@ export function OperationsPage() {
             )}
           </CardContent>
         </Card>}
-        {activeSection === "maintenance" && canViewMaintenance && (
-          <div id="operation-maintenance" className="scroll-mt-16"><MaintenanceWindowsCard
-              windows={maintenanceWindows}
-              loading={maintenanceQuery.isLoading}
-              error={maintenanceQuery.error}
-              onRetry={() => void maintenanceQuery.refetch()}
-              canManage={canManageMaintenance}
-              onCreate={() => setMaintenanceDialog("new")}
-              onEdit={setMaintenanceDialog}
-              onDelete={setWindowToDelete}
-            /></div>
-        )}
         {activeSection === "audit" && canViewAudit && <div id="operation-audit" className="scroll-mt-16"><AuditLogPanel /></div>}
       </div>
-      <MaintenanceWindowDialog
-        key={
-          maintenanceDialog === "new"
-            ? "new"
-            : maintenanceDialog?.id || "closed"
-        }
-        window={maintenanceDialog}
-        environmentId={environmentId}
-        onClose={() => setMaintenanceDialog(null)}
-      />
-      <DeleteMaintenanceDialog windows={windowToDelete?[windowToDelete]:[]} environmentId={environmentId} onClose={()=>setWindowToDelete(null)} />
     </div>
   );
 }

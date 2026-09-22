@@ -4,7 +4,7 @@
  */
 
 const DEFAULT_NAME = 'Shipyard';
-const DEFAULT_ACCENT = '#3b82f6';
+const DEFAULT_ACCENT = '#17704f';
 
 export interface WhiteLabelSettings {
   appName?: string;

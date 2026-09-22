@@ -10,7 +10,7 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { api } from "@/lib/api";
 import { auditActionLabel, gitPolicyChanges, guestAuditPresentation, normalizeAuditIp, parseAuditDetail } from "@/lib/audit-display";
 import { useUi } from "@/lib/store";
-import { asArray, formatDateTime } from "@/lib/utils";
+import { asArray, formatDateTimeWithZone } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -211,7 +211,7 @@ export function AuditLogPanel() {
         </div>
       </div>
 
-      <details className="py-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Export and retention policy</summary><p className="mt-1">CSV includes all entries matching the applied filters and your access scope, up to 10,000 entries. Larger results require narrower filters; exports are never silently truncated. Host, role, user, maintenance and SSH key changes include historical object names and before/after values alongside the original details. Spreadsheet formula-like values are exported as text. Cleanup removes entries older than 90 days when the server starts, so older entries can remain until the next startup.</p></details>
+      <details className="py-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Export and retention policy</summary><p className="mt-1">CSV includes all entries matching the applied filters and your access scope, up to 10,000 entries. Larger results require narrower filters; exports are never silently truncated. Host, role, user and SSH key changes include historical object names and before/after values alongside the original details. Spreadsheet formula-like values are exported as text. Cleanup removes entries older than 90 days when the server starts, so older entries can remain until the next startup.</p></details>
       {total > 10_000 && <p role="status" className="text-sm text-warning">{total} entries match. Narrow the filters to 10,000 or fewer before exporting.</p>}
       {exportErrorCurrent && exportMutation.isError && <p role="alert" className="text-sm text-destructive">{exportMutation.error.message}</p>}
       <form className="flex gap-2 py-3" onSubmit={event=>{event.preventDefault();resetAndSet({q:searchDraft.trim()});}}>
@@ -408,7 +408,7 @@ export function AuditTableRow({ row }: { row: AuditRow }) {
         <AuditObjectLinks links={row.object_links} />
       </td>
       <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-        {formatDateTime(row.created_at)}
+        {formatDateTimeWithZone(row.created_at)}
       </td>
       <td>
         <StatusBadge tone={presentation.tone} dot>
@@ -439,7 +439,7 @@ export function AuditMobileRow({ row }: { row: AuditRow }) {
       <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
         <span>{row.user || "System"}</span>
         <AuditIp ip={row.ip} />
-        <span>{formatDateTime(row.created_at)}</span>
+        <span>{formatDateTimeWithZone(row.created_at)}</span>
       </div>
       <AuditObjectLinks links={row.object_links} />
     </div>

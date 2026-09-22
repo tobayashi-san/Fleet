@@ -271,28 +271,3 @@ test('duplicate suppression setting is admin-only and rejects invalid periods be
  for(const value of [-1,61,1.5,'5',null]) {assert.equal((await request(app).put('/system/settings').set('x-test-role','admin').send({notifDedupeMinutes:value})).status,400);assert.equal(db.settings.get('notify_dedupe_minutes'),'5');}
  db.settings.set('notify_dedupe_minutes','0');
 });
-
-test('active maintenance suppression is recorded without sending or delaying post-window notifications',async()=>{
- const dns=require('dns').promises,https=require('https');const lookup=dns.lookup,request=https.request;let calls=0;
- dns.lookup=async()=>[{address:'93.184.216.34',family:4}];https.request=(_options,callback)=>{calls++;const req=new EventEmitter();req.write=()=>{};req.destroy=()=>{};req.end=()=>{const res=new EventEmitter();res.statusCode=204;callback(res);process.nextTick(()=>res.emit('end'));};return req;};
- const host=db.servers.create({name:'maintenance-notify',hostname:'maintenance-notify',ip_address:'192.0.2.22'});const windowId=db.uuidv4();
- db.db.prepare('INSERT INTO maintenance_windows (id,name,environment_id,starts_at,ends_at,resource_ids) VALUES (?,?,?,?,?,?)').run(windowId,'Fixture active maintenance','default',new Date(Date.now()-60000).toISOString(),new Date(Date.now()+60000).toISOString(),JSON.stringify([host.id]));
- try {
- db.settings.set('webhook_url','https://example.com/maintenance');db.settings.set('smtp_host','');db.settings.set('notify_dedupe_minutes','5');db.settings.set('notify_suppress_maintenance','1');
- const {notify}=require('../services/notifier');const options={environmentId:'default',serverIds:[host.id]};
- await notify('Maintenance fixture','Failed',false,options);assert.equal(calls,0);
- assert.equal(db.db.prepare('SELECT status FROM notification_deliveries ORDER BY rowid DESC LIMIT 1').get().status,'maintenance');
- await sendWebhook('Maintenance fixture','Channel test',true);assert.equal(calls,1);
- db.db.prepare('UPDATE maintenance_windows SET ends_at=? WHERE id=?').run(new Date(Date.now()-1).toISOString(),windowId);
- await notify('Maintenance fixture','Failed',false,options);assert.equal(calls,2);
- } finally {dns.lookup=lookup;https.request=request;db.settings.set('notify_dedupe_minutes','0');db.settings.set('notify_suppress_maintenance','0');db.db.prepare('DELETE FROM maintenance_windows WHERE id=?').run(windowId);}
-});
-
-test('maintenance suppression preference requires an explicit administrator boolean',async()=>{
- const express=require('express'),request=require('supertest');const app=express();app.use(express.json());app.use((req,res,next)=>{req.user={role:req.headers['x-test-role']||'user'};next();});app.use('/system',require('../routes/system'));
- assert.equal((await request(app).put('/system/settings').send({notifSuppressMaintenance:true})).status,403);
- for(const value of ['true',1,null])assert.equal((await request(app).put('/system/settings').set('x-test-role','admin').send({notifSuppressMaintenance:value})).status,400);
- assert.equal((await request(app).put('/system/settings').set('x-test-role','admin').send({notifSuppressMaintenance:true})).status,200);
- assert.equal((await request(app).get('/system/settings').set('x-test-role','admin')).body.notifSuppressMaintenance,true);
- db.settings.set('notify_suppress_maintenance','0');
-});

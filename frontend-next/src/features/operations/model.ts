@@ -41,49 +41,8 @@ export interface OperationsResponse {
   counts: { all: number; active: number; failed: number };
 }
 
-export interface MaintenanceWindow {
-  id: string;
-  environment_id: string;
-  name: string;
-  starts_at: string;
-  ends_at: string;
-  description?: string;
-  affected_resources?: string;
-  resource_ids?: string[];
-  revision?: string;
-  can_edit?: boolean;
-  series_id?: string|null;
-  series_index?: number|null;
-  series_count?: number|null;
-  recurrence_frequency?: string|null;
-  change_reference?: string;
-  timezone?: string;
-  owner?: string;
-  cancelled_at?: string|null;
-  cancelled_by?: string|null;
-  cancellation_reason?: string|null;
-  state?: "scheduled" | "active" | "completed" | "cancelled";
-}
-
 export function readableTime(value?: string) {
   return formatDateTime(value);
-}
-
-export function maintenanceTone(state?: string): StatusTone {
-  return state === "active"
-    ? "warning"
-    : state === "scheduled"
-      ? "info"
-      : "muted";
-}
-
-export function maintenanceLabel(state?: string) {
-  if(state==='cancelled')return 'Cancelled';
-  return state === "active"
-    ? "Active"
-    : state === "scheduled"
-      ? "Scheduled"
-      : "Completed";
 }
 
 export function operationSourceLabel(source: OperationRow["source"]) {

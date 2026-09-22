@@ -3,6 +3,7 @@ import { ws } from './ws';
 
 type Theme = 'light' | 'dark' | 'system';
 export type ThemePreset =
+  | 'shipyard-light' | 'shipyard-dark'
   | 'shadcn-light' | 'shadcn-dark'
   | 'cloud-light' | 'paper-light' | 'slate-light'
   | 'amber-light' | 'mint-light' | 'orchid-light' | 'glacier-light' | 'ink-light'
@@ -28,6 +29,8 @@ export interface ThemePresetDefinition {
 }
 
 export const THEME_PRESETS: ThemePresetDefinition[] = [
+  { id: 'shipyard-light', name: 'Shipyard Light', style: 'Default', description: 'Shipyard green on a calm light canvas', mode: 'light', recommended: true, counterpart: 'shipyard-dark', preview: { canvas: '#f7faf8', surface: '#ffffff', card: '#ffffff', accent: '#17704f' } },
+  { id: 'shipyard-dark', name: 'Shipyard Dark', style: 'Default', description: 'The Shipyard website look: deep green-black with mint', mode: 'dark', recommended: true, counterpart: 'shipyard-light', preview: { canvas: '#101715', surface: '#101715', card: '#17211d', accent: '#b5f5cf' } },
   { id: 'shadcn-light', name: 'shadcn Light', style: 'Default', description: 'Neutral shadcn/ui light look, without colored accents', mode: 'light', recommended: true, counterpart: 'shadcn-dark', preview: { canvas: '#ffffff', surface: '#ffffff', card: '#ffffff', accent: '#171717' } },
   { id: 'shadcn-dark', name: 'shadcn Dark', style: 'Default', description: 'Neutral shadcn/ui dark look, without colored accents', mode: 'dark', recommended: true, counterpart: 'shadcn-light', preview: { canvas: '#0a0a0a', surface: '#0a0a0a', card: '#0a0a0a', accent: '#fafafa' } },
   { id: 'cloud-light', name: 'Cloud', description: 'Light, cool console design', mode: 'light', preview: { canvas: '#f7faff', surface: '#ffffff', card: '#ffffff', accent: '#0f6cbd' } },
@@ -107,7 +110,7 @@ function readThemePreset(): ThemePreset {
     const value = localStorage.getItem(THEME_PRESET_KEY);
     if (THEME_PRESETS.some(preset => preset.id === value)) return value as ThemePreset;
   } catch { /* ignore */ }
-  return 'midnight-dark';
+  return 'shipyard-dark';
 }
 
 export function resolveThemePreset(theme: Theme, current: ThemePreset): ThemePreset {
@@ -118,7 +121,7 @@ export function resolveThemePreset(theme: Theme, current: ThemePreset): ThemePre
     ? THEME_PRESETS.find(item => item.id === preset.counterpart)
     : undefined;
   if (counterpart?.mode === theme) return counterpart.id;
-  return theme === 'dark' ? 'midnight-dark' : 'cloud-light';
+  return theme === 'dark' ? 'shipyard-dark' : 'shipyard-light';
 }
 
 function readSidebar(): boolean {

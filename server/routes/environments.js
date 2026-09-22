@@ -132,7 +132,6 @@ router.delete('/:id', (req, res) => {
       moveEnvironmentRows('ipam_sync_sources', id, ", updated_at = datetime('now')");
       moveEnvironmentRows('ipam_sync_conflicts', id);
       moveEnvironmentRows('ipam_proxmox_sync_conflicts', id);
-      moveEnvironmentRows('maintenance_windows', id);
       moveEnvironmentRows('tofu_workspaces', id);
       moveEnvironmentRows('tofu_proxmox_connections', id);
       const result = db.db.prepare('DELETE FROM environments WHERE id = ?').run(id);

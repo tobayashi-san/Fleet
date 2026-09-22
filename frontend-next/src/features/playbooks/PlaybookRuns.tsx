@@ -419,8 +419,8 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 </Button>
               )}
             </div>
-            <div className="max-h-48 min-h-24 space-y-1 overflow-y-auto sm:max-h-[clamp(6rem,calc(100dvh-44rem),12rem)] rounded-md border p-2">
-              <label className="flex items-center gap-2 text-sm font-medium">
+            <div className="grid max-h-48 min-h-24 content-start gap-x-2 gap-y-1 overflow-y-auto rounded-md border p-2 sm:max-h-[clamp(7rem,calc(100dvh-42rem),14rem)] sm:grid-cols-2 xl:grid-cols-3">
+              <label className="col-span-full flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"
                   checked={allChecked}
@@ -431,7 +431,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
                 />
                 {t("pb.allServers")}
               </label>
-              <Separator />
+              <Separator className="col-span-full" />
               {visibleServers.map((s) => {
                 const nm = String(s.name);
                 const dis = allChecked && nm === "localhost";

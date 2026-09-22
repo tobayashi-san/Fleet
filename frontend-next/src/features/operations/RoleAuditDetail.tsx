@@ -1,14 +1,12 @@
-import { formatDateTime } from '@/lib/utils';
-const timestampLabels = new Set(['Start (UTC)', 'End (UTC)', 'Cancelled at (UTC)']);
 interface RoleChange {
-  kind: 'role-change' | 'user-change' | 'maintenance-change' | 'ssh-key-change' | 'host-change'; version: 1;
+  kind: 'role-change' | 'user-change' | 'ssh-key-change' | 'host-change'; version: 1;
   resource: {id: string; name: string};
   changes: {label: string; before: string; after: string}[];
 }
 export function parseRoleChange(detail?: string): RoleChange | null {
   try {
     const value = JSON.parse(detail || 'null');
-    if ((value?.kind !== 'role-change' && value?.kind !== 'user-change' && value?.kind !== 'maintenance-change' && value?.kind !== 'ssh-key-change' && value?.kind !== 'host-change') || value.version !== 1 || typeof value.resource?.id !== 'string' || typeof value.resource?.name !== 'string' || !Array.isArray(value.changes)) return null;
+    if ((value?.kind !== 'role-change' && value?.kind !== 'user-change' && value?.kind !== 'ssh-key-change' && value?.kind !== 'host-change') || value.version !== 1 || typeof value.resource?.id !== 'string' || typeof value.resource?.name !== 'string' || !Array.isArray(value.changes)) return null;
     if (!value.changes.every((change: RoleChange['changes'][number]) => change && typeof change.label === 'string' && typeof change.before === 'string' && typeof change.after === 'string')) return null;
     return value;
   } catch { return null; }
@@ -26,10 +24,6 @@ export function roleAuditValue(label: string, value: string): string {
     } catch { /* Keep unrecognized historical values intact. */ }
   }
 
-  if (timestampLabels.has(label) && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/.test(value)) {
-    const formatted = formatDateTime(value, {timeStyle:'medium'});
-    if (formatted !== '—') return formatted;
-  }
   const resource = ({Servers:'hosts',Playbooks:'playbooks',Plugins:'plugins'} as Record<string,string>)[label];
   if (!resource) return value;
   if (value === 'all') return `All ${resource}`;
@@ -50,7 +44,7 @@ export function RoleAuditDetail({change}: {change: RoleChange}) {
     <details>
       <summary className="cursor-pointer text-primary">View changes ({change.changes.length})</summary>
       {change.changes.length ? <dl className="mt-2 space-y-2">{change.changes.map((item,index) => <div key={index}>
-        <dt className="font-medium">{item.label === 'Servers' ? 'Hosts' : timestampLabels.has(item.label) ? item.label.replace(' (UTC)', '') : item.label}</dt>
+        <dt className="font-medium">{item.label === 'Servers' ? 'Hosts' : item.label}</dt>
         <dd title={item.before}><span className="text-muted-foreground">Before: </span>{roleAuditValue(item.label,item.before)}</dd>
         <dd title={item.after}><span className="text-muted-foreground">After: </span>{roleAuditValue(item.label,item.after)}</dd>
       </div>)}</dl> : <p className="mt-2">No recorded field changes.</p>}

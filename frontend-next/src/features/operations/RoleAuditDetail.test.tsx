@@ -27,19 +27,6 @@ it('renders user security changes through the same historical detail view',()=>{
  for(const text of ['operator','MFA','Enabled','Disabled'])expect(html).toContain(text);
 });
 
-it('accepts maintenance history including explicit UTC dates and cancellation reasons',()=>{
- const value=parseRoleChange(JSON.stringify({kind:'maintenance-change',version:1,resource:{id:'deleted-window',name:'Platform maintenance'},changes:[{label:'End (UTC)',before:'2035-01-01T10:00:00Z',after:'2035-01-01T11:00:00Z'},{label:'Cancellation reason',before:'',after:'Dependency unavailable'}]}));
- expect(value).not.toBeNull();
- const html=renderToStaticMarkup(<RoleAuditDetail change={value!}/>);
- expect(html).toContain('Europe/Zurich');expect(html).toContain('title="2035-01-01T10:00:00Z"');expect(html).toContain('Dependency unavailable');expect(html).toContain('Platform maintenance');
-});
-
-it('uses the shared timezone with seconds for audit instants and preserves non-date evidence',()=>{
- expect(roleAuditValue('Start (UTC)','2026-01-15T10:00:01Z')).toContain('11:00:01 (Europe/Zurich)');
- expect(roleAuditValue('End (UTC)','2026-07-15T10:00:02Z')).toContain('12:00:02 (Europe/Zurich)');
- expect(roleAuditValue('Cancelled at (UTC)','Not cancelled')).toBe('Not cancelled');
- expect(roleAuditValue('Description','2026-01-15T10:00:00Z')).toBe('2026-01-15T10:00:00Z');
-});
 it('renders historical SSH fingerprints without requiring key material',()=>{
  const value=parseRoleChange(JSON.stringify({kind:'ssh-key-change',version:1,resource:{id:'new-key',name:'Central key'},changes:[{label:'Fingerprint',before:'SHA256:old',after:'SHA256:new'}]}));
  expect(value).not.toBeNull();

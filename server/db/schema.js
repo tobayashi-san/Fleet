@@ -384,31 +384,11 @@ function applySchema(db) {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_ipam_proxmox_conflicts_connection_address ON ipam_proxmox_sync_conflicts(connection_id, subnet_id, address);
     CREATE INDEX IF NOT EXISTS idx_ipam_proxmox_conflicts_subnet ON ipam_proxmox_sync_conflicts(subnet_id);
 
-    CREATE TABLE IF NOT EXISTS maintenance_windows (
-      id TEXT PRIMARY KEY,
-      environment_id TEXT NOT NULL DEFAULT 'default',
-      name TEXT NOT NULL,
-      starts_at TEXT NOT NULL,
-      ends_at TEXT NOT NULL,
-      description TEXT DEFAULT '',
-      created_by TEXT DEFAULT '',
-      affected_resources TEXT DEFAULT '',
-      timezone TEXT NOT NULL DEFAULT 'Europe/Zurich',
-      owner TEXT DEFAULT '',
-      created_at TEXT DEFAULT (datetime('now')),
-      FOREIGN KEY (environment_id) REFERENCES environments(id) ON DELETE CASCADE
-    );
-    CREATE INDEX IF NOT EXISTS idx_maintenance_windows_environment_time ON maintenance_windows(environment_id, starts_at, ends_at);
+    -- Retired maintenance windows: remove the table and its schedule data.
+    DROP TABLE IF EXISTS maintenance_windows;
   `);
   if (!db.prepare('PRAGMA table_info(ipam_subnets)').all().some(column => column.name === 'proxmox_connection_id')) {
     db.exec("ALTER TABLE ipam_subnets ADD COLUMN proxmox_connection_id TEXT DEFAULT ''");
-  }
-
-
-  for (const [column, definition] of [['resource_ids', "TEXT NOT NULL DEFAULT '[]'"], ['change_reference', "TEXT NOT NULL DEFAULT ''"], ['series_id', 'TEXT'], ['series_index', 'INTEGER'], ['series_count', 'INTEGER'], ['recurrence_frequency', 'TEXT'], ['cancelled_at', 'TEXT'], ['cancelled_by', 'TEXT'], ['cancellation_reason', 'TEXT']]) {
-    if (!db.prepare('PRAGMA table_info(maintenance_windows)').all().some(row => row.name === column)) {
-      db.exec(`ALTER TABLE maintenance_windows ADD COLUMN ${column} ${definition}`);
-    }
   }
 
   db.exec(`

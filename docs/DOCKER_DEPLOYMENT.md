@@ -6,34 +6,46 @@ Do not publish its port directly to the public internet.
 
 ## Quick start
 
-Use the version-controlled `docker-compose.yml` and create a private `.env`
-file next to it:
+Download the version-controlled `docker-compose.yml` into an empty directory and
+start it:
 
 ```bash
-git clone https://github.com/tobayashi-san/Shipyard.git
-cd Shipyard
+mkdir shipyard && cd shipyard
+curl -fsSLO https://raw.githubusercontent.com/tobayashi-san/Shipyard/main/docker-compose.yml
+docker compose up -d --wait
+docker compose ps
+```
+
+No `.env` file is required. On its first start, the container generates
+`JWT_SECRET` and `SHIPYARD_KEY_SECRET` and stores them in
+`/app/secrets/shipyard.env`, a root-only file in the `shipyard-secrets` volume.
+The secrets volume is separate from the data volume, so application backups of
+`/app/server/data` never contain the key that decrypts them.
+
+`SHIPYARD_KEY_SECRET` encrypts stored SSH keys, tokens, and TOTP secrets, and
+must stay the same for the lifetime of the installation. Copy it somewhere safe,
+apart from your data backups:
+
+```bash
+docker compose exec shipyard cat /app/secrets/shipyard.env
+```
+
+### Secrets and `.env`
+
+To change defaults such as the port or bind address, create a private `.env`
+next to `docker-compose.yml`. `.env.example` lists the available settings:
+
+```bash
+curl -fsSLO https://raw.githubusercontent.com/tobayashi-san/Shipyard/main/.env.example
 cp .env.example .env
 chmod 600 .env
 ```
 
-Generate both secrets and insert them in `.env`. They must be different:
-
-```bash
-openssl rand -hex 32
-openssl rand -hex 32
-```
-
-Set the first value as `JWT_SECRET` and the second as
-`SHIPYARD_KEY_SECRET`. Keep `SHIPYARD_KEY_SECRET` for the lifetime of the
-installation; it encrypts stored SSH keys, tokens, and TOTP secrets.
-
-Start and wait for the health check:
-
-```bash
-docker compose pull
-docker compose up -d --wait
-docker compose ps
-```
+`JWT_SECRET` and `SHIPYARD_KEY_SECRET` set in `.env` always take precedence
+over the generated values. Existing installations that already define them in
+`.env` must keep them. If the database already exists but no key is available
+from `.env` or the secrets volume, the container refuses to start rather than
+generating a new key that could not decrypt the stored credentials.
 
 The default binding is `127.0.0.1:443`, so Shipyard is accessible only from
 the Docker host or a reverse proxy on that host. Open
@@ -174,8 +186,10 @@ you intentionally want to delete all Shipyard data.
   the unprivileged `shipyard` user.
 - `no-new-privileges` prevents child processes from gaining extra privileges.
 - Docker's local log driver limits each container log to three 10 MB files.
-- Secrets stay in the ignored, mode-600 `.env` file; `.env.example` contains
-  only empty placeholders.
+- Generated secrets stay in a root-only, mode-600 file in their own volume; the
+  application process receives them only through its environment. Secrets you
+  set yourself stay in the ignored, mode-600 `.env` file; `.env.example`
+  contains only empty placeholders.
 
 Validate the final configuration before starting it:
 

@@ -24,7 +24,6 @@ interface WhiteLabel {
   smtpFrom?: string;
   smtpTo?: string;
   notifDedupeMinutes?: number;
-  notifSuppressMaintenance?: boolean;
   notifPlaybookFailed?: boolean;
   notifUpdateFailed?: boolean;
   notifResourceAlerts?: boolean;
@@ -236,7 +235,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
 
 function NotificationToggles({ wl }: { wl: WhiteLabel }) {
   const qc = useQueryClient();
-  const saved = {notifDedupeMinutes:wl.notifDedupeMinutes || 0,notifSuppressMaintenance:wl.notifSuppressMaintenance === true,notifPlaybookFailed:wl.notifPlaybookFailed !== false,notifUpdateFailed:wl.notifUpdateFailed !== false};
+  const saved = {notifDedupeMinutes:wl.notifDedupeMinutes || 0,notifPlaybookFailed:wl.notifPlaybookFailed !== false,notifUpdateFailed:wl.notifUpdateFailed !== false};
   const [draft,setDraft] = useState<typeof saved | null>(null);
   const values = draft ?? saved;
   const dirty = JSON.stringify(values) !== JSON.stringify(saved);
@@ -247,7 +246,6 @@ function NotificationToggles({ wl }: { wl: WhiteLabel }) {
       <select aria-label="Duplicate suppression period" className="h-9 rounded-sm border bg-background px-3 text-sm" value={values.notifDedupeMinutes} onChange={e=>setDraft({...values,notifDedupeMinutes:Number(e.target.value)})}>{[...new Set([0,1,5,15,30,60,saved.notifDedupeMinutes])].sort((a,b)=>a-b).map(v=><option key={v} value={v}>{v ? `${v} minutes` : 'Disabled'}</option>)}</select>
     </SettingsRow>
     {([
-      ['notifSuppressMaintenance','Suppress during maintenance','Only when all recorded hosts are covered by active maintenance in their environment. Unknown targets and channel tests are sent. Suppression remains in delivery history.'],
       ['notifPlaybookFailed','Playbook failures','Send failed playbook execution events to configured channels.'],
       ['notifUpdateFailed','Update failures','Send failed update execution events to configured channels.'],
     ] as const).map(([key,label,hint])=><SettingsRow key={key} label={label} hint={hint}><Switch aria-label={label} checked={values[key]} onCheckedChange={value=>setDraft({...values,[key]:value})}/></SettingsRow>)}
@@ -269,7 +267,7 @@ function DeliveryHistory() {
     <div className="space-y-3 py-3">
       <Button type="button" variant="outline" size="sm" disabled={history.isFetching} onClick={() => void history.refetch()}>Refresh history</Button>
       {history.isPending ? <p role="status" className="text-sm">Loading delivery attempts…</p> : history.isError ? <QueryErrorState compact error={history.error} title="Delivery history unavailable" onRetry={() => void history.refetch()} /> : <>
-        {!history.data.items.length ? <p className="text-sm text-muted-foreground">No recorded attempts on this page. History begins with this feature; earlier deliveries are not reconstructed.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{['Time', 'Channel / destination', 'Event', 'Result'].map(label => <th key={label} className="border-b px-2 py-2">{label}</th>)}</tr></thead><tbody>{history.data.items.map(item => <tr key={item.id}><td className="border-b px-2 py-2">{formatDateTime(item.created_at)}</td><td className="border-b px-2 py-2">{item.channel.toUpperCase()}<span className="block text-muted-foreground">{item.destination}</span></td><td className="border-b px-2 py-2">{item.event_title}</td><td className="border-b px-2 py-2"><span className={['failed','partial'].includes(item.status) ? 'text-destructive' : 'text-muted-foreground'}>{item.status === 'maintenance' ? 'Maintenance suppressed' : item.status === 'suppressed' ? 'Duplicate suppressed' : item.status === 'partial' ? 'Some recipients rejected' : item.status === 'failed' ? 'Failed' : item.status === 'accepted' ? 'Accepted' : 'Unknown'}</span>{item.status_code ? ` · HTTP ${item.status_code}` : ''}<span className="block text-muted-foreground">{item.duration_ms} ms</span></td></tr>)}</tbody></table></div>}
+        {!history.data.items.length ? <p className="text-sm text-muted-foreground">No recorded attempts on this page. History begins with this feature; earlier deliveries are not reconstructed.</p> : <div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{['Time', 'Channel / destination', 'Event', 'Result'].map(label => <th key={label} className="border-b px-2 py-2">{label}</th>)}</tr></thead><tbody>{history.data.items.map(item => <tr key={item.id}><td className="border-b px-2 py-2">{formatDateTime(item.created_at)}</td><td className="border-b px-2 py-2">{item.channel.toUpperCase()}<span className="block text-muted-foreground">{item.destination}</span></td><td className="border-b px-2 py-2">{item.event_title}</td><td className="border-b px-2 py-2"><span className={['failed','partial'].includes(item.status) ? 'text-destructive' : 'text-muted-foreground'}>{item.status === 'suppressed' ? 'Duplicate suppressed' : item.status === 'partial' ? 'Some recipients rejected' : item.status === 'failed' ? 'Failed' : item.status === 'accepted' ? 'Accepted' : 'Unknown'}</span>{item.status_code ? ` · HTTP ${item.status_code}` : ''}<span className="block text-muted-foreground">{item.duration_ms} ms</span></td></tr>)}</tbody></table></div>}
         {(history.data.total > 0 || page > 1) && <div className="flex items-center justify-between gap-3 text-xs"><Button type="button" size="sm" variant="outline" disabled={page <= 1} onClick={() => setPage(page - 1)}>Previous</Button><span>Page {page} / {history.data.total_pages} · {history.data.total} attempts</span><Button type="button" size="sm" variant="outline" disabled={page >= history.data.total_pages} onClick={() => setPage(page + 1)}>Next</Button></div>}
       </>}
     </div>

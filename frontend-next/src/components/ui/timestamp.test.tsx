@@ -6,7 +6,7 @@ describe('timestamp meaning',()=>{
  it('normalizes UTC and shows elapsed age',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date('2026-09-09T18:05:00Z'));
   const html=renderToStaticMarkup(<Timestamp value="2026-09-09 18:00:00" hour12={false}/>);
-  expect(html).toContain('2026-09-09T18:00:00.000Z');expect(html).toContain('20:00 (Europe/Zurich)');expect(html).toContain('5 minutes ago');
+  expect(html).toContain('2026-09-09T18:00:00.000Z');expect(html).toMatch(/title="9 Sept? 2026, 20:00 \(Europe\/Zurich\) · 5 minutes ago"/);expect(html).toContain('>5 minutes ago<');
  });
  it('distinguishes future timestamps',()=>{
   vi.useFakeTimers();vi.setSystemTime(new Date('2026-09-09T18:00:00Z'));
@@ -17,5 +17,10 @@ describe('timestamp meaning',()=>{
  });
  it('honors explicit host clock preferences',()=>{
   expect(renderToStaticMarkup(<Timestamp value="2026-09-09T18:00:00Z" hour12/>)).toContain('08:00 pm');
+ });
+ it('shows older timestamps as a date instead of an age',()=>{
+  vi.useFakeTimers();vi.setSystemTime(new Date('2026-09-30T18:00:00Z'));
+  const html=renderToStaticMarkup(<Timestamp value="2026-09-09T18:00:00Z" hour12={false}/>);
+  expect(html).toMatch(/>9 Sept? 2026, 20:00</);expect(html).toContain('21 days ago');
  });
 });

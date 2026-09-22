@@ -110,22 +110,6 @@ test('initial setup, login and protected console navigation work end-to-end', as
 
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: /^Jobs$/ })).toBeVisible();
-  await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
-  await page.getByRole('button', { name: 'Add maintenance window', exact: true }).first().click();
-  await expect(page.getByRole('dialog', { name: /schedule maintenance window/i })).toBeVisible();
-  await page.getByLabel('Name').fill('E2E-Proxmox-Wartung');
-  await page.getByLabel('Start').fill('2026-12-01T10:00');
-  await page.getByLabel('End').fill('2026-12-01T11:00');
-  await page.getByRole('button', { name: 'Schedule maintenance window', exact: true }).click();
-  await expect(page.getByRole('row', { name: /E2E-Proxmox-Wartung/ })).toBeVisible();
-
-  await page.getByRole('button', { name: 'Actions for E2E-Proxmox-Wartung' }).click();
-  await page.getByRole('menuitem', { name: 'Delete window' }).click();
-  await expect(page.getByRole('dialog', { name: /delete maintenance window/i })).toBeVisible();
-  await page.getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByText('Removed', { exact: true })).toBeVisible();
-  await page.getByRole('button', { name: 'Close', exact: true }).click();
-  await expect(page.getByText('E2E-Proxmox-Wartung', { exact: true })).toHaveCount(0);
 
   await page.goto('/settings');
   await expect(page.getByRole('heading', { name: /^Settings$/ })).toBeVisible();
@@ -221,7 +205,7 @@ test('host details keep the fixed navigation and desktop activity opens inline',
   }
 });
 
-test('mobile profile menu and maintenance form remain inside the viewport', async ({ page }) => {
+test('mobile profile menu and activity filters remain inside the viewport', async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   // Keep this test independently runnable. A fresh server starts with the
   // setup wizard, whereas the full serial suite already created an account.
@@ -263,21 +247,6 @@ test('mobile profile menu and maintenance form remain inside the viewport', asyn
   await page.goto('/operations');
   await expect(page.getByRole('button', { name: 'Filters', exact: true })).toHaveAttribute('aria-expanded', 'false');
   await expect(page.locator('#activity-filters')).toBeHidden();
-  await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
-  await expect(page.getByRole('button', { name: 'Add maintenance window', exact: true })).toHaveCount(1);
-  await page.getByRole('button', { name: 'Add maintenance window', exact: true }).click();
-  const dialog = page.getByRole('dialog', { name: /schedule maintenance window/i });
-  await expect(dialog).toBeVisible();
-  const dialogBox = await dialog.boundingBox();
-  expect(dialogBox).not.toBeNull();
-  expect(dialogBox!.x).toBeGreaterThanOrEqual(0);
-  expect(dialogBox!.x + dialogBox!.width).toBeLessThanOrEqual(390);
-  expect(dialogBox!.y).toBeGreaterThanOrEqual(0);
-  expect(dialogBox!.y).toBeLessThan(844);
-  await expect(dialog.getByLabel('Start')).toHaveAttribute('type', 'datetime-local');
-  await expect(dialog.getByLabel('Start')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  await expect(dialog.getByLabel('End')).toHaveValue(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
-  await expect(dialog.getByLabel('Timezone', { exact: true })).toHaveValue('Europe/Zurich');
 });
 
 test('console themes apply their coordinated light and dark modes immediately', async ({ page }, testInfo) => {
@@ -285,9 +254,9 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(6);
+  await expect(themeChoices).toHaveCount(8);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(35);
+  await expect(themeChoices).toHaveCount(37);
 
   const requestedThemes = [
     ['Tokyo Night', 'tokyo-night-dark', 'dark'],
@@ -344,17 +313,10 @@ test('shadcn looks round panels and controls without changing console themes', a
     await page.getByRole('button', { name: 'More themes' }).click();
     await page.getByRole('button', { name: `${name} theme, ${mode} mode` }).click();
     await expect(page.locator('main .rounded-panel').first()).toHaveCSS('border-top-left-radius', panelRadius);
-    await page.goto('/operations');
-    await page.getByLabel('Operations sections').getByRole('link', { name: 'Maintenance', exact: true }).click();
-    const add = page.getByRole('button', { name: 'Add maintenance window', exact: true });
-    await expect(add).toHaveCSS('border-top-left-radius', controlRadius);
-    await add.click();
-    const dialog = page.getByRole('dialog', { name: /schedule maintenance window/i });
-    await expect(dialog).toHaveCSS('border-top-left-radius', panelRadius);
-    await expect(dialog.getByLabel('Name', { exact: true })).toHaveCSS('border-top-left-radius', controlRadius);
-    await expect(dialog.getByLabel('Timezone', { exact: true })).toHaveCSS('border-top-left-radius', controlRadius);
+    await page.goto('/servers');
+    const addHost = page.getByRole('button', { name: 'Add host', exact: true });
+    await expect(addHost).toHaveCSS('border-top-left-radius', controlRadius);
     await page.screenshot({ path: testInfo.outputPath(`${name.replaceAll(' ', '-')}-rounded.png`) });
-    await dialog.getByRole('button', { name: 'Close dialog' }).click();
   }
 });
 
@@ -371,7 +333,7 @@ test('host management works without agent controls', async ({ page }) => {
     return String((await response.json()).id);
   });
   await page.goto(`/servers/${serverId}`);
-  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Terminal', 'Updates', 'Files', 'Overview', 'Snapshots', 'Jobs', 'Notes']);
+  await expect(page.getByRole('tablist', { name: 'Host sections' }).getByRole('tab')).toHaveText(['Overview', 'Updates', 'Terminal', 'Files', 'Snapshots', 'Jobs', 'Notes']);
   await expect(page.getByRole('tab', { name: 'Notes', exact: true })).toBeVisible();
   await page.getByRole('tab', { name: 'Terminal', exact: true }).click();
   const terminalDialog = page.getByRole('region', { name: /terminal/i });
@@ -442,15 +404,6 @@ test('operational and infrastructure failures provide retry states instead of he
   await page.unroute('**/api/operations?*');
   await page.getByRole('button', { name: 'Try again', exact: true }).click();
   await expect(page.getByText('Activity could not be loaded', { exact: true })).toHaveCount(0);
-
-  await page.route('**/api/maintenance-windows?*', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'maintenance unavailable' }) }));
-  await page.goto('/operations?section=maintenance');
-  await expect(page.getByText('Maintenance windows could not be loaded', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Try again', exact: true })).toBeVisible();
-  await expect(page.getByText('No maintenance windows scheduled', { exact: true })).toHaveCount(0);
-  await page.unroute('**/api/maintenance-windows?*');
-  await page.getByRole('button', { name: 'Try again', exact: true }).click();
-  await expect(page.getByText('Maintenance windows could not be loaded', { exact: true })).toHaveCount(0);
 
   const failInventory = (route: Route) => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'inventory unavailable' }) });
   await page.route('**/api/opentofu/infrastructure?*', failInventory);
@@ -1020,7 +973,7 @@ test('Proxmox import creates a host with a dedicated snapshot tab', async ({ pag
     await page.getByRole('link',{name:'e2e-import-vm',exact:true}).click();
     await expect(page).toHaveURL(/\/servers\//);
     const vmTabs = page.getByRole('tablist',{name:'Host sections'});
-    await expect(vmTabs.getByRole('tab')).toHaveText(['Terminal','Updates','Files','Overview','Snapshots','Jobs','Notes']);
+    await expect(vmTabs.getByRole('tab')).toHaveText(['Overview','Updates','Terminal','Files','Snapshots','Jobs','Notes']);
     await vmTabs.getByRole('tab',{name:'Snapshots',exact:true}).click();
     await expect(page.getByText('No snapshots yet.',{exact:true})).toBeVisible();
     await expect(page.getByRole('button',{name:'Create snapshot',exact:true})).toBeVisible();

@@ -396,11 +396,11 @@ export function ServerDetailPage() {
         <div className="flex items-end justify-between gap-2 border-b">
           <div className="min-w-0 overflow-x-auto">
           <TabsList aria-label="Host sections" className="console-tabs min-w-max border-b-0">
-            {availableTabs.includes("terminal") && <TabsTrigger value="terminal">Terminal</TabsTrigger>}
+            <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             {availableTabs.includes("updates") && <TabsTrigger value="updates">Updates</TabsTrigger>}
             {availableTabs.includes("docker") && <TabsTrigger value="docker">Workloads</TabsTrigger>}
+            {availableTabs.includes("terminal") && <TabsTrigger value="terminal">Terminal</TabsTrigger>}
             {availableTabs.includes("files") && <TabsTrigger value="files">Files</TabsTrigger>}
-            <TabsTrigger value="overview">{t("det.tabOverview")}</TabsTrigger>
             <TabsTrigger value="snapshots">Snapshots</TabsTrigger>
             {availableTabs.includes("history") && <TabsTrigger value="history">Jobs</TabsTrigger>}
             {availableTabs.includes("notes") && <TabsTrigger value="notes">Notes</TabsTrigger>}

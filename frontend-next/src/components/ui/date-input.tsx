@@ -1,8 +1,6 @@
-import { useEffect, useState, useRef, useId } from "react";
+import { useEffect, useState } from "react";
 import { Input } from "@/components/ui/input";
 import {
-  formatZonedDateTimeLocal,
-  parseZonedDateTimeLocal,
   formatDateInput,
   formatZonedDateTimeInput,
   parseDateInput,
@@ -102,37 +100,4 @@ export function ZonedDateTimeTextInput({
       }}
     />
   );
-}
-
-/** Browser calendar/time picker, with keyboard entry and explicit-zone conversion. */
-export function ZonedDateTimePicker({id, value, onChange, required, ariaLabel, timeZone}: ZonedDateTimeTextInputProps) {
-  const formatted = formatZonedDateTimeLocal(value, timeZone);
-  const [draft, setDraft] = useState(formatted);
-  const [invalid, setInvalid] = useState(false);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const errorId = useId();
-  useEffect(() => {
-    setDraft(formatted);
-    setInvalid(false);
-    inputRef.current?.setCustomValidity('');
-  }, [formatted, timeZone]);
-  const error = 'This local date or time does not exist in the selected timezone. Choose a valid time.';
-  const update = (input: HTMLInputElement) => {
-    const next = input.value;
-    setDraft(next);
-    const parsed = next ? parseZonedDateTimeLocal(next, timeZone) : '';
-    const bad = Boolean(next && parsed === null);
-    setInvalid(bad);
-    input.setCustomValidity(bad ? error : '');
-    // Preserve invalid drafts on blur. Never save the previous valid value silently.
-    if (parsed !== null) onChange(parsed);
-  };
-  return <div className="space-y-1">
-    <Input ref={inputRef} id={id} type="datetime-local" step={60} value={draft}
-      required={required} aria-label={ariaLabel} aria-invalid={invalid || undefined}
-      aria-describedby={invalid ? errorId : undefined}
-      onInput={event => update(event.currentTarget)}
-      onChange={event => update(event.currentTarget)} />
-    {invalid && <p id={errorId} role="alert" className="text-xs text-destructive">{error}</p>}
-  </div>;
 }

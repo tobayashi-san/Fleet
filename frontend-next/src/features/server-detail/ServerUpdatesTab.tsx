@@ -1,3 +1,4 @@
+import { Timestamp } from "@/components/ui/timestamp";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -82,7 +83,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
             {hasCap(profile, "canViewUpdates") && (
               <Card>
                 {rawUpdates && !Array.isArray(rawUpdates) && <div className="border-b px-4 py-3 text-xs text-muted-foreground">
-                  <p>Last check: {formatDateTime(rawUpdates.updated_at)}{rawUpdates.stale && <span className="text-warning"> · Stale — refresh before updating</span>}</p>
+                  <p>Last check: <Timestamp value={rawUpdates.updated_at} />{rawUpdates.stale && <span className="text-warning"> · outdated — check again before updating</span>}</p>
                   <details className="mt-1"><summary className="cursor-pointer">Check details</summary><p className="mt-1">{rawUpdates.source} · Refresh interval: {Math.round(rawUpdates.stale_after_seconds / 60)} min{rawUpdates.cached ? ' · Cached result' : ''}. OS packages and container images are checked separately.</p></details>
                 </div>}
                 <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
@@ -127,9 +128,14 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                     <p className="px-4 py-3 text-sm text-muted-foreground">OS update catalog unavailable. Refresh to retry.</p>
                   ) : updatesList.length === 0 && phasedList.length > 0 ? (
                     <p className="px-4 py-3 text-sm text-muted-foreground">All available updates are deferred. See packages below.</p>
+                  ) : updatesList.length === 0 && !Array.isArray(rawUpdates) && rawUpdates.stale ? (
+                    // A stale empty result is not evidence that the host is current.
+                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-muted-foreground">
+                      <span aria-hidden="true">⚠</span> {t("det.noUpdatesStale")}
+                    </div>
                   ) : updatesList.length === 0 ? (
-                    <div className="flex items-center gap-2 px-4 py-3 text-sm text-emerald-500">
-                      <span>✓</span> {t("det.allUpToDate")}
+                    <div className="flex items-center gap-2 px-4 py-3 text-sm [color:hsl(var(--success))]">
+                      <span aria-hidden="true">✓</span> {t("det.allUpToDate")}
                     </div>
                   ) : (
                     <>

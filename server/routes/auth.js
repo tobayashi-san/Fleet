@@ -115,7 +115,7 @@ router.get('/status', (req, res) => {
   const configured = db.users.count() > 0;
   const appName = db.settings.get('wl_app_name') || 'Shipyard';
   const appTagline = db.settings.get('wl_app_tagline') || 'Infrastructure';
-  const accentColor = db.settings.get('wl_accent_color') || '#3b82f6';
+  const accentColor = db.settings.get('wl_accent_color') || '#17704f';
   const logoIcon = db.settings.get('wl_logo_icon') || 'fa-ship';
   const logoImage = db.settings.get('wl_logo_image') || '';
   res.json({

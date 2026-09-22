@@ -40,8 +40,8 @@ async function healthy(name) {
   const logs = run(['logs', name]);
   throw new Error(`Container did not become healthy: ${logs.stdout}\n${logs.stderr}`);
 }
-function rejected(label, options, expected) {
-  const name = start(label, options);
+function rejected(label, options, expected, command = []) {
+  const name = start(label, options, command);
   const result = run(['wait', name], { timeout: 20000 });
   assert.notEqual(result.stdout.trim(), '0', `${label} unexpectedly exited successfully`);
   const logs = run(['logs', name]);
@@ -51,7 +51,7 @@ function rejected(label, options, expected) {
 const fingerprint = name => exec(name, 'openssl', 'x509', '-in', '/app/server/data/certs/shipyard.crt', '-noout', '-fingerprint', '-sha256');
 
 try {
-  rejected('missing-secret', ['-e', 'JWT_SECRET='], /JWT_SECRET must be set/);
+  rejected('lost-key', ['-e', 'SHIPYARD_KEY_SECRET=', '--entrypoint', '/bin/sh'], /SHIPYARD_KEY_SECRET is missing/, ['-ec', 'mkdir -p /app/server/data && touch /app/server/data/shipyard.db && exec /app/docker-entrypoint.sh']);
   rejected('equal-secrets', ['-e', 'JWT_SECRET=container-test-encryption-secret'], /must be different/);
   rejected('partial-tls', ['-e', 'SSL_KEY=/missing.key'], /Set SSL_KEY and SSL_CERT together/);
   rejected('custom-renewal', ['-e', 'SSL_KEY=/custom.key', '-e', 'SSL_CERT=/custom.crt', '-e', 'SHIPYARD_RENEW_CERT=1'], /only renews generated certificates/);
@@ -107,6 +107,16 @@ try {
   assert.match(exec(renewed, 'openssl', 'x509', '-in', '/app/server/data/certs/shipyard.crt', '-noout', '-ext', 'subjectAltName'), /renewed.example.internal/);
   assert.equal(exec(renewed, 'sh', '-c', 'openssl x509 -in /app/server/data/certs/previous.*/shipyard.crt -noout -fingerprint -sha256'), original);
   console.log('PASS: failed renewal preserves TLS; explicit renewal updates SANs and archives old TLS');
+
+  const generated = start('generated', ['-e', 'JWT_SECRET=', '-e', 'SHIPYARD_KEY_SECRET=']);
+  await healthy(generated);
+  assert.equal(exec(generated, 'stat', '-c', '%a %u', '/app/secrets', '/app/secrets/shipyard.env'), '700 0\n600 0');
+  const secrets = exec(generated, 'cat', '/app/secrets/shipyard.env');
+  assert.match(secrets, /^JWT_SECRET=[0-9a-f]{64}\nSHIPYARD_KEY_SECRET=[0-9a-f]{64}$/);
+  run(['restart', generated]);
+  await healthy(generated);
+  assert.equal(exec(generated, 'cat', '/app/secrets/shipyard.env'), secrets, 'Restart must reuse generated secrets');
+  console.log('PASS: first start generates private secrets and restarts reuse them; a lost key blocks startup');
 } finally {
   for (const name of containers.reverse()) run(['rm', '-f', '-v', name], { allowFailure: true });
 }

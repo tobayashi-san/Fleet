@@ -90,7 +90,16 @@ export function formatDateTime(
     hour12: preferredHour12(),
     timeZone: DISPLAY_TIME_ZONE,
     ...options,
-  }).format(date) + ` (${options.timeZone ?? DISPLAY_TIME_ZONE})`;
+  }).format(date);
+}
+
+/** Same as formatDateTime, with the display time zone spelled out (tooltips, audit, exports). */
+export function formatDateTimeWithZone(
+  value: string | number | Date | null | undefined = null,
+  options: Intl.DateTimeFormatOptions = {},
+): string {
+  const formatted = formatDateTime(value, options);
+  return formatted === '—' ? formatted : `${formatted} (${options.timeZone ?? DISPLAY_TIME_ZONE})`;
 }
 
 /** Formats the API's YYYY-MM-DD date value without involving browser locale UI. */
@@ -166,16 +175,4 @@ export function parseZonedDateTimeInput(value: string, timeZone: string): string
     (key) => resolved[key as keyof Required<DateParts>] !== desired[key as keyof Required<DateParts>],
   )) return null;
   return new Date(candidate).toISOString();
-}
-
-/** Native datetime-local fields represent wall time in the explicitly selected zone. */
-export function formatZonedDateTimeLocal(value: string, timeZone: string): string {
-  const formatted = formatZonedDateTimeInput(value, timeZone);
-  const match = formatted.match(/^(\d{2})\/(\d{2})\/(\d{4}), (\d{2}):(\d{2})$/);
-  return match ? `${match[3]}-${match[2]}-${match[1]}T${match[4]}:${match[5]}` : '';
-}
-
-export function parseZonedDateTimeLocal(value: string, timeZone: string): string | null {
-  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/);
-  return match ? parseZonedDateTimeInput(`${match[3]}/${match[2]}/${match[1]}, ${match[4]}:${match[5]}`, timeZone) : null;
 }

@@ -29,17 +29,8 @@ function auditRowVisibleToServers(row, permissions, environmentId = 'default') {
   }
 
   // Account, role and Git configuration records are not host-scoped. Never infer access from their text.
-  if (/^(users|roles|git)\./.test(String(row?.action || ''))) return false;
-  if (String(row?.action || '').startsWith('maintenance_window.')) {
-    try {
-      const record = JSON.parse(detail);
-      const scope = record?.scope;
-      return record?.kind === 'maintenance-change' && record.version === 1
-        && scope?.environmentId === environmentId && scope.allHosts === false
-        && Array.isArray(scope.hostIds) && scope.hostIds.length > 0
-        && scope.hostIds.every(id => typeof id === 'string' && visibleIds.has(id));
-    } catch { return false; }
-  }
+  // Retired maintenance-window records stay visible to administrators only.
+  if (/^(users|roles|git|maintenance_window)\./.test(String(row?.action || ''))) return false;
 
   // Terminal lifecycle events carry a stable ID plus a historical display name.
   // Authorize the ID so a rename does not hide an otherwise accessible event.
@@ -93,7 +84,7 @@ function queryVisibleAuditRows(filters, permissions) {
 
 const PRIMARY_CHANGE_PREFIXES = [
   'git.config_update', 'git.settings_update', 'git.disconnect', 'auth.', 'login.', 'users.', 'roles.', 'system.', 'environment.', 'reset.',
-  'ssh.assignment.', 'ssh.import', 'ssh.export', 'maintenance_window.', 'schedule.', 'plugin.',
+  'ssh.assignment.', 'ssh.import', 'ssh.export', 'schedule.', 'plugin.',
   'server.notes_update', 'server.create', 'server.created', 'server.update', 'server.delete',
   'server.deleted', 'server.hidden', 'server.visible', 'servers.group_',
   'opentofu.install', 'custom_update.create', 'custom_update.update', 'custom_update.delete',

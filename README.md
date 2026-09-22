@@ -33,40 +33,28 @@ are optional. Host information is collected over SSH; no Shipyard agent is requi
 
 ### 1. Prepare your Docker host
 
-You need a Linux machine with **Docker Engine**, the **Docker Compose plugin**,
-**Git**, and **OpenSSL** installed. Your user must be able to run Docker commands.
-Shipyard's container includes its application dependencies; you do not need to
-install Node.js, Ansible, or a separate database on this machine.
+You need a Linux machine with **Docker Engine** and the **Docker Compose plugin**.
+Your user must be able to run Docker commands. Everything else, including
+Node.js, Ansible, and the database, ships inside the container.
 
-For a new installation, run:
-
-```bash
-git clone https://github.com/tobayashi-san/Shipyard.git
-cd Shipyard
-```
-
-### 2. Create your configuration
-
-The following commands copy the example and generate two different secrets
-automatically. Run them once for a fresh installation:
+### 2. Start Shipyard
 
 ```bash
-cp .env.example .env
-chmod 600 .env
-sed -i "s/^JWT_SECRET=$/JWT_SECRET=$(openssl rand -hex 32)/" .env
-sed -i "s/^SHIPYARD_KEY_SECRET=$/SHIPYARD_KEY_SECRET=$(openssl rand -hex 32)/" .env
-```
-
-Keep a secure backup of `.env`. In particular, `SHIPYARD_KEY_SECRET` is needed
-to decrypt stored credentials. **Keep your existing `.env` when updating.**
-
-### 3. Start Shipyard
-
-```bash
-docker compose pull
+mkdir shipyard && cd shipyard
+curl -fsSLO https://raw.githubusercontent.com/tobayashi-san/Shipyard/main/docker-compose.yml
 docker compose up -d --wait
-docker compose ps
 ```
+
+On its first start, Shipyard generates its secrets and a self-signed TLS
+certificate. There is nothing to configure beforehand.
+
+> [!IMPORTANT]
+> The generated `SHIPYARD_KEY_SECRET` encrypts stored credentials and lives in
+> the `shipyard-secrets` volume. Save a copy somewhere safe, apart from your data backups:
+>
+> ```bash
+> docker compose exec shipyard cat /app/secrets/shipyard.env
+> ```
 
 When the service is **healthy**, open **[https://localhost](https://localhost)**
 in a browser on that same machine. The first visit shows a certificate warning
@@ -92,7 +80,7 @@ on your laptop. For regular access over a protected LAN, follow
 
 </details>
 
-### 4. Complete the setup wizard
+### 3. Complete the setup wizard
 
 Create your administrator account, choose the appearance, and generate the SSH
 key that Shipyard will use to connect to hosts. Select **Open App** when setup
@@ -149,7 +137,7 @@ SSH access separately when you want to manage a guest as a Linux host.
 | See which servers need attention | Host health, resource usage, pending updates, tags, groups, and environments |
 | Work on a host from my browser | SSH terminals, SSH-key management, and SFTP file transfers |
 | Manage containers and updates | A central system/Docker update dashboard, Docker inventory, logs, Compose stacks, and custom update tasks |
-| Repeat a task across hosts | Ansible playbooks, variables and secrets, Git integration, schedules, and maintenance windows |
+| Repeat a task across hosts | Ansible playbooks, variables and secrets, Git integration, and schedules |
 | Manage my Proxmox infrastructure | Platform and guest inventory, snapshots, power actions, and OpenTofu-managed VMs |
 | Organize access and addresses | Roles and permissions, MFA, audit history, IP prefixes, and address reservations |
 
@@ -175,15 +163,15 @@ You can connect an existing Linux guest as a managed host without rebuilding it.
 | What you see | What to check |
 | --- | --- |
 | The page does not open | Run `docker compose ps`. Check whether your browser is on the Docker host; use the SSH tunnel above for a remote installation. |
-| Port 443 is already in use | Set `SHIPYARD_PORT=8443` in `.env`, run `docker compose up -d --wait`, and open `https://localhost:8443` on the Docker host. Use the new server-side port in any SSH tunnel too. |
+| Port 443 is already in use | Create a `.env` file next to `docker-compose.yml` containing `SHIPYARD_PORT=8443`, run `docker compose up -d --wait`, and open `https://localhost:8443` on the Docker host. Use the new server-side port in any SSH tunnel too. |
 | A certificate warning | Expected with the generated self-signed certificate. The [TLS guide](docs/DOCKER_DEPLOYMENT.md#network-and-tls) explains using your own certificate. |
-| The container does not become healthy | Run `docker compose logs --tail=100 shipyard` and check the reported error. Both secrets in `.env` must be present and different. |
+| The container does not become healthy | Run `docker compose logs --tail=100 shipyard` and check the reported error. If you set secrets in `.env`, both must be present and different. |
 | A host is saved but cannot connect | Check the SSH address, port, firewall, user, and installed public key. A successful save does not prove SSH access. |
 | You see login instead of setup | Setup only appears when no users exist. Sign in with the account created for this installation. |
 
 For a reproducible bug, [open an issue](https://github.com/tobayashi-san/Shipyard/issues)
 with the image version, expected behavior, and relevant error. Remove credentials
-and private host details before sharing logs; never attach `.env` or SSH keys.
+and private host details before sharing logs; never attach `.env`, `shipyard.env`, or SSH keys.
 
 ## Keep your installation up to date
 
@@ -200,11 +188,14 @@ docker compose pull
 docker compose up -d --wait
 ```
 
+If your installation uses a `.env` file with `JWT_SECRET` and
+`SHIPYARD_KEY_SECRET`, keep it: those values continue to take precedence.
+
 For predictable versions, set `SHIPYARD_IMAGE` in `.env` to
 `ghcr.io/tobayashi-san/shipyard:<version>`, replacing `<version>` with a published
 release tag without its leading `v`. Update that setting when moving to a new
 release. Do not run `docker compose down -v` during an update: it deletes named
-data volumes.
+data volumes, including your data and generated secrets.
 
 ## Explore the documentation
 

@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
 const STEPS = 5;
-const ACCENTS = ['#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#22c55e'];
+const ACCENTS = ['#17704f', '#3b82f6', '#6366f1', '#8b5cf6', '#ec4899', '#14b8a6', '#22c55e'];
 const THEMES = ['light', 'auto', 'dark'] as const;
 type Theme = (typeof THEMES)[number];
 
@@ -59,7 +59,7 @@ export function OnboardingPage() {
   const [branding, setBranding] = useState<Branding>({
     appName: 'Shipyard',
     appTagline: 'Infrastructure',
-    accentColor: '#3b82f6',
+    accentColor: '#17704f',
     showIcon: true,
     logoIcon: 'fa-ship',
   });

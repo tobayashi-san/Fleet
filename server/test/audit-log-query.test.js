@@ -90,7 +90,6 @@ test('audit change focus keeps user, security, and configuration events', () => 
     { action: 'users.update' },
     { action: 'auth.totp' },
     { action: 'system.polling' },
-    { action: 'maintenance_window.create' },
     { action: 'ansible.run' },
     { action: 'ipam.proxmox_sync' },
   ];
@@ -98,7 +97,6 @@ test('audit change focus keeps user, security, and configuration events', () => 
     'users.update',
     'auth.totp',
     'system.polling',
-    'maintenance_window.create',
   ]);
   assert.equal(filterAuditFocus(rows, 'all').length, rows.length);
 });

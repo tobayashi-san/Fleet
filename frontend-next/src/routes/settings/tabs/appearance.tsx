@@ -14,7 +14,7 @@ import { useUnsavedChanges } from "@/lib/use-unsaved-changes";
 
 const DEFAULTS = {
   appName: "",
-  accentColor: "#3b82f6",
+  accentColor: "#17704f",
 };
 
 interface WhiteLabel {
@@ -114,7 +114,7 @@ export function AppearanceTab() {
               setColor(v);
             }}
             className="max-w-[140px] font-mono"
-            placeholder="#3b82f6"
+            placeholder="#17704f"
           />
         </SettingsRow>
 

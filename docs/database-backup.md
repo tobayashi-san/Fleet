@@ -6,7 +6,7 @@ The snapshot includes every SQLite table across all environments, including user
 
 Preserve these separately:
 
-- The original `SHIPYARD_KEY_SECRET`, needed to decrypt application secrets after recovery. The backup passphrase does not replace it.
+- The original `SHIPYARD_KEY_SECRET`, needed to decrypt application secrets after recovery. The backup passphrase does not replace it. When Shipyard generated it, it is in `/app/secrets/shipyard.env` in the `shipyard-secrets` volume.
 - The deployment configuration and any externally configured JWT secret.
 - User playbooks, plugins, Git workspace and infrastructure state files/directories, including paths configured outside the default data volume.
 - Remote hosts, VMs, disks and application data. A Shipyard database backup does not back them up.

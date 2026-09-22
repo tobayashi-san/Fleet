@@ -36,7 +36,6 @@ import {
   WEEKDAYS,
 } from "./playbook-utils";
 import type { Playbook, Schedule } from "./playbook-types";
-import { ScheduleMaintenancePreview } from "./ScheduleMaintenancePreview";
 import { PlaybookTargetSummary } from "./components/PlaybookTargetSummary";
 
 export function useCronLabel() {
@@ -842,7 +841,6 @@ export function ScheduleDialog({
             <p className="my-1 font-mono">{effectiveCron}</p>
             {scheduleNameMismatch(name, effectiveCron) && <p role="status" className="text-warning">{scheduleNameMismatch(name, effectiveCron)}</p>}
             {previewCron !== effectiveCron || preview.isFetching ? <p>Calculating…</p> : preview.isError ? <p role="alert" className="text-destructive">{preview.error.message}</p> : preview.data && <><p>Scheduler timezone: {preview.data.timezone}</p><ol className="my-2 list-decimal pl-5">{preview.data.runs.map(run=><li key={run}>{new Intl.DateTimeFormat('en-GB', {timeZone:preview.data.timezone,dateStyle:'medium',timeStyle:'long'}).format(new Date(run))}</li>)}</ol><p className="text-muted-foreground">Calculated from the scheduler's current timezone. Paused schedules do not run. If a previous execution of this schedule is still active, the next occurrence is skipped, not queued. Failed runs are not automatically retried; the next regular occurrence follows the cron expression.</p></>}
-            {formEnvironment === environmentId && previewCron === effectiveCron && !preview.isFetching && !preview.isError && preview.data && <ScheduleMaintenancePreview runs={preview.data.runs} targets={targetPreview.targets} hosts={srvList} environmentId={formEnvironment} />}
           </section>
           <details className="rounded-md border p-3"><summary className="cursor-pointer text-sm font-medium">Variables and execution options</summary><div className="mt-3 space-y-3">
           <div className="space-y-1">

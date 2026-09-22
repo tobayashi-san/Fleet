@@ -1,6 +1,4 @@
-import { MaintenanceWindow, readableTime } from '@/features/operations/model';
 import {
-	CalendarClock,
 	CheckCircle2,
 	CircleDashed,
 	ClipboardList,
@@ -9,29 +7,17 @@ import {
 } from "lucide-react";
 
 export function OperationsContext({
-  canViewMaintenance,
-  active,
-  next,
   activeOperations,
   failedOperations,
   onShowFailures,
 }: {
-  canViewMaintenance: boolean;
-  active?: MaintenanceWindow;
-  next?: MaintenanceWindow;
   activeOperations: number;
   failedOperations: number;
   onShowFailures: () => void;
 }) {
-  const maintenance = active || next;
-  const maintenanceState = !canViewMaintenance ? "Not available" : active
-    ? "Active"
-    : next
-      ? "Scheduled"
-      : "None scheduled";
   return (
     <section
-      className={`overflow-hidden rounded-panel border bg-card ${active ? "border-amber-500/35" : ""}`}
+      className="overflow-hidden rounded-panel border bg-card"
       aria-label="Operating status"
     >
       <div className="flex flex-wrap items-stretch">
@@ -54,19 +40,7 @@ export function OperationsContext({
           tone={failedOperations ? "danger" : "success"}
           onClick={failedOperations ? onShowFailures : undefined}
         />
-        <OperationFact
-          icon={CalendarClock}
-          label="Maintenance"
-          value={maintenanceState}
-          detail={!canViewMaintenance ? "Visibility restricted" : maintenance ? maintenance.name : "No window scheduled"}
-          tone={active ? "warning" : next ? "info" : undefined}
-        />
       </div>
-      {canViewMaintenance && maintenance && <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-t bg-muted/15 px-3 py-2 text-xs text-muted-foreground">
-        <span className="font-medium text-foreground">{active ? "Active window" : "Next window"}</span>
-        <span>{readableTime(maintenance.starts_at)} – {readableTime(maintenance.ends_at)}</span>
-        {maintenance.description && <span className="min-w-0 truncate">{maintenance.description}</span>}
-      </div>}
     </section>
   );
 }

@@ -244,6 +244,13 @@ function serverOperatingState(server, perms) {
       } : {}),
       ...(canViewCustomUpdates ? { custom_updates_count: customUpdatesCount, custom_updates_stale: db.customUpdateTasks.getByServer(server.id).some(task => updateCatalogAge(task.last_checked_at, db.settings.get('poll_custom_updates_interval_min') || 360).stale) } : {}),
       info_cached_at: info?.updated_at || null,
+      // Latest collected usage for the inventory list; the detail view keeps the full record.
+      resources: info ? {
+        ram_used_mb: info.ram_used_mb ?? null,
+        ram_total_mb: info.ram_total_mb ?? null,
+        disk_used_gb: info.disk_used_gb ?? null,
+        disk_total_gb: info.disk_total_gb ?? null,
+      } : null,
     };
 }
 

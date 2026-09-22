@@ -126,7 +126,7 @@ test('a host shows host facts and snapshots without VM hardware or inventory req
     });
     await page.goto(`/servers/${host.id}`);
     await expect(page.getByRole('heading',{name:'pve01-canonical',exact:true})).toBeVisible();
-    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Terminal','Updates','Files','Overview','Snapshots','Jobs','Notes']);
+    await expect(page.getByRole('tablist',{name:'Host sections'}).getByRole('tab')).toHaveText(['Overview','Updates','Terminal','Files','Snapshots','Jobs','Notes']);
     await expect(page.getByRole('tabpanel').getByText('Connection', {exact:true})).toHaveCount(0);
     await expect(page.getByRole('tabpanel').getByText('Management mode', {exact:true})).toBeVisible();
     await expect(page.getByText('Recent capacity',{exact:true})).toHaveCount(0);

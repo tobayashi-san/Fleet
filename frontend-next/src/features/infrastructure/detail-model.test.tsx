@@ -49,7 +49,7 @@ describe("infrastructure status presentation", () => {
   });
 
   it("uses the shared unambiguous date formatter for grouped tasks", () => {
-    expect(taskDate("2026-09-02T17:30:00.000Z")).toMatch(/^2 Sept? 2026, 19:30 \(Europe\/Zurich\)$/);
+    expect(taskDate("2026-09-02T17:30:00.000Z")).toMatch(/^2 Sept? 2026, 19:30$/);
   });
 });
 

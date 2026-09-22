@@ -243,13 +243,13 @@ export function OperationList({
         ))}
       </div>
       <div className="table-scroll hidden md:block">
-        <table data-density="compact" className="w-full min-w-[760px] text-sm">
+        <table data-density="compact" className="w-full min-w-[36rem] text-sm">
           <thead>
             <tr>
-              <th className="w-40">Time</th>
+              <th className="w-32">Time</th>
               <th>Task</th>
-              <th>Target</th>
-              <th className="w-32">Status</th>
+              <th className="w-40">Target</th>
+              <th className="w-28">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -260,22 +260,20 @@ export function OperationList({
                 className={`cursor-pointer ${selectedId === row.id ? "bg-primary/[0.07] shadow-[inset_3px_0_0_hsl(var(--primary))]" : "hover:bg-muted/45"}`}
                 aria-selected={selectedId === row.id}
               >
-                <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-                  <span className="block font-sans">{row.completed_at ? "Completed" : "Started"}</span>
+                <td className="whitespace-nowrap text-xs text-muted-foreground" title={row.completed_at ? "Completed" : "Started"}>
                   <Timestamp value={row.time} />
                 </td>
-                <td>
-                  <button type="button" className="text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}>{row.name}</button>
-                  <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="ml-2 text-xs text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
+                <td className="min-w-0">
+                  <button type="button" className="line-clamp-2 break-words text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}>{row.name}</button>
                   <div className="mt-0.5 text-xs text-muted-foreground">
-                    {operationSourceLabel(row.source)} · {row.initiator}
+                    {operationSourceLabel(row.source)} · {row.initiator} · <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="whitespace-nowrap text-primary hover:underline" aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}>{row.executions?.length ? "Open latest execution" : "Open execution"}</Link>
                   </div>
                   <GroupedExecutionLinks row={row} />
                 </td>
-                <td className="max-w-[18rem]">
+                <td className="max-w-[10rem] truncate">
                   <OperationTarget row={row} />
                 </td>
-                <td>
+                <td className="whitespace-nowrap">
                   <StatusBadge tone={operationDisplayTone(row)} dot>
                     {operationDisplayLabel(row)}
                   </StatusBadge>

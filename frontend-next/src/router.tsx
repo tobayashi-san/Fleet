@@ -41,7 +41,7 @@ interface ServersSearch {
 
 interface OperationsSearch {
   scope?: 'active' | 'failed';
-  section?: 'tasks' | 'maintenance' | 'audit';
+  section?: 'tasks' | 'audit';
   source?: 'Host' | 'Deployment' | 'Workflow';
   q?: string;
   from?: string;
@@ -142,7 +142,7 @@ const operationsRoute = createRoute({
   validateSearch: (search: Record<string, unknown>): OperationsSearch => {
     const result: OperationsSearch = {};
     if (search.scope === 'active' || search.scope === 'failed') result.scope = search.scope;
-    if (search.section === 'tasks' || search.section === 'maintenance' || search.section === 'audit') result.section = search.section;
+    if (search.section === 'tasks' || search.section === 'audit') result.section = search.section;
     if (search.source === 'Host' || search.source === 'Deployment' || search.source === 'Workflow') result.source = search.source;
     if (typeof search.q === 'string' && search.q.trim()) result.q = search.q;
     if (typeof search.from === 'string') result.from = search.from;

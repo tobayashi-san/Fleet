@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 const related: Record<string, string[]> = {
   'features/servers/ServersPage.tsx': ['features/servers/useHostManagement.tsx', 'features/servers/HostInventoryRows.tsx', 'features/servers/GroupDialog.tsx', 'features/servers/HostManagementDialogs.tsx'],
   'routes/networks.tsx': ['features/ipam/IpamSourcesDialog.tsx', 'features/ipam/CreatePrefixDialog.tsx', 'features/ipam/PrefixRows.tsx', 'features/ipam/prefix-model.ts'],
-  'routes/operations.tsx': ['features/operations/model.ts', 'features/operations/MaintenanceWindowDialog.tsx', 'features/operations/MaintenanceWindowsCard.tsx', 'features/operations/OperationList.tsx'],
+  'routes/operations.tsx': ['features/operations/model.ts', 'features/operations/OperationList.tsx'],
 };
 const source = (relative: string) => [relative, ...(related[relative] || [])]
   .map(file => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')).join('\n');
@@ -135,8 +135,7 @@ describe("UI refactor contract", () => {
     const operations = source("routes/operations.tsx");
     expect(operations).toContain("operationsQuery.isError ? (");
     expect(operations).toContain('title="Activity could not be loaded"');
-    expect(operations).toContain('title="Maintenance windows could not be loaded"');
-    expect(operations).toContain("operationsQuery.isSuccess && (!canViewMaintenance || maintenanceQuery.isSuccess)");
+    expect(operations).toContain("operationsQuery.isSuccess && <OperationsContext");
   });
 
   it("distinguishes infrastructure detail failures from confirmed empty inventory", () => {

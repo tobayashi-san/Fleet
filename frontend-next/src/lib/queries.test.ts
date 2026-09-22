@@ -3,7 +3,7 @@ import { canAccessDeployments, canAccessOperations, type Profile } from './queri
 
 const operator: Profile = { role: 'user', permissions: { canManageDeployments: true } };
 const deploymentViewer: Profile = { role: 'user', permissions: { canViewDeployments: true } };
-const maintenanceOperator: Profile = { role: 'user', permissions: { canViewMaintenance: true } };
+const auditor: Profile = { role: 'user', permissions: { canViewAudit: true } };
 describe('navigation access rules', () => {
   it('requires the integrated deployment capability', () => {
     expect(canAccessDeployments(operator)).toBe(true);
@@ -12,8 +12,8 @@ describe('navigation access rules', () => {
     expect(canAccessDeployments({ role: 'user', permissions: { canManageDeploymentPlatforms: true } })).toBe(true);
   });
 
-  it('keeps operations available to maintenance-only roles without exposing deployments', () => {
-    expect(canAccessDeployments(maintenanceOperator)).toBe(false);
-    expect(canAccessOperations(maintenanceOperator)).toBe(true);
+  it('keeps operations available to audit-only roles without exposing deployments', () => {
+    expect(canAccessDeployments(auditor)).toBe(false);
+    expect(canAccessOperations(auditor)).toBe(true);
   });
 });

@@ -67,6 +67,7 @@ export function NetworksPage() {
       apiFetch<PrefixPage>(
         `/ipam/subnets?environment_id=${encodeURIComponent(environmentId)}&paginated=1&page=${page}&page_size=${pageSize}&status=${encodeURIComponent(status === "all-including-deprecated" ? "all" : status === "all" ? "current" : status)}&q=${encodeURIComponent(deferredSearch)}`,
       ),
+    refetchInterval: 60_000,
   });
   const rows = Array.isArray(query.data?.items) ? query.data.items : [];
   const connections = useQuery({
@@ -103,6 +104,8 @@ export function NetworksPage() {
   // Only top-level prefixes belong in the environment total. Child prefixes
   // already consume capacity inside their parent and must not be counted twice.
   const visibleIds = hierarchicalRows.map(({ prefix }) => prefix.id);
+  // Hide the description column while no prefix has one.
+  const showDescription = rows.some(prefix => prefix.description);
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
   const selectedPrefixIds = visibleIds.filter((id) => selectedIds.has(id));
   const allSelected =
@@ -193,8 +196,6 @@ export function NetworksPage() {
       else next.add(id);
       return next;
     });
-  const refresh = () =>
-    void queryClient.invalidateQueries({ queryKey: ["ipam"] });
   return (
     <div className="min-w-0 space-y-5">
       <PageHeader
@@ -202,16 +203,6 @@ export function NetworksPage() {
         description={tr("description")}
         actions={
           <div className="flex flex-wrap justify-end gap-2">
-            <Button
-              variant="outline"
-              disabled={query.isFetching}
-              onClick={refresh}
-            >
-              <RefreshCw
-                className={query.isFetching ? "animate-spin" : undefined}
-              />
-              {tr("refresh")}
-            </Button>
             <Button variant="outline" asChild>
               <Link to="/networks/sources"><DatabaseZap />{tr("sources")}</Link>
             </Button>
@@ -373,7 +364,7 @@ export function NetworksPage() {
                           <th className="px-3">{tr("prefixNameColumn")}</th>
                           <th className="px-3">{tr("status")}</th>
                           <th className="px-3">{tr("vlanBridge")}</th>
-                          <th className="px-3">{tr("descriptionLabel")}</th>
+                          {showDescription && <th className="px-3">{tr("descriptionLabel")}</th>}
                           <th className="w-10 px-3">
                             <span className="sr-only">{tr("open")}</span>
                           </th>
@@ -388,6 +379,7 @@ export function NetworksPage() {
                             checked={selectedIds.has(prefix.id)}
                             onToggle={() => toggle(prefix.id)}
                             canSelect={canEdit}
+                            showDescription={showDescription}
                           />
                         ))}
                       </tbody>

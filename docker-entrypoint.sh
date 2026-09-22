@@ -5,6 +5,38 @@ set -eu
 fail() { echo "[INIT] $*" >&2; exit 1; }
 
 [ "$(id -u)" = 0 ] || fail "Start the container as root; the entrypoint drops to shipyard after initialization."
+
+# Secrets from the environment (.env) take precedence. Otherwise use the values
+# generated on first start. They live in their own root-only volume so that
+# application backups of the data volume never contain the key that decrypts them.
+SECRETS_FILE=${SHIPYARD_SECRETS_FILE:-/app/secrets/shipyard.env}
+stored_secret() {
+  [ ! -f "$SECRETS_FILE" ] || sed -n "s/^$1=//p" "$SECRETS_FILE" | tail -n 1
+}
+if [ -z "${JWT_SECRET:-}" ] || [ -z "${SHIPYARD_KEY_SECRET:-}" ]; then
+  mkdir -p "$(dirname "$SECRETS_FILE")"
+  chmod 700 "$(dirname "$SECRETS_FILE")"
+  stored_jwt=$(stored_secret JWT_SECRET)
+  stored_key=$(stored_secret SHIPYARD_KEY_SECRET)
+  if [ -z "${SHIPYARD_KEY_SECRET:-}" ] && [ -z "$stored_key" ]; then
+    # A new key cannot decrypt existing credentials. Never replace a lost one silently.
+    [ ! -e "${DB_PATH:-/app/server/data/shipyard.db}" ] ||
+      fail "Existing data found, but SHIPYARD_KEY_SECRET is missing. Restore the original key in .env or $SECRETS_FILE."
+    stored_key=$(openssl rand -hex 32)
+    echo "[INIT] Generated SHIPYARD_KEY_SECRET in $SECRETS_FILE. Back it up separately from your data."
+  fi
+  if [ -z "${JWT_SECRET:-}" ] && [ -z "$stored_jwt" ]; then
+    stored_jwt=$(openssl rand -hex 32)
+    echo "[INIT] Generated JWT_SECRET in $SECRETS_FILE."
+  fi
+  secrets=$(printf 'JWT_SECRET=%s\nSHIPYARD_KEY_SECRET=%s' "$stored_jwt" "$stored_key")
+  if [ ! -f "$SECRETS_FILE" ] || [ "$(cat "$SECRETS_FILE")" != "$secrets" ]; then
+    (umask 077 && printf '%s\n' "$secrets" > "$SECRETS_FILE.tmp" && mv "$SECRETS_FILE.tmp" "$SECRETS_FILE")
+  fi
+  : "${JWT_SECRET:=$stored_jwt}" "${SHIPYARD_KEY_SECRET:=$stored_key}"
+  export JWT_SECRET SHIPYARD_KEY_SECRET
+fi
+
 [ -n "${JWT_SECRET:-}" ] || fail "JWT_SECRET must be set."
 [ -n "${SHIPYARD_KEY_SECRET:-}" ] || fail "SHIPYARD_KEY_SECRET must be set."
 [ "$JWT_SECRET" != "$SHIPYARD_KEY_SECRET" ] || fail "JWT_SECRET and SHIPYARD_KEY_SECRET must be different."

@@ -116,22 +116,21 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
           <td className="px-3 py-2">
             <StatusBadge tone={stateTone}>{c.status || c.state || "Status not reported"}</StatusBadge>
           </td>
-          <td className="px-3 py-2 whitespace-nowrap font-mono text-xs tabular-nums">
-            {c.cpu_percent == null ? <span title="Docker did not return a CPU sample in the latest collection.">No sample</span> : `${c.cpu_percent.toFixed(2)} %`}
+          <td className="px-3 py-2 whitespace-nowrap text-xs tabular-nums">
+            {c.cpu_percent == null ? <span className="text-muted-foreground" title="Docker did not return a CPU sample in the latest collection.">—</span> : `${c.cpu_percent.toFixed(2)} %`}
           </td>
-          <td className="px-3 py-2 text-xs">
-            <span className="font-mono">{c.memory_usage || <span title="Docker did not return a memory sample in the latest collection.">No sample</span>}</span>
+          <td className="px-3 py-2 text-xs tabular-nums">
+            {c.memory_usage ? <span>{c.memory_usage}</span> : <span className="text-muted-foreground" title="Docker did not return a memory sample in the latest collection.">—</span>}
             {c.memory_percent != null && <span className="ml-1 text-muted-foreground">({c.memory_percent.toFixed(1)} %)</span>}
           </td>
-          <td className="min-w-[16rem] max-w-[28rem] px-3 py-2">
+          <td className="min-w-[10rem] max-w-[20rem] px-3 py-2">
             {upd === "update_available" ? (
               <StatusBadge tone="warning">
                 {t("det.imageUpdateAvail")}
               </StatusBadge>
             ) : (upd === "up_to_date" || upd === "updated") && !catalogFreshness.fresh ? (
-              <span className="text-xs text-muted-foreground">
-                {upd === "up_to_date" ? "Previously up to date" : "Previously updated"}
-                <span className="block text-[11px]">The check is stale or its collection time is unavailable. {hasCap(profile, "canPullDocker") ? "Refresh image checks to verify the current state." : "Ask an authorized operator to refresh image checks."}</span>
+              <span className="text-xs text-muted-foreground" title={`The last image check is outdated. ${hasCap(profile, "canPullDocker") ? "Check for updates to verify the current state." : "Ask an authorized operator to refresh image checks."}`}>
+                {upd === "up_to_date" ? "Up to date" : "Updated"} · check outdated
               </span>
             ) : upd === "up_to_date" ? (
               <span className="text-xs text-muted-foreground">
@@ -188,12 +187,12 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
         {/* ════ DOCKER ════ */}
         {hasCap(profile, "canViewDocker") && !!server.docker_enabled && (
           <TabsContent value="docker" className="space-y-4">
-            {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Metrics available: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length}/{containers.length} containers</summary><p className="mt-2 text-muted-foreground">Missing metrics are unknown, not zero. Stopped containers may have no samples. Refresh to check again.</p></details>}
-            {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Image comparison limitations</summary><p className="mt-2 text-muted-foreground">Local images without a registry digest cannot be compared. For unknown results, check registry access and the image tag, then refresh.</p></details>}
-            {hasCap(profile, "canViewUpdates") && <div className="rounded-md border p-3 text-sm text-muted-foreground" role="status">
-              <p>Image checks: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "Not checked yet"}</p>
-              <p>{catalogFreshness.fresh ? "Current" : "Stale or missing — refresh image checks"}</p>
-            </div>}
+            {/* One status line instead of separate explanation boxes; details live in tooltips. */}
+            <p className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" role="status">
+              {hasCap(profile, "canViewUpdates") && <span>Image check: {catalogFreshness.hasCollectionTime ? <Timestamp value={imageCatalog?.updated_at} /> : "never"}{!catalogFreshness.fresh && <span className="text-warning"> · outdated</span>}</span>}
+              {containers.some(c => c.cpu_percent == null || !c.memory_usage) && <span title="Missing metrics are unknown, not zero. Stopped containers may have no samples.">Metrics: {containers.filter(c => c.cpu_percent != null && !!c.memory_usage).length} of {containers.length} containers</span>}
+              {Object.values(imageUpdates).some(status => ['not_checkable', 'unknown'].includes(status)) && <span title="Local images without a registry digest cannot be compared. For unknown results, check registry access and the image tag, then refresh.">Some images cannot be compared</span>}
+            </p>
             <Card>
               <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
                 <CardTitle className="text-sm flex items-center gap-2">

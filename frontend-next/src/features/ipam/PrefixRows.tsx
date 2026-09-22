@@ -7,18 +7,26 @@ import {
 } from "lucide-react";
 import { statusLabel } from './prefix-model';
 
+/** A bridge named after its VLAN (vlan10 for VLAN 10) repeats information. */
+export function distinctBridge(prefix: Prefix) {
+  const bridge = prefix.bridge || '';
+  return bridge && !(prefix.vlan_id && bridge.toLowerCase() === `vlan${prefix.vlan_id}`) ? bridge : '';
+}
+
 export function PrefixRow({
   prefix,
   depth,
   checked,
   onToggle,
   canSelect,
+  showDescription = true,
 }: {
   prefix: Prefix;
   depth: number;
   checked: boolean;
   onToggle: () => void;
   canSelect: boolean;
+  showDescription?: boolean;
 }) {
   return (
     <tr data-selected={checked || undefined}>
@@ -68,10 +76,10 @@ export function PrefixRow({
         </div>
       </td>
       <td className="px-3">
-        <span>{prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : "—"}</span>
-        <span className="ml-1.5 font-mono text-xs text-muted-foreground">
-          {prefix.bridge || "—"}
-        </span>
+        <span>{prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : distinctBridge(prefix) ? "" : "—"}</span>
+        {distinctBridge(prefix) && <span className="ml-1.5 font-mono text-xs text-muted-foreground">
+          {distinctBridge(prefix)}
+        </span>}
         {prefix.dhcp_start && prefix.dhcp_end && (
           <div className="mt-1 flex items-center gap-1.5 text-xs">
             <Badge variant="outline">{tr("dhcp")}</Badge>
@@ -81,11 +89,11 @@ export function PrefixRow({
           </div>
         )}
       </td>
-      <td className="max-w-[250px] px-3">
+      {showDescription && <td className="max-w-[250px] px-3">
         <span className="block truncate text-muted-foreground">
           {prefix.description || "—"}
         </span>
-      </td>
+      </td>}
       <td className="px-3">
         <Link
           to="/networks/$id"
@@ -115,7 +123,7 @@ export function PrefixMobileCard({
 }) {
   const networkLabel = [
     prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : null,
-    prefix.bridge || null,
+    distinctBridge(prefix) || null,
   ].filter(Boolean).join(" · ") || "—";
 
   return (

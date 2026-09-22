@@ -385,7 +385,6 @@ router.get('/settings', adminOnly, (req, res) => {
       hasSmtpPassword:      Boolean(raw.smtp_pass),
       smtpFrom:             raw.smtp_from       || '',
       smtpTo:               raw.smtp_to         || '',
-      notifSuppressMaintenance: raw.notify_suppress_maintenance === '1',
       notifDedupeMinutes: Number(raw.notify_dedupe_minutes || 0),
       notifPlaybookFailed:  raw.notify_playbook_failed  !== '0',
       notifUpdateFailed:    raw.notify_update_failed    !== '0',
@@ -403,8 +402,6 @@ router.put('/settings', adminOnly, (req, res) => {
             schedulerTimezone, agentEnabled, webhookUrl, webhookSecret,
             smtpHost, smtpPort, smtpSecurity, smtpUser, smtpPass, smtpFrom, smtpTo,
             notifPlaybookFailed, notifUpdateFailed, notifResourceAlerts } = req.body;
-    const suppressMaintenance = req.body.notifSuppressMaintenance;
-    if (suppressMaintenance !== undefined && typeof suppressMaintenance !== 'boolean') return res.status(400).json({error:'notifSuppressMaintenance must be a boolean.'});
     const dedupeMinutes = req.body.notifDedupeMinutes;
     if (dedupeMinutes !== undefined && (!Number.isInteger(dedupeMinutes) || dedupeMinutes < 0 || dedupeMinutes > 60)) return res.status(400).json({error:'notifDedupeMinutes must be an integer from 0 to 60.'});
     if (appName !== undefined && (typeof appName !== 'string' || appName.length > 100)) return res.status(400).json({error:'appName must be text up to 100 characters',field:'appName'});
@@ -477,9 +474,8 @@ router.put('/settings', adminOnly, (req, res) => {
       if (notifResourceAlerts !== undefined) {
         db.settings.set('notify_resource_alerts', notifResourceAlerts ? '1' : '0');
       }
-      if (suppressMaintenance !== undefined) db.settings.set('notify_suppress_maintenance', suppressMaintenance ? '1' : '0');
       if (dedupeMinutes !== undefined) db.settings.set('notify_dedupe_minutes', String(dedupeMinutes));
-      const fields = ['appName','appTagline','accentColor','showIcon','logoIcon','logoImage','theme','timeFormat','schedulerTimezone','agentEnabled','webhookUrl','webhookSecret','smtpHost','smtpPort','smtpSecurity','smtpUser','smtpPass','smtpFrom','smtpTo','notifPlaybookFailed','notifUpdateFailed','notifResourceAlerts','notifSuppressMaintenance','notifDedupeMinutes'].filter(key=>req.body[key]!==undefined);
+      const fields = ['appName','appTagline','accentColor','showIcon','logoIcon','logoImage','theme','timeFormat','schedulerTimezone','agentEnabled','webhookUrl','webhookSecret','smtpHost','smtpPort','smtpSecurity','smtpUser','smtpPass','smtpFrom','smtpTo','notifPlaybookFailed','notifUpdateFailed','notifResourceAlerts','notifDedupeMinutes'].filter(key=>req.body[key]!==undefined);
       db.auditLog.write('system.settings', `Updated settings: ${fields.join(', ')}`, req.ip, true, req.user?.username);
     })();
     if (schedulerTimezone !== undefined) scheduler.reloadAllSchedules();

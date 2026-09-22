@@ -15,10 +15,6 @@ test('spreadsheet formulas are inert even after whitespace while quotes and mult
  assert.equal(csvCell(null),'""');
 });
 
-test('maintenance changes include historical resources in exported change columns',()=>{
- const detail=JSON.stringify({kind:'maintenance-change',version:1,resource:{id:'window-1',name:'Platform maintenance'},changes:[{label:'Resources',before:'Entire environment',after:'Database host (ID: host-1)'}]});
- assert.ok(auditCsv([{detail}]).includes('"window-1";"Platform maintenance";"Resources: Entire environment → Database host (ID: host-1)"'));
-});
 test('SSH lifecycle changes export historical fingerprints',()=>{
  const rows=[{action:'ssh.import',detail:JSON.stringify({kind:'ssh-key-change',version:1,resource:{id:'key-id',name:'Central key'},changes:[{label:'Fingerprint',before:'SHA256:old',after:'SHA256:new'}]})},{action:'ssh.export'}];
  assert.ok(auditCsv(rows).includes('Fingerprint: SHA256:old → SHA256:new'));

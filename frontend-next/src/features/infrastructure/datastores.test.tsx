@@ -47,7 +47,7 @@ it('explains failed collection separately from an empty successful inventory',()
  expect(render('available')).toContain('No active stores reported');
  expect(render('unavailable')).toContain('Storage inventory is incomplete');
  expect(render('unavailable')).toContain('API storage permissions');
- expect(render('unavailable')).toContain('Europe/Zurich');
+ expect(render('unavailable')).toMatch(/Last attempt \d+ Sept? 2026, \d\d:\d\d/);
  expect(render('unavailable')).not.toContain('No active stores reported');
 });
 

@@ -55,7 +55,6 @@ it('distinguishes Proxmox request acceptance from completion and missing results
  }
  expect(guestAuditPresentation({action:'infrastructure.vm_power',detail:'action=stop vm=example',success:true}).label).toBe('Forced guest stop requested');
  expect(guestAuditPresentation({action:'infrastructure.vm_import',success:true}).outcome).toBe('Recorded');
- expect(auditActionLabel('maintenance_window.cancel')).toBe('Maintenance cancelled');
 });
 
 

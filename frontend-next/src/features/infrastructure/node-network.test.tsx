@@ -8,7 +8,7 @@ it('distinguishes an empty network inventory from one that could not be read',()
  const failed=render('unavailable');
  expect(failed).toContain('Bridge inventory could not be verified');
  expect(failed).toContain('API network permissions');
- expect(failed).toContain('Europe/Zurich');
+ expect(failed).toMatch(/Last attempt \d+ Sept? 2026, \d\d:\d\d/);
  expect(failed).not.toContain('No configured Proxmox bridges reported');
 });
 

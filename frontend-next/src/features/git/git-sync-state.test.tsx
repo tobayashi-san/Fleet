@@ -6,7 +6,7 @@ it('distinguishes cached branch divergence from the current remote state', () =>
   expect(html).toContain('Branches have diverged');
   expect(html).toContain('2 local-only commits');
   expect(html).toContain('3 remote-only commits');
-  expect(html).toContain('Europe/Zurich');
+  expect(html).toMatch(/Sept? 2026, \d\d:\d\d/);
   expect(html).toContain('does not verify the current remote state');
 });
 it('does not invent zero counts when a comparison is unavailable and identifies conflict files', () => {

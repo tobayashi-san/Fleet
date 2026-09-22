@@ -739,8 +739,6 @@ const OTHER_CAPS: CapDef[] = [
   { key: 'canApplyDeployments', label: 'Apply deployment plans' },
   { key: 'canDestroyDeployments', label: 'Destroy deployment resources' },
   { key: 'canManageDeploymentPlatforms', label: 'Manage deployment platforms and secrets' },
-  { key: 'canViewMaintenance', label: 'View maintenance windows' },
-  { key: 'canEditMaintenance', label: 'Plan / edit maintenance windows' },
   { key: 'canViewAudit', label: 'View audit log' },
 ];
 
@@ -782,7 +780,7 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'Read-only access for inventory, updates, playbooks and schedules.',
     serversMode: 'all',
     pbMode: 'all',
-    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canViewMaintenance'],
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canViewCustomUpdates', 'canViewPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes'],
   },
   {
     id: 'operator',
@@ -790,7 +788,7 @@ const ROLE_PRESETS: RolePreset[] = [
     description: 'Can run selected playbooks and routine update actions.',
     serversMode: 'all',
     pbMode: 'all',
-    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes', 'canViewMaintenance'],
+    caps: ['canViewServers', 'canViewDocker', 'canViewUpdates', 'canRunUpdates', 'canViewPlaybooks', 'canRunPlaybooks', 'canViewSchedules', 'canViewVars', 'canViewNotes', 'canEditNotes'],
   },
   {
     id: 'maintainer',

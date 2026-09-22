@@ -64,20 +64,10 @@ test('audit export does not deliver an unrecorded download when its audit write 
   assert.equal(result.status,500);assert.equal(result.headers['content-disposition'],undefined);assert.ok(result.body.error);
  } finally {db.db.exec('DROP TRIGGER fail_export_audit');}
 });
-test('maintenance audit scopes both previous and next resources without trusting text',async()=>{
- const {maintenanceAuditDetail}=require('../utils/maintenance-audit');
- const base={id:'historical-window',name:'scope-maintenance-probe',environment_id:'default',resource_ids:JSON.stringify([visible.id]),starts_at:'2035-01-01T10:00:00Z',ends_at:'2035-01-01T11:00:00Z',timezone:'UTC'};
- const own=maintenanceAuditDetail(null,base);
- assert.deepEqual(JSON.parse(own).scope,{environmentId:'default',allHosts:false,hostIds:[visible.id]});
- db.auditLog.write('maintenance_window.create',own,'',true,'allowed-actor');
- const hiddenBefore={...base,resource_ids:JSON.stringify([hidden.id])};
- for(const detail of [maintenanceAuditDetail(hiddenBefore,base),maintenanceAuditDetail({...base,resource_ids:'[]'},base),maintenanceAuditDetail(null,{...base,environment_id:'other'}),JSON.stringify({kind:'maintenance-change',version:1,changes:[],resource:{id:'x',name:'scope-maintenance-probe server=search-visible '}})]) db.auditLog.write('maintenance_window.update',detail,'',true,'denied-actor');
- for(const action of ['users.update','roles.update'])db.auditLog.write(action,JSON.stringify({kind:'user-change',version:1,resource:{id:'x',name:'scope-maintenance-probe server=search-visible '}}),'',true,'denied-actor');
- const list=await request(app).get('/system/audit').query({q:'scope-maintenance-probe'});assert.equal(list.status,200);assert.equal(list.body.length,1);assert.equal(list.body[0].user,'allowed-actor');
- const meta=await request(app).get('/system/audit/meta').query({q:'scope-maintenance-probe'});assert.equal(meta.body.count,1);assert.ok(meta.body.users.includes('allowed-actor'));assert.ok(!meta.body.users.includes('denied-actor'));
- const exported=await request(app).get('/system/audit/export').query({q:'scope-maintenance-probe'});assert.equal(exported.status,200);assert.ok(exported.text.includes('allowed-actor'));assert.ok(!exported.text.includes('denied-actor'));
- db.db.prepare('UPDATE servers SET name=? WHERE id=?').run('renamed-visible',visible.id);
- const renamed=await request(app).get('/system/audit').query({q:'scope-maintenance-probe'});assert.equal(renamed.body.length,1);
+test('retired maintenance-window records are not shown to host-scoped users',async()=>{
+ const detail=JSON.stringify({kind:'maintenance-change',version:1,changes:[],resource:{id:'x',name:'scope-maintenance-probe server=search-visible '},scope:{environmentId:'default',allHosts:false,hostIds:[visible.id]}});
+ db.auditLog.write('maintenance_window.create',detail,'',true,'denied-actor');
+ const list=await request(app).get('/system/audit').query({q:'scope-maintenance-probe'});assert.equal(list.status,200);assert.equal(list.body.length,0);
 });
 
 test('default change focus includes SSH import and export',()=>{

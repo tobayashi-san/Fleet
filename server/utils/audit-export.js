@@ -8,7 +8,7 @@ function csvCell(value) {
 function changeColumns(detail) {
   try {
     const value = JSON.parse(detail);
-    if (!['role-change','user-change','maintenance-change','ssh-key-change','host-change'].includes(value?.kind) || value.version !== 1 || typeof value.resource?.id !== 'string' || typeof value.resource?.name !== 'string' || !Array.isArray(value.changes) || !value.changes.every(c => c && typeof c.label === 'string' && typeof c.before === 'string' && typeof c.after === 'string')) return ['', '', ''];
+    if (!['role-change','user-change','ssh-key-change','host-change'].includes(value?.kind) || value.version !== 1 || typeof value.resource?.id !== 'string' || typeof value.resource?.name !== 'string' || !Array.isArray(value.changes) || !value.changes.every(c => c && typeof c.label === 'string' && typeof c.before === 'string' && typeof c.after === 'string')) return ['', '', ''];
     return [value.resource.id,value.resource.name,value.changes.map(c => `${c.label}: ${c.before} → ${c.after}`).join('\n')];
   } catch { return ['', '', '']; }
 }

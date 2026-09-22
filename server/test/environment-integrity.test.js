@@ -124,8 +124,6 @@ test('deleting an environment consolidates every scoped resource without breakin
   db.db.prepare("INSERT INTO variable_change_events (environment_id,variable_id,variable_key,action,fields) VALUES (?, 'historical-variable', 'PRESERVED_VAR', 'Updated', '[]')").run(environmentId);
   db.db.prepare('INSERT INTO ssh_key_assignments (id, environment_id, target_type, target_id) VALUES (?, ?, ?, ?)')
     .run(db.uuidv4(), environmentId, 'server', host.id);
-  db.db.prepare('INSERT INTO maintenance_windows (id, environment_id, name, starts_at, ends_at) VALUES (?, ?, ?, ?, ?)')
-    .run(db.uuidv4(), environmentId, 'Preserved window', '2030-01-01T00:00:00.000Z', '2030-01-01T01:00:00.000Z');
 
   const auditId = db.auditLog.write('infrastructure.vm_power', 'action=start', null, true, 'fixture', environmentId);
   db.db.prepare('INSERT INTO proxmox_guest_audit VALUES (?, ?, ?, ?, ?)').run(auditId, connectionId, environmentId, 'pve001', 101);
@@ -155,7 +153,7 @@ test('deleting an environment consolidates every scoped resource without breakin
   for (const table of [
     'ssh_key_assignments', 'schedules', 'schedule_history', 'ansible_vars', 'variable_change_events', 'ipam_subnets',
     'ipam_sync_sources', 'ipam_sync_conflicts', 'ipam_proxmox_sync_conflicts',
-    'maintenance_windows', 'tofu_workspaces', 'tofu_proxmox_connections',
+    'tofu_workspaces', 'tofu_proxmox_connections',
     'proxmox_guest_audit', 'proxmox_object_audit', 'proxmox_guest_tasks',
   ]) {
     assert.equal(db.db.prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE environment_id = ?`).get(environmentId).count, 0, table);

@@ -27,7 +27,6 @@ const ansibleVarsRouter = require('./routes/ansible-vars');
 const adhocRouter = require('./routes/adhoc');
 const gitPlaybooksRouter = require('./routes/git-playbooks');
 const ipamRouter = require('./routes/ipam');
-const maintenanceWindowsRouter = require('./routes/maintenance-windows');
 const operationsRouter = require('./routes/operations');
 const alertsRouter = require('./routes/alerts');
 const fileTransfersRouter = require('./routes/file-transfers');
@@ -146,7 +145,6 @@ function createApp({ isHttps = false } = {}) {
   app.use('/api/dashboard', dashboardRouter);
   app.use('/api/environments', environmentsRouter);
   app.use('/api/ipam', ipamRouter);
-  app.use('/api/maintenance-windows', maintenanceWindowsRouter);
   app.use('/api/operations', operationsRouter);
   app.use('/api/alerts', alertsRouter);
   app.use('/api/opentofu', createOpenTofuRouter({ broadcast: emit }));

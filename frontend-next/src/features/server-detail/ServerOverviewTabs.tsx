@@ -1,3 +1,4 @@
+import { Timestamp } from "@/components/ui/timestamp";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -21,7 +22,6 @@ import { imageCatalogFreshness } from './image-catalog-freshness';
 import {
   CapacitySummary,
   formatBytes,
-  formatDate,
   formatUptime,
   HostStorageInventory,
   RecentHostTasks,
@@ -52,7 +52,6 @@ type ServerOverviewTabsController = Pick<ServerDetailController,
   | "infoError"
   | "infoFailed"
   | "ipamReservations"
-  | "latencyCheckedAt"
   | "latencyMs"
   | "managedDeployments"
   | "profile"
@@ -87,7 +86,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
     imageUpdates,
     imageCatalog,
     latencyMs,
-    latencyCheckedAt,
     histItems,
     ramPct,
     diskPct,
@@ -164,27 +162,8 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                     tone={updateSummary.tone}
                   />
                   <SummaryField
-                    label="Shipyard API round-trip"
-                    value={
-                      server.status === "offline"
-                        ? "Not measurable"
-                        : latencyMs !== null
-                          ? `${latencyMs} ms${latencyCheckedAt ? ` · ${formatDate(latencyCheckedAt, hour12)}` : ""}`
-                          : "—"
-                    }
-                    mono
-                    tone={
-                      server.status === "online" && latencyMs !== null
-                        ? latencyMs >= 250
-                          ? "warning"
-                          : "success"
-                        : undefined
-                    }
-                  />
-                  <SummaryField
                     label="Management"
                     value={managementSummary}
-                    tone="info"
                   />
                   <SummaryField label={t("det.os")} value={info?.os || "—"} />
                   <SummaryField label={t("det.cpu")} value={info?.cpu || "—"} />
@@ -222,7 +201,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                 </div>
                 <div className="mt-3 space-y-3">
                   <p className="text-[11px] text-muted-foreground">
-                    Measured {formatDate(info?.updated_at, hour12)} · SSH{info?._cached ? " · cached while refresh runs" : ""}
+                    Measured <Timestamp value={info?.updated_at} hour12={hour12} /> via SSH{server.status !== "offline" && latencyMs !== null ? <> · <span className={latencyMs >= 250 ? "text-warning" : undefined}>{latencyMs} ms</span></> : null}{info?._cached ? " · refreshing" : ""}
                   </p>
                   <CapacitySummary
                     label={t("det.cpu")}

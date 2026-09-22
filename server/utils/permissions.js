@@ -55,9 +55,6 @@ const USER_DEFAULTS = {
   // Notes
   canViewNotes:  true,
   canEditNotes:  true,
-  // Operations
-  canViewMaintenance: true,
-  canEditMaintenance: true,
   // Deployments / OpenTofu
   // `canManageDeployments` is retained as a migration-only umbrella for
   // roles created before the deployment permissions were split. Runtime
@@ -167,7 +164,7 @@ function canAccessServerGroup(permissions, group) {
 }
 
 /**
- * Environment-scoped resources (IPAM, maintenance, deployments) must not
+ * Environment-scoped resources (IPAM, deployments) must not
  * become a side door around a restricted operator's server/folder scope.
  * An administrator and a role with the complete server inventory may access
  * every environment. A restricted role may only access environments which

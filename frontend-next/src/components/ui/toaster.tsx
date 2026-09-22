@@ -29,7 +29,8 @@ export function Toaster() {
   return (
     <div
       aria-live="polite"
-      className="fixed bottom-4 right-4 z-[100] w-[min(360px,calc(100%-2rem))]"
+      // Top centre, below the header: dialog actions sit bottom-right and must stay clickable.
+      className="fixed left-1/2 top-[calc(env(safe-area-inset-top,0px)+3.25rem)] z-[100] w-[min(360px,calc(100%-2rem))] -translate-x-1/2"
     >
       <div className="space-y-2">
         {visible.map((t) => {

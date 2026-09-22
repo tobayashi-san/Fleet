@@ -1,3 +1,4 @@
+import { EmptyState } from '@/components/ui/empty-state';
 import { Timestamp } from "@/components/ui/timestamp";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,7 +19,6 @@ import {
   RefreshCw,
   Trash2
 } from "lucide-react";
-import { OsUpdateImpact } from './components/OsUpdateImpact';
 import { OsUpdatePreview } from './components/OsUpdatePreview';
 import { PackageVersionChange } from './components/PackageVersionChange';
 import { imageCatalogFreshness as catalogFreshness } from './image-catalog-freshness';
@@ -82,27 +82,31 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
           <TabsContent value="updates" className="space-y-4">
             {hasCap(profile, "canViewUpdates") && (
               <Card>
-                {rawUpdates && !Array.isArray(rawUpdates) && <div className="border-b px-4 py-3 text-xs text-muted-foreground">
-                  <p>Last check: <Timestamp value={rawUpdates.updated_at} />{rawUpdates.stale && <span className="text-warning"> · outdated — check again before updating</span>}</p>
-                  <details className="mt-1"><summary className="cursor-pointer">Check details</summary><p className="mt-1">{rawUpdates.source} · Refresh interval: {Math.round(rawUpdates.stale_after_seconds / 60)} min{rawUpdates.cached ? ' · Cached result' : ''}. OS packages and container images are checked separately.</p></details>
-                </div>}
-                <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 px-4 py-3">
-                  <CardTitle className="text-sm">
-                    {t("det.tabUpdates")}
-                  </CardTitle>
-                  <Button
-                    variant="secondary"
-                    size="sm"
-                    onClick={() => checkSystemUpdatesMut.mutate()}
-                    disabled={checkSystemUpdatesMut.isPending}
-                  >
-                    <RefreshCw
-                      className={`mr-1 h-3.5 w-3.5 ${checkSystemUpdatesMut.isPending ? "animate-spin" : ""}`}
-                    />
-                    {checkSystemUpdatesMut.isPending
-                      ? t("det.checkingSystemUpdates")
-                      : t("det.checkUpdates")}
-                  </Button>
+                <CardHeader className="flex flex-row flex-wrap items-start justify-between gap-2 px-4 py-3">
+                  <div className="min-w-0">
+                    <CardTitle className="text-sm">System packages</CardTitle>
+                    {/* One status line; source and interval stay available on hover. */}
+                    <p className="mt-0.5 text-xs text-muted-foreground" title={rawUpdates && !Array.isArray(rawUpdates) ? `${rawUpdates.source} · refresh interval ${Math.round(rawUpdates.stale_after_seconds / 60)} min${rawUpdates.cached ? ' · cached result' : ''}` : undefined}>
+                      {rawUpdates && !Array.isArray(rawUpdates) ? <>Last check <Timestamp value={rawUpdates.updated_at} />{rawUpdates.stale && <span className="text-warning"> · outdated</span>}</> : "Not checked yet"}
+                      {Boolean(info?.reboot_required) && <span className="text-warning"> · reboot required</span>}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => checkSystemUpdatesMut.mutate()}
+                      disabled={checkSystemUpdatesMut.isPending}
+                    >
+                      <RefreshCw className={checkSystemUpdatesMut.isPending ? "animate-spin" : undefined} />
+                      {checkSystemUpdatesMut.isPending ? t("det.checkingSystemUpdates") : t("det.checkUpdates")}
+                    </Button>
+                    {hasCap(profile, "canRunUpdates") && updatesList.length > 0 && (
+                      <Button size="sm" onClick={() => setConfirmRunUpdate(true)} disabled={runUpdateMut.isPending}>
+                        <ArrowUp />Install updates ({updatesList.length})
+                      </Button>
+                    )}
+                  </div>
                 </CardHeader>
                 <CardContent className="p-0">
                   {checkSystemUpdatesMut.isPending && (
@@ -122,8 +126,6 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                       </div>
                     </div>
                   )}
-                  {rawUpdates != null && <div className="border-b px-4 py-3"><OsUpdateImpact available={updatesList.length} deferred={phasedList.length} rebootRequired={info?.reboot_required} /></div>}
-                  <OsUpdatePreview serverId={id} />
                   {rawUpdates == null ? (
                     <p className="px-4 py-3 text-sm text-muted-foreground">OS update catalog unavailable. Refresh to retry.</p>
                   ) : updatesList.length === 0 && phasedList.length > 0 ? (
@@ -139,8 +141,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                     </div>
                   ) : (
                     <>
-                      <div className="flex items-center gap-2 px-4 py-2 bg-amber-500/10 text-amber-600 text-xs border-b">
-                        <span>⚠</span>{" "}
+                      <div className="border-y bg-[hsl(var(--warning)/0.08)] px-4 py-2 text-xs font-medium text-[hsl(var(--warning))]">
                         {t("det.updatesAvail", { count: updatesList.length })}
                       </div>
                       <div className="divide-y max-h-64 overflow-auto">
@@ -179,19 +180,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                       </div>
                     </>
                   )}
-                  {hasCap(profile, "canRunUpdates") &&
-                    updatesList.length > 0 && (
-                      <div className="p-3 border-t">
-                        <Button
-                          size="sm"
-                          onClick={() => setConfirmRunUpdate(true)}
-                          disabled={runUpdateMut.isPending}
-                        >
-                          <ArrowUp className="h-3.5 w-3.5 mr-1" />{" "}
-                          {t("det.runUpdate")}
-                        </Button>
-                      </div>
-                    )}
+                  <OsUpdatePreview serverId={id} />
                 </CardContent>
               </Card>
             )}
@@ -223,9 +212,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                   ) : customTasksLoading ? (
                     <p role="status" className="p-4 text-sm text-muted-foreground">Loading custom update checks…</p>
                   ) : customTaskList.length === 0 ? (
-                    <div className="flex min-h-12 items-center px-4 py-3 text-sm text-muted-foreground">
-                      {t("det.noCustomTasks")}
-                    </div>
+                    <EmptyState compact title={t("det.noCustomTasks")} />
                   ) : (
                     <div className="table-scroll">
                       <table

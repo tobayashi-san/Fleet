@@ -863,7 +863,9 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
   // Serve cache immediately, refresh in background
   if (cached && !force) {
     const isOnline = server.status === 'online';
-    const payload = { ...cached, _cached: true, _source: 'ssh' };
+    // `_refreshing` is true only when this request actually starts a background collection.
+    const refreshing = collectionQueue.due('info', server, {active:true});
+    const payload = { ...cached, _cached: true, _refreshing: refreshing, _source: 'ssh' };
     if (!isOnline) {
       payload.ram_used_mb = null;
       payload.disk_used_gb = null;
@@ -872,7 +874,7 @@ router.get('/:id/info', guardServerAccess, guard('canViewServers'), async (req, 
       payload.uptime_seconds = null;
     }
     res.json(payload);
-    if (!collectionQueue.due('info', server, {active:true})) return;
+    if (!refreshing) return;
     collectionQueue.run('info', server, () => systemInfo.getSystemInfo(server), {priority:1,baseMs:require('../services/scheduler').getPollingConfig().info.intervalMs})
       .then(info => {
         db.serverInfo.upsert(server.id, info);

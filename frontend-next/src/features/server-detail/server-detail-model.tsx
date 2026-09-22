@@ -1,3 +1,4 @@
+import { EmptyState } from '@/components/ui/empty-state';
 import { Timestamp } from "@/components/ui/timestamp";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { metricTextClass } from "@/components/ui/metric-bar";
@@ -61,6 +62,7 @@ export interface ServerInfo {
   load_avg?: string;
   updates_count?: number;
   _cached?: boolean;
+  _refreshing?: boolean;
   _source?: "agent" | "ssh";
   updated_at?: string;
   storage_mount_metrics?: StorageMount[];
@@ -277,9 +279,7 @@ export function RecentHostTasks({
       </CardHeader>
       <CardContent className="p-0">
         {recent.length === 0 ? (
-          <div className="px-4 py-5 text-sm text-muted-foreground">
-            No tasks recorded for this host yet.
-          </div>
+          <EmptyState compact title="No tasks recorded for this host yet." />
         ) : (
           <div className="divide-y">
             {recent.map((item) => (

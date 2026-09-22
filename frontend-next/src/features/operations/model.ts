@@ -1,5 +1,4 @@
 import { type StatusTone } from "@/components/ui/status-badge";
-import { formatDateTime } from "@/lib/utils";
 
 
 export interface Workspace {
@@ -39,10 +38,6 @@ export interface OperationsResponse {
   total: number;
   total_pages: number;
   counts: { all: number; active: number; failed: number };
-}
-
-export function readableTime(value?: string) {
-  return formatDateTime(value);
 }
 
 export function operationSourceLabel(source: OperationRow["source"]) {

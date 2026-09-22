@@ -195,7 +195,10 @@ function permittedRows(req) {
       return {
         id: `workflow-${row.id}`,
         source: 'Workflow',
-        name: row.schedule_name || row.playbook || 'Scheduled task',
+        // Ad-hoc runs are stored as "Manual run"/"Dry run"; the playbook says what actually ran.
+        name: !row.schedule_id && ['Manual run', 'Dry run'].includes(row.schedule_name) && row.playbook
+          ? `${row.playbook}${row.check_mode ? ' (dry run)' : ''}`
+          : row.schedule_name || row.playbook || 'Scheduled task',
         playbook: row.playbook,
         check_mode: Boolean(row.check_mode),
         schedule_deleted: Boolean(row.schedule_id && !row.existing_schedule_id),

@@ -196,7 +196,6 @@
     "snapshotCreateStarted": "Snapshot is being created in Proxmox.",
     "systemInfo": "System information",
     "testConn": "Test connection",
-    "runUpdate": "Run Update",
     "reboot": "Reboot",
     "cpu": "CPU",
     "ram": "RAM",

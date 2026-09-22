@@ -1,3 +1,4 @@
+import { EmptyState } from '@/components/ui/empty-state';
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import {
@@ -158,10 +159,6 @@ export function OperationsPage() {
   const safeOperationsPage = operationsQuery.data?.page || operationsPage;
   const explicitlySelectedOperation =
     operationRows.find((row) => row.id === selectedOperationId) || null;
-  const selectedOperation =
-    explicitlySelectedOperation ||
-    operationRows[0] ||
-    null;
   const activeSection = routeSearch.section || "tasks";
   useEffect(() => {
     if (initialFailureFilterApplied.current || routeSearch.scope || operationsQuery.isLoading) return;
@@ -210,7 +207,7 @@ export function OperationsPage() {
               </div>
             ) : (
               <>
-                <div className="flex items-center gap-1 border-b bg-muted/10 px-3 py-2">
+                <div className="flex flex-wrap items-center gap-1 border-b bg-muted/10 px-3 py-2">
                   <TaskScopeButton
                     active={taskScope === "all"}
                     onClick={() => setTaskScope("all")}
@@ -239,7 +236,7 @@ export function OperationsPage() {
                       onClick={() => acknowledgeAllOperations.mutate()}
                     >
                       <CheckCircle2 />
-                      {acknowledgeAllOperations.isPending ? "Acknowledging…" : "Acknowledge all failures"}
+                      {acknowledgeAllOperations.isPending ? "Acknowledging…" : <>Acknowledge all<span className="hidden sm:inline">&nbsp;failures</span></>}
                     </Button>
                   )}
                 </div>
@@ -280,20 +277,22 @@ export function OperationsPage() {
                 </div>
                 {operationRows.length ? (
                   <>
-                    <div className="grid xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]">
+                    {/* The table uses the full width; details open beside it only for a chosen task. */}
+                    <div className={explicitlySelectedOperation ? "grid xl:grid-cols-[minmax(0,1.6fr)_minmax(20rem,1fr)]" : undefined}>
                       <div className="min-w-0">
                         <OperationList
                           rows={operationRows}
-                          selectedId={selectedOperation?.id}
-                          onSelect={setSelectedOperationId}
+                          selectedId={explicitlySelectedOperation?.id}
+                          onSelect={id => setSelectedOperationId(current => current === id ? null : id)}
                         />
                       </div>
-                      <OperationDetail
+                      {explicitlySelectedOperation && <OperationDetail
                         className="hidden xl:block"
-                        row={selectedOperation}
+                        row={explicitlySelectedOperation}
                         acknowledging={acknowledgeOperation.isPending}
                         onAcknowledge={(id) => acknowledgeOperation.mutate(id)}
-                      />
+                        onClose={() => setSelectedOperationId(null)}
+                      />}
                     </div>
                     <Dialog
                       open={Boolean(showCompactOperationDialog && selectedOperationId && explicitlySelectedOperation)}
@@ -302,8 +301,8 @@ export function OperationsPage() {
                       <DialogContent className="p-0">
                         <DialogHeader className="border-b px-4 pb-3 pt-4 text-left">
                           <DialogTitle>Task details</DialogTitle>
-                          <DialogDescription>
-                            Review the selected activity without leaving the list.
+                          <DialogDescription className="sr-only">
+                            Details of the selected job.
                           </DialogDescription>
                         </DialogHeader>
                         <OperationDetail
@@ -324,9 +323,7 @@ export function OperationsPage() {
                     />
                   </>
                 ) : (
-                  <div className="p-6 text-center text-sm text-muted-foreground">
-                    There are no entries for this view.
-                  </div>
+                  <EmptyState compact title="There are no entries for this view." description="Change the scope or filters to see more jobs." />
                 )}
               </>
             )}

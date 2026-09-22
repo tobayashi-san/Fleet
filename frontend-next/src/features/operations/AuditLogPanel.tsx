@@ -211,7 +211,7 @@ export function AuditLogPanel() {
         </div>
       </div>
 
-      <details className="py-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Export and retention policy</summary><p className="mt-1">CSV includes all entries matching the applied filters and your access scope, up to 10,000 entries. Larger results require narrower filters; exports are never silently truncated. Host, role, user and SSH key changes include historical object names and before/after values alongside the original details. Spreadsheet formula-like values are exported as text. Cleanup removes entries older than 90 days when the server starts, so older entries can remain until the next startup.</p></details>
+      <details className="py-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Export and retention policy</summary><p className="mt-1">CSV of the filtered entries, up to 10,000. Entries older than 90 days are removed at server start.</p></details>
       {total > 10_000 && <p role="status" className="text-sm text-warning">{total} entries match. Narrow the filters to 10,000 or fewer before exporting.</p>}
       {exportErrorCurrent && exportMutation.isError && <p role="alert" className="text-sm text-destructive">{exportMutation.error.message}</p>}
       <form className="flex gap-2 py-3" onSubmit={event=>{event.preventDefault();resetAndSet({q:searchDraft.trim()});}}>

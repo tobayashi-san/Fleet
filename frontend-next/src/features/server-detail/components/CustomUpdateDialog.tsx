@@ -35,7 +35,7 @@ export function CustomUpdateDialog({ controller }: { controller: Pick<ServerDeta
           </DialogHeader>
           <form id="custom-update-task-form" className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1" onSubmit={event => { event.preventDefault(); if (!taskContextChanged) saveTaskMut.mutate(); }}>
           <fieldset disabled={saveTaskMut.isPending} className="space-y-3">
-            <p className="text-xs text-muted-foreground">{taskForm.type === 'trigger' ? 'An update is available when the check output exactly matches the trigger text after trimming surrounding whitespace. Comparison is case-sensitive.' : 'Commands should return one version string. Versions are compared as text after trimming whitespace and a leading v; different strings indicate an update, including older versions.'}</p>
+            <p className="text-xs text-muted-foreground">{taskForm.type === 'trigger' ? 'An update is available when the check output exactly matches the trigger text after trimming surrounding whitespace. Comparison is case-sensitive.' : 'The command should print one version string; any change from the current version counts as an update.'}</p>
             <p className="text-xs text-muted-foreground">An installed-version/output command is required. Script checks also need a desired-version command. Changing a check rule clears previous results; run a new check after saving.</p>
             <div className="space-y-1">
               <Label htmlFor="custom-task-name">{t("det.taskName")}</Label>

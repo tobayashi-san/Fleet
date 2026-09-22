@@ -32,8 +32,9 @@ module.exports = function updateHistory(req, res) {
       return {
         id: `workflow-${row.id}`,
         kind: 'update',
-        name: row.schedule_id ? row.schedule_name : 'Bulk system update',
-        hosts: ids ? ids.map(id => visible.get(id)?.name).filter(Boolean) : [String(row.targets || 'all')],
+        name: row.schedule_name || 'System update',
+        // Older runs only stored their target expression; show it as a list of names.
+        hosts: ids ? ids.map(id => visible.get(id)?.name).filter(Boolean) : String(row.targets || 'all').split(',').map(name => name.trim()).filter(Boolean),
         status: row.status, started_at: row.started_at, completed_at: row.completed_at, triggered_by: row.triggered_by || (row.schedule_id ? 'Schedule' : null),
       };
     });

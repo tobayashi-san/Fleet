@@ -1,3 +1,4 @@
+import { EmptyState } from '@/components/ui/empty-state';
 import { CreateServerDialog } from '@/components/CreateServerDialog';
 import { VmId } from "@/components/VmId";
 import { Button } from '@/components/ui/button';
@@ -74,8 +75,8 @@ function sortValue(host: ServerRow, key: SortKey): string | number {
   return host.name.toLowerCase();
 }
 
-function GroupTags({ host, groupName }: { host: ServerRow; groupName?: string }) {
-  const tags = host.tags || [];
+function GroupTags({ host, groupName, hidden }: { host: ServerRow; groupName?: string; hidden: Set<string> }) {
+  const tags = (host.tags || []).filter(tag => !hidden.has(tag));
   if (!groupName && !tags.length) return <span className="text-muted-foreground">—</span>;
   return <div className="flex flex-wrap items-center gap-1">
     {groupName && <span className="font-medium">{groupName}</span>}
@@ -98,9 +99,12 @@ export function HostsPage() {
   const [sort, setSort] = useState<{ key: SortKey; dir: 'asc' | 'desc' }>({ key: 'name', dir: 'asc' });
   const hosts = useQuery({ queryKey: ['servers', environmentId], queryFn: () => api.getServers(environmentId) as unknown as Promise<ServerRow[]>, refetchInterval: 30_000 });
   const groups = useQuery({ queryKey: ['server-groups', environmentId], queryFn: () => api.getServerGroups(environmentId) as unknown as Promise<ServerGroup[]> });
-  const rows = (hosts.data || []).filter(host => (!group || host.group_id === group) && [host.name, host.ip_address, host.hostname].some(value => String(value || '').toLowerCase().includes(search.trim().toLowerCase())));
+  const rows = (hosts.data || []).filter(host => (!group || host.group_id === group) && [host.name, host.ip_address, host.hostname, host.resources?.os, ...(host.tags || [])].some(value => String(value || '').toLowerCase().includes(search.trim().toLowerCase())));
   // A group/tag column that is empty on every row only adds noise.
-  const showGroups = (hosts.data || []).some(host => host.group_id || host.tags?.length);
+  // Tags carried by every host (for example an import source) tell hosts apart no better than no tag.
+  const allHosts = hosts.data || [];
+  const commonTags = new Set(allHosts.length > 1 ? (allHosts[0].tags || []).filter(tag => allHosts.every(host => host.tags?.includes(tag))) : []);
+  const showGroups = allHosts.some(host => host.group_id || host.tags?.some(tag => !commonTags.has(tag)));
   const columns: { label: string; key?: SortKey }[] = [
     { label: 'Name', key: 'name' }, { label: 'Address' }, { label: 'Connection', key: 'connection' }, { label: 'Resources', key: 'resources' },
     ...(showGroups ? [{ label: 'Group / Tags' }] : []), { label: 'OS', key: 'os' }, { label: 'Uptime', key: 'uptime' },
@@ -114,7 +118,7 @@ export function HostsPage() {
   return <div className="space-y-4">
     <PageHeader title="Hosts" actions={hasCap(profile, 'canEditServers') && <Button onClick={() => setAddOpen(true)}><Plus className="h-4 w-4" />Add host</Button>} />
     <div className="flex flex-wrap gap-2">
-      <Input className="max-w-sm" aria-label="Search hosts" placeholder="Search hosts" value={search} onChange={event => setSearch(event.target.value)} />
+      <Input className="max-w-sm" aria-label="Search hosts" placeholder="Search name, IP, tag or OS" value={search} onChange={event => setSearch(event.target.value)} />
       <select className="rounded-md border bg-background px-3 text-sm" aria-label="Filter by group" value={group} onChange={event => setGroup(event.target.value)}>
         <option value="">All groups</option>{(groups.data || []).map(item => <option key={item.id} value={item.id}>{item.name}</option>)}
       </select>
@@ -133,21 +137,21 @@ export function HostsPage() {
           </div>
           <Resources host={host} />
         </li>)}
-        {!rows.length && <li className="p-8 text-center text-sm text-muted-foreground">{search || group ? 'No hosts match these filters.' : 'Add a host to get started.'}</li>}
+        {!rows.length && <li><EmptyState compact title={search || group ? 'No hosts match these filters.' : 'Add a host to get started.'} /></li>}
       </ul>
       <div className="hidden overflow-x-auto rounded-md border md:block">
       <table className="w-full text-left text-sm"><thead className="border-b bg-muted/40"><tr>{columns.map(column => <th className="px-4 py-3 font-medium" key={column.label} aria-sort={column.key && sort.key === column.key ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-          {column.key ? <button type="button" className="inline-flex items-center gap-1 hover:text-foreground" onClick={() => setSort(current => ({ key: column.key!, dir: current.key === column.key && current.dir === 'asc' ? 'desc' : column.key === 'resources' || column.key === 'uptime' ? (current.key === column.key ? 'asc' : 'desc') : 'asc' }))}>{column.label}{sort.key === column.key && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}</button> : column.label}
+          {column.key ? <button type="button" className="inline-flex items-center gap-1 [font-size:inherit] [font-weight:inherit] [letter-spacing:inherit] [text-transform:inherit] hover:text-foreground" onClick={() => setSort(current => ({ key: column.key!, dir: current.key === column.key && current.dir === 'asc' ? 'desc' : column.key === 'resources' || column.key === 'uptime' ? (current.key === column.key ? 'asc' : 'desc') : 'asc' }))}>{column.label}{sort.key === column.key && (sort.dir === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)}</button> : column.label}
         </th>)}</tr></thead>
         <tbody>{sorted.map(host => <tr key={host.id} className="border-b last:border-0 hover:bg-muted/30">
-          <td className="px-4 py-3"><div className="flex flex-wrap items-center gap-2"><Link className="font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><VmId value={host.proxmox_vm_id} /><UpdateHint host={host} /></div>{host.deployment && <Link className="block text-xs text-muted-foreground hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link>}</td>
+          <td className="px-4 py-3"><div className="flex items-center gap-2 whitespace-nowrap"><Link className="font-medium hover:underline" to="/servers/$id" params={{ id: host.id }}>{host.name}</Link><VmId value={host.proxmox_vm_id} /><UpdateHint host={host} /></div>{host.deployment && <Link className="block text-xs text-muted-foreground hover:underline" to="/deployments/$id" params={{id:host.deployment.id}}>Deployment</Link>}</td>
           <td className="px-4 py-3 font-mono text-xs">{host.ip_address || host.hostname || 'Not configured'}</td>
           <td className="px-4 py-3"><Connection host={host} />{host.status !== 'online' && host.last_seen && <p className="mt-1 text-xs text-muted-foreground">Last seen <Timestamp value={host.last_seen} /></p>}</td>
           <td className="px-4 py-3"><Resources host={host} /></td>
-          {showGroups && <td className="px-4 py-3"><GroupTags host={host} groupName={host.group_name || groups.data?.find(item => item.id === host.group_id)?.name} /></td>}
+          {showGroups && <td className="px-4 py-3"><GroupTags host={host} hidden={commonTags} groupName={host.group_name || groups.data?.find(item => item.id === host.group_id)?.name} /></td>}
           <td className="px-4 py-3 text-muted-foreground" title={host.resources?.os || undefined}>{shortOs(host.resources?.os) || '—'}</td>
           <td className="px-4 py-3 tabular-nums text-muted-foreground">{shortUptime(host.resources?.uptime_seconds) || '—'}</td>
-        </tr>)}{!rows.length && <tr><td colSpan={columns.length} className="p-8 text-center text-muted-foreground">{search || group ? 'No hosts match these filters.' : 'Add a host to get started.'}</td></tr>}</tbody>
+        </tr>)}{!rows.length && <tr><td colSpan={columns.length}><EmptyState compact title={search || group ? 'No hosts match these filters.' : 'Add a host to get started.'} /></td></tr>}</tbody>
       </table>
     </div></>}
     <Dialog open={addOpen} onOpenChange={setAddOpen}><DialogContent><DialogHeader><DialogTitle>Add host</DialogTitle></DialogHeader><div className="grid gap-2">

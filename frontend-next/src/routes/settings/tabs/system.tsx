@@ -379,7 +379,7 @@ function PollingConfig() {
         );
       })}
 
-      <SettingsRow label="Adaptive collection" hint="Intervals are a baseline. Unchanged hosts are checked less often; failed connections pause before retrying. Manual refresh takes priority. Running checks may finish after disabling collection."><span className="text-xs text-muted-foreground">4 checks at once · 1 heavy check</span></SettingsRow>
+      <SettingsRow label="Adaptive collection" hint="Unchanged hosts are checked less often; unreachable ones pause before retrying."><span className="text-xs text-muted-foreground">4 checks at once · 1 heavy check</span></SettingsRow>
       {dirty && <p role="status" className="text-sm text-muted-foreground">Unsaved polling changes</p>}
       {invalidInterval && <p role="alert" className="text-sm text-destructive">Polling intervals must be whole numbers from 1 to 9999 minutes.</p>}
       {save.isError && <p role="alert" className="text-sm text-destructive">{save.error.message}</p>}

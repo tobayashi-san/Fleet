@@ -243,7 +243,7 @@ export function ServerDetailPage() {
             {server.deployment && <Button asChild variant="outline"><Link to="/deployments/$id" params={{id:server.deployment.id}}>Open deployment</Link></Button>}
             {/* The primary action follows what is pending; editing lives in the overflow menu. */}
             {availableTabs.includes("terminal") && serverTabs.value !== "terminal" && server.status === "online" && <Button variant="outline" onClick={() => serverTabs.onValueChange("terminal")}><Terminal />Terminal</Button>}
-            {hasCap(profile, "canRunUpdates") && updatesList.length > 0 && server.status === "online" && <Button onClick={() => setConfirmRunUpdate(true)}><ArrowUp />Install updates ({updatesList.length})</Button>}
+            {hasCap(profile, "canRunUpdates") && updatesList.length > 0 && server.status === "online" && serverTabs.value !== "updates" && <Button onClick={() => setConfirmRunUpdate(true)}><ArrowUp />Install updates ({updatesList.length})</Button>}
             {server.status !== "online" &&
               hasCap(profile, "canEditServers") && (
                 <Button

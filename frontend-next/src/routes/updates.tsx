@@ -1,3 +1,4 @@
+import { EmptyState } from '@/components/ui/empty-state';
 import { useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
@@ -11,12 +12,13 @@ import { Timestamp } from '@/components/ui/timestamp';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { PageHeader } from '@/components/ui/page-header';
-import { Card, CardContent } from '@/components/ui/card';
 import { StatusBadge } from '@/components/ui/status-badge';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { catalogStatus, needsAction, packageIndex, pendingUpdates, type Catalog, type UpdateHost } from '@/features/updates/model';
+
+const RUNNING = ['running', 'pending', 'queued'];
 
 /** More simultaneous reboots than this are refused by the API rate limit and are rarely intended. */
 const MAX_BULK_REBOOTS = 5;
@@ -54,7 +56,7 @@ async function inBatches<T>(items: T[], limit: number, run: (item: T) => Promise
 }
 
 function historyTone(status: string) {
-  return status === 'success' ? 'success' : status === 'failed' ? 'danger' : ['running', 'pending', 'queued'].includes(status) ? 'info' : 'muted';
+  return status === 'success' ? 'success' : status === 'failed' ? 'danger' : RUNNING.includes(status) ? 'info' : 'muted';
 }
 
 export function UpdatesPage() {
@@ -78,12 +80,17 @@ export function UpdatesPage() {
     queryFn: () => apiFetch<UpdateHost[]>('/servers/update-dashboard', { environmentId }),
     refetchInterval: 30_000,
   });
+  // History also drives the per-host "Updating…" state, so it polls faster while work runs.
   const history = useQuery({
     queryKey: ['update-history', environmentId],
     queryFn: () => apiFetch<HistoryRow[]>('/servers/update-history', { environmentId }),
-    enabled: tab === 'history',
-    refetchInterval: 30_000,
+    refetchInterval: query => (query.state.data || []).some(row => RUNNING.includes(row.status)) ? 5_000 : 30_000,
   });
+  const runningByHost = useMemo(() => {
+    const map = new Map<string, HistoryRow['kind']>();
+    for (const row of history.data || []) if (RUNNING.includes(row.status)) for (const name of row.hosts) if (!map.has(name)) map.set(name, row.kind);
+    return map;
+  }, [history.data]);
   const hosts = useMemo(() => query.data || [], [query.data]);
   const packages = useMemo(() => packageIndex(hosts, canViewDocker), [hosts, canViewDocker]);
   const count = (host: UpdateHost) => pendingUpdates(host.system, 'system').length + (canViewDocker && host.docker ? pendingUpdates(host.docker, 'docker').length : 0);
@@ -118,7 +125,7 @@ export function UpdatesPage() {
     setBusy('Starting system updates…');
     try {
       await apiFetch('/servers/update-all', { method: 'POST', body: JSON.stringify({ server_ids: selectedHosts.map(host => host.id) }), environmentId });
-      showToast(`System update started on ${selectedHosts.length} ${selectedHosts.length === 1 ? 'host' : 'hosts'}. Follow it under History or Jobs.`, 'success');
+      showToast(`System update started on ${selectedHosts.length} ${selectedHosts.length === 1 ? 'host' : 'hosts'}.`, 'success');
       setSelected(new Set());
     } catch (error) { showToast((error as Error).message, 'error'); }
     setBusy(null); setConfirm(null);
@@ -140,11 +147,14 @@ export function UpdatesPage() {
   return <div className="space-y-5">
     <PageHeader title="Updates" description="Check, install and reboot across hosts." />
     {query.isError ? <QueryErrorState error={query.error} title="Updates could not be loaded" onRetry={() => void query.refetch()} /> : query.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading updates…</p> : <>
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{[
-        ['System updates', hosts.reduce((sum, host) => sum + pendingUpdates(host.system, 'system').length, 0)],
-        ...(canViewDocker ? [['Docker updates', hosts.reduce((sum, host) => sum + (host.docker ? pendingUpdates(host.docker, 'docker').length : 0), 0)]] : []),
-        ['Outdated checks', hosts.filter(needsCheck).length], ['Reboot required', hosts.filter(host => host.reboot_required).length],
-      ].map(([label, value]) => <Card key={label}><CardContent className="p-4"><p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p></CardContent></Card>)}</div>
+      {/* Each figure is also the shortcut to the hosts behind it. */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{([
+        ['System updates', hosts.reduce((sum, host) => sum + pendingUpdates(host.system, 'system').length, 0), 'available'],
+        ...(canViewDocker ? [['Docker updates', hosts.reduce((sum, host) => sum + (host.docker ? pendingUpdates(host.docker, 'docker').length : 0), 0), 'available']] : []),
+        ['Outdated checks', hosts.filter(needsCheck).length, 'check'], ['Reboot required', hosts.filter(host => host.reboot_required).length, 'reboot'],
+      ] as [string, number, string][]).map(([label, value, target]) => <button key={label} type="button" onClick={() => { setFilter(target); if (tab !== 'hosts' || search.host) void navigate({ to: '/updates', search: {} }); }} aria-label={`${label}: ${value}. Show these hosts`} className={cn('rounded-panel border bg-card p-4 text-left transition-colors hover:border-border-strong hover:bg-accent/40', filter === target && tab === 'hosts' && 'border-primary/50')}>
+        <p className="text-xs text-muted-foreground">{label}</p><p className="mt-1 text-2xl font-semibold tabular-nums">{value}</p>
+      </button>)}</div>
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList aria-label="Update views">
@@ -166,19 +176,20 @@ export function UpdatesPage() {
           {busy ? <span role="status" className="ml-2 text-sm text-muted-foreground">{busy}</span> : <>
             <Button size="sm" variant="outline" onClick={() => void checkNow()}><RefreshCw />Check now</Button>
             {canRun && <Button size="sm" onClick={() => setConfirm('install')}><Download />Install system updates</Button>}
-            {canReboot && <Button size="sm" variant="outline" disabled={selected.size > MAX_BULK_REBOOTS} title={selected.size > MAX_BULK_REBOOTS ? `Reboot at most ${MAX_BULK_REBOOTS} hosts at once` : undefined} onClick={() => setConfirm('reboot')}><Power />Reboot</Button>}
+            {canReboot && <Button size="sm" variant="outline" disabled={selected.size > MAX_BULK_REBOOTS} onClick={() => setConfirm('reboot')}><Power />Reboot</Button>}
+            {canReboot && selected.size > MAX_BULK_REBOOTS && <span className="text-xs text-muted-foreground">Reboot up to {MAX_BULK_REBOOTS} hosts at once</span>}
           </>}
           <Button size="sm" variant="ghost" className="ml-auto" disabled={Boolean(busy)} onClick={() => setSelected(new Set())}>Clear selection</Button>
         </div>}
 
-        {!visible.length && !hiddenCurrent ? <p className="rounded-md border p-6 text-sm text-muted-foreground">{hosts.length ? 'No hosts match this filter.' : 'No hosts in this environment.'}</p> : <div className="overflow-hidden rounded-panel border bg-card" role="table" aria-label="Updates by host">
+        {!visible.length && !hiddenCurrent ? <EmptyState compact className="rounded-panel border bg-card" title={hosts.length ? 'No hosts match this filter.' : 'No hosts in this environment.'} /> : <div className="overflow-hidden rounded-panel border bg-card" role="table" aria-label="Updates by host">
           {visible.length > 0 && <div role="row" className={`hidden items-center gap-4 border-b bg-muted/40 px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground md:grid ${columns}`}>
             <span role="columnheader"><input type="checkbox" aria-label="Select all shown hosts" checked={allVisibleSelected} onChange={() => setSelected(current => { const next = new Set(current); for (const host of visible) { if (allVisibleSelected) next.delete(host.id); else next.add(host.id); } return next; })} /></span>
             <span role="columnheader">Host</span><span role="columnheader">System</span>{canViewDocker && <span role="columnheader">Docker</span>}<span role="columnheader">Last check</span><span role="columnheader"><span className="sr-only">Open</span></span>
           </div>}
           {visible.map(host => { const checked = lastCheck(host, canViewDocker); return <div key={host.id} role="row" className={cn(`grid grid-cols-[1.5rem_1fr_1fr] items-start gap-x-4 gap-y-2 border-b px-4 py-3 last:border-b-0 hover:bg-muted/30 md:items-center ${columns}`, selected.has(host.id) && 'bg-primary/[0.05]')}>
             <div role="cell" className="row-span-3 pt-0.5 md:row-span-1 md:pt-0"><input type="checkbox" aria-label={`Select ${host.name}`} checked={selected.has(host.id)} onChange={() => toggle(host.id)} /></div>
-            <div role="cell" className="col-span-2 min-w-0 md:col-span-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><Link to="/servers/$id" params={{ id: host.id }} className="truncate font-medium hover:underline">{host.name}</Link>{host.status !== 'online' && <StatusBadge tone={host.status === 'offline' ? 'danger' : 'muted'}>{host.status === 'offline' ? 'Offline' : 'Check connection'}</StatusBadge>}{host.reboot_required && <StatusBadge tone="warning">Reboot required</StatusBadge>}</div><p className="truncate font-mono text-xs text-muted-foreground">{host.ip_address}</p></div>
+            <div role="cell" className="col-span-2 min-w-0 md:col-span-1"><div className="flex min-w-0 flex-wrap items-center gap-2"><Link to="/servers/$id" params={{ id: host.id }} className="truncate font-medium hover:underline">{host.name}</Link>{host.status !== 'online' && <StatusBadge tone={host.status === 'offline' ? 'danger' : 'muted'}>{host.status === 'offline' ? 'Offline' : 'Check connection'}</StatusBadge>}{runningByHost.has(host.name) ? <StatusBadge tone="info" dot pulse>{runningByHost.get(host.name) === 'reboot' ? 'Rebooting…' : 'Updating…'}</StatusBadge> : host.reboot_required && <StatusBadge tone="warning">Reboot required</StatusBadge>}</div><p className="truncate font-mono text-xs text-muted-foreground">{host.ip_address}</p></div>
             <div role="cell" className="min-w-0"><p className={cellLabel}>System</p><CatalogCell host={host} catalog={host.system} kind="system" /></div>
             {canViewDocker && <div role="cell" className="min-w-0"><p className={cellLabel}>Docker</p>{host.docker ? <CatalogCell host={host} catalog={host.docker} kind="docker" /> : <span className="text-sm text-muted-foreground">—</span>}</div>}
             <div role="cell" className="text-sm text-muted-foreground"><p className={cellLabel}>Last check</p>{checked ? <Timestamp value={checked} /> : 'Never'}</div>
@@ -192,7 +203,7 @@ export function UpdatesPage() {
 
       {tab === 'packages' && <PackagesView rows={packages} />}
 
-      {tab === 'history' && (history.isError ? <QueryErrorState error={history.error} title="Update history could not be loaded" onRetry={() => void history.refetch()} /> : history.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading history…</p> : !history.data.length ? <p className="rounded-md border p-6 text-sm text-muted-foreground">No update or reboot runs yet.</p> : <ul className="divide-y rounded-panel border bg-card" aria-label="Update history">
+      {tab === 'history' && (history.isError ? <QueryErrorState error={history.error} title="Update history could not be loaded" onRetry={() => void history.refetch()} /> : history.isPending ? <p role="status" className="text-sm text-muted-foreground">Loading history…</p> : !history.data.length ? <EmptyState compact className="rounded-panel border bg-card" title="No update or reboot runs yet." /> : <ul className="divide-y rounded-panel border bg-card" aria-label="Update history">
         {history.data.map(row => <li key={row.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3">
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-2"><span className="font-medium">{row.name}</span><StatusBadge tone={historyTone(row.status)}>{row.status === 'success' ? 'Successful' : row.status === 'failed' ? 'Failed' : row.status}</StatusBadge></div>
@@ -217,7 +228,7 @@ function PackagesView({ rows }: { rows: ReturnType<typeof packageIndex> }) {
   const visible = rows.filter(row => `${row.name} ${row.hosts.map(host => host.name).join(' ')}`.toLowerCase().includes(text.toLowerCase()));
   return <div className="space-y-3">
     <Input aria-label="Search packages" placeholder="Search packages, images or hosts…" value={text} onChange={event => setText(event.target.value)} className="sm:max-w-sm" />
-    {!rows.length ? <p className="rounded-md border p-6 text-sm text-muted-foreground">No pending updates in the saved check results.</p> : !visible.length ? <p className="rounded-md border p-6 text-sm text-muted-foreground">No packages match this search.</p> : <div className="overflow-x-auto rounded-panel border bg-card">
+    {!rows.length ? <EmptyState compact className="rounded-panel border bg-card" title="No pending updates" description="Based on the latest saved checks." /> : !visible.length ? <EmptyState compact className="rounded-panel border bg-card" title="No packages match this search." /> : <div className="overflow-x-auto rounded-panel border bg-card">
       <table className="w-full text-left text-sm" aria-label="Pending updates by package">
         <thead className="border-b bg-muted/40 text-[11px] uppercase tracking-wide text-muted-foreground"><tr><th className="px-4 py-2 font-semibold">Package</th><th className="px-4 py-2 font-semibold">Type</th><th className="px-4 py-2 font-semibold">Hosts</th><th className="px-4 py-2 font-semibold">New version</th></tr></thead>
         <tbody>{visible.map(row => <tr key={row.key} className="border-b align-top last:border-0">

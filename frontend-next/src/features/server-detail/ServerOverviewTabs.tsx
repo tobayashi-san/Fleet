@@ -162,7 +162,7 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                 </div>
                 <div className="mt-3 space-y-3">
                   <p className="text-[11px] text-muted-foreground">
-                    Measured <Timestamp value={info?.updated_at} hour12={hour12} /> via SSH{server.status !== "offline" && latencyMs !== null ? <> · <span className={latencyMs >= 250 ? "text-warning" : undefined}>{latencyMs} ms</span></> : null}{info?._cached ? " · refreshing" : ""}
+                    Measured <Timestamp value={info?.updated_at} hour12={hour12} /> via SSH{server.status !== "offline" && latencyMs !== null ? <> · <span className={latencyMs >= 250 ? "text-warning" : undefined}>{latencyMs} ms</span></> : null}{info?._refreshing ? " · refreshing" : ""}
                   </p>
                   <CapacitySummary
                     label={t("det.cpu")}
@@ -256,7 +256,6 @@ export function ServerOverviewTabs({ controller }: { controller: ServerOverviewT
                   )}
                   {(
                     [
-                      [t("det.os"), info?.os],
                       [t("det.kernel"), info?.kernel],
                       [t("det.loadAvg"), info?.load_avg],
                     ] as [string, string | number | null | undefined][]

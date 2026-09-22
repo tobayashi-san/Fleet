@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Timestamp } from '@/components/ui/timestamp';
-import { OperationRow, operationDisplayLabel, operationDisplayTone, operationSourceLabel, readableTime } from '@/features/operations/model';
+import { OperationRow, operationDisplayLabel, operationDisplayTone, operationSourceLabel } from '@/features/operations/model';
 import { apiFetch } from "@/lib/api";
 import { useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -13,7 +13,8 @@ import { Link } from "@tanstack/react-router";
 import {
 	CheckCircle2,
 	ExternalLink,
-	Info
+	Info,
+	X
 } from "lucide-react";
 
 export function TaskScopeButton({
@@ -36,26 +37,30 @@ export function TaskScopeButton({
   );
 }
 
+/** Accepts the className a Button passes through `asChild`, so it can render as a button. */
 export function OperationLink({
   row,
   children,
+  className,
 }: {
   row: OperationRow;
   children: React.ReactNode;
+  className?: string;
 }) {
   if (!row.href) return <>{children}</>;
+  const linkClass = className || "hover:text-primary hover:underline";
   if (row.href === "/deployments/$id" || row.href === "/servers/$id")
     return (
       <Link
         to={row.href}
         params={row.params as { id: string }}
-        className="hover:text-primary hover:underline"
+        className={linkClass}
       >
         {children}
       </Link>
     );
   return (
-    <Link to={row.href} className="hover:text-primary hover:underline">
+    <Link to={row.href} className={linkClass}>
       {children}
     </Link>
   );
@@ -67,12 +72,14 @@ export function OperationDetail({
   onAcknowledge,
   className,
   showHeading = true,
+  onClose,
 }: {
   row: OperationRow | null;
   acknowledging: boolean;
   onAcknowledge: (id: string) => void;
   className?: string;
   showHeading?: boolean;
+  onClose?: () => void;
 }) {
   const environmentId = useUi(state => state.environmentId);
   const details = useQuery({
@@ -87,6 +94,7 @@ export function OperationDetail({
       {showHeading && <div className="flex items-center gap-2 text-sm font-semibold">
         <Info className="h-4 w-4 text-brand" />
         Task details
+        {onClose && <button type="button" onClick={onClose} aria-label="Close task details" className="ml-auto rounded-sm p-1 text-muted-foreground hover:bg-accent hover:text-foreground"><X className="h-4 w-4" /></button>}
       </div>}
       <div className={cn(showHeading && "mt-3")}>
         <h3 className="break-words text-base font-semibold leading-snug">
@@ -111,13 +119,13 @@ export function OperationDetail({
         </div>
         <div className="console-property items-start">
           <span className="pt-0.5">Target</span>
-          <div className="!overflow-visible !whitespace-normal !break-words text-right font-semibold leading-relaxed">
-            <OperationTarget row={row} align="right" />
+          <div className="!overflow-visible !whitespace-normal !break-words font-semibold leading-relaxed sm:text-right">
+            <OperationTarget row={row} />
           </div>
         </div>
         <div className="console-property items-start">
           <span className="pt-0.5">Triggered by</span>
-          <b className="!overflow-visible !whitespace-normal !break-words text-right leading-relaxed">
+          <b className="!overflow-visible !whitespace-normal !break-words leading-relaxed sm:text-right">
             {row.initiator}
           </b>
         </div>
@@ -136,7 +144,7 @@ export function OperationDetail({
             <div className="console-property">
               <span>Acknowledged at</span>
               <b className="whitespace-normal text-right">
-                {readableTime(row.acknowledged_at || undefined)}
+                <Timestamp value={row.acknowledged_at} />
               </b>
             </div>
           </>
@@ -145,7 +153,7 @@ export function OperationDetail({
       <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} className="mt-3 inline-block text-sm text-primary hover:underline">Open execution page</Link>
       <section className="mt-3 space-y-3 rounded-md border bg-card p-3" aria-label="Execution result">
         {row.source === "Workflow" && <p className="text-sm">{row.check_mode ? "Dry run" : "Execution"} · {row.playbook}{row.schedule_deleted ? " · Schedule deleted" : ""}</p>}
-        {row.started_at && <p className="text-xs text-muted-foreground">Started: {readableTime(row.started_at)}</p>}
+        {row.started_at && <p className="text-xs text-muted-foreground">Started <Timestamp value={row.started_at} /></p>}
         {details.isPending && <p role="status" className="text-sm">Loading execution details…</p>}
         {details.isError && <QueryErrorState compact error={details.error} title="Execution details unavailable" onRetry={() => void details.refetch()} />}
         {details.data && !details.isError && <>
@@ -249,7 +257,7 @@ export function OperationList({
               <th className="w-32">Time</th>
               <th>Task</th>
               <th className="w-40">Target</th>
-              <th className="w-28">Status</th>
+              <th className="w-32">Status</th>
             </tr>
           </thead>
           <tbody>
@@ -265,7 +273,7 @@ export function OperationList({
                 </td>
                 <td className="min-w-0">
                   <div className="flex min-w-0 items-start gap-1.5">
-                    <button type="button" className="min-w-0 text-left font-medium hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}><span className="line-clamp-2 break-words">{row.name}</span></button>
+                    <button type="button" className="block min-w-0 text-left font-medium leading-snug hover:underline" aria-label={`Show task details: ${row.name}`} onClick={event => { event.stopPropagation(); onSelect(row.id); }}><span className="line-clamp-2 break-words">{row.name}</span></button>
                     <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} onClick={event => event.stopPropagation()} className="mt-0.5 shrink-0 rounded-sm text-muted-foreground hover:text-primary" title={row.executions?.length ? "Open latest execution" : "Open execution"} aria-label={`${row.executions?.length ? "Open latest execution" : "Open execution"}: ${row.name}`}><ExternalLink className="h-3.5 w-3.5" /></Link>
                   </div>
                   <div className="mt-0.5 text-xs text-muted-foreground">
@@ -276,9 +284,9 @@ export function OperationList({
                 <td className="max-w-[12rem] break-words">
                   <OperationTarget row={row} />
                 </td>
-                <td className="whitespace-nowrap">
+                <td className="whitespace-nowrap" title={operationDisplayLabel(row)}>
                   <StatusBadge tone={operationDisplayTone(row)} dot>
-                    {operationDisplayLabel(row)}
+                    {row.acknowledged ? "Acknowledged" : operationDisplayLabel(row)}
                   </StatusBadge>
                 </td>
               </tr>

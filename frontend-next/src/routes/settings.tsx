@@ -102,8 +102,8 @@ function AdminSettingsPage() {
     <div className="space-y-5">
       <PageHeader title={t('set.title')} />
 
-      <nav className="flex flex-wrap gap-1 border-b pb-2" aria-label="Settings">
-        {GROUPS.map(group => <Link key={group.id} to="/settings/$tab" params={{tab: group.id}} aria-current={activeId === group.id ? 'page' : undefined} className={cn('rounded-sm px-4 py-2 text-sm', activeId === group.id ? 'bg-accent font-semibold' : 'text-muted-foreground hover:bg-accent')}>{group.label}</Link>)}
+      <nav className="flex gap-1 overflow-x-auto border-b pb-2" aria-label="Settings">
+        {GROUPS.map(group => <Link key={group.id} to="/settings/$tab" params={{tab: group.id}} aria-current={activeId === group.id ? 'page' : undefined} className={cn('shrink-0 whitespace-nowrap rounded-sm px-3 py-2 text-sm sm:px-4', activeId === group.id ? 'bg-accent font-semibold' : 'text-muted-foreground hover:bg-accent')}>{group.label}</Link>)}
       </nav>
       <div key={params.tab || 'general'} className="space-y-4">
         {activeId === 'general' && <>

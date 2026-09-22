@@ -123,7 +123,7 @@ function GitSetup({ onSetupResult }: { onSetupResult: (warning: string | null) =
       <SettingsRow label="Branch" hint="Use the existing remote branch that contains your playbooks.">
         <Input aria-label="Initial Git branch" value={branch} onChange={(event) => setBranch(event.target.value)} required className="max-w-xs" />
       </SettingsRow>
-      <SettingsRow label="Initial synchronization" hint="Connection saves the repository configuration and attempts to import the selected branch. Existing local edits must be resolved before synchronization; they are never discarded automatically."><span className="text-xs text-muted-foreground">Resolve local edits before importing remote content.</span></SettingsRow>
+      <SettingsRow label="Initial synchronization" hint="Saves the repository and imports the selected branch. Local edits are never discarded."><span className="text-xs text-muted-foreground">Resolve local edits before importing remote content.</span></SettingsRow>
       <SettingsRow label="Authentication" hint="Choose exactly one credential method for the remote repository.">
         <div className="inline-flex rounded-sm border p-0.5" role="radiogroup" aria-label="Git authentication method">
           <button type="button" role="radio" aria-checked={authMode === 'https'} onClick={() => setAuthMode('https')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'https' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>HTTPS token</button>
@@ -148,7 +148,7 @@ function GitSetup({ onSetupResult }: { onSetupResult: (warning: string | null) =
       <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
         <Switch aria-label={t('git.autoPull')} checked={autoPull} onCheckedChange={setAutoPull} />
       </SettingsRow>
-      <SettingsRow label="Remote read-only" hint="Pull and local edits remain available. Manual and automatic pushes are blocked by the server. Use a read-only repository credential for additional protection.">
+      <SettingsRow label="Remote read-only" hint="Pushes are blocked; pulling and local edits still work.">
         <Switch aria-label="Remote read-only" checked={readOnly} onCheckedChange={(value) => { setReadOnly(value); if (value) setAutoPush(false); }} />
       </SettingsRow>
       <SettingsRow label={t('git.autoPush')} hint="Opt in to automatically commit and push saved playbook changes to the selected remote branch.">
@@ -338,7 +338,7 @@ function GitDashboard({ cfg, workspace }: { cfg: GitConfig; workspace:boolean })
 
         </>}
         {!workspace && <>
-        <SettingsRow label="Authentication" hint="The repository URL determines the authentication transport. Configure a matching remote URL to change transport. Saved credentials remain masked.">
+        <SettingsRow label="Authentication" hint="The transport follows the repository URL. Saved credentials stay masked.">
           <div className="space-y-2">
             <div className="inline-flex rounded-sm border p-0.5" role="radiogroup" aria-label="Git authentication method">
               <button type="button" role="radio" disabled={saveCredentials.isPending || initialAuthMode !== 'https'} aria-checked={authMode === 'https'} onClick={() => setAuthMode('https')} className={`rounded-sm px-3 py-1.5 text-xs font-medium ${authMode === 'https' ? 'bg-accent text-foreground' : 'text-muted-foreground'}`}>HTTPS token</button>
@@ -402,7 +402,7 @@ function GitDashboard({ cfg, workspace }: { cfg: GitConfig; workspace:boolean })
         <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
           <Switch aria-label={t('git.autoPull')} checked={autoPull} disabled={saveSettings.isPending} onCheckedChange={setAutoPull} />
         </SettingsRow>
-        <SettingsRow label="Remote read-only" hint="Pull and local edits remain available. Manual and automatic pushes are blocked by the server. Use a read-only repository credential for additional protection.">
+        <SettingsRow label="Remote read-only" hint="Pushes are blocked; pulling and local edits still work.">
         <Switch aria-label="Remote read-only" checked={readOnly} disabled={saveSettings.isPending} onCheckedChange={(value) => { setReadOnly(value); if (value) setAutoPush(false); }} />
       </SettingsRow>
       <SettingsRow label={t('git.autoPush')} hint="Opt in to automatically commit and push saved playbook changes to the selected remote branch.">

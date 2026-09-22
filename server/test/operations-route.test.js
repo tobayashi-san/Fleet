@@ -333,7 +333,7 @@ test('workflow history preserves original schedule, playbook, targets and dry-ru
   assert.equal(response.body.initiator,'Planner');assert.equal(response.body.output,'Dry run complete');
   const manual=db.scheduleHistory.create(null,'Manual run','update.yml',visibleHost.name);
   const manualResponse=await request(app).get(`/api/operations/workflow-${manual}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
-  assert.equal(manualResponse.status,200);assert.equal(manualResponse.body.schedule_deleted,false);assert.equal(manualResponse.body.check_mode,false);
+  assert.equal(manualResponse.status,200);assert.equal(manualResponse.body.name,'update.yml','ad-hoc runs are named after their playbook');assert.equal(manualResponse.body.schedule_deleted,false);assert.equal(manualResponse.body.check_mode,false);
   assert.equal(manualResponse.body.host_results[0].name, visibleHost.name);
   assert.equal(manualResponse.body.host_results[0].status, 'unknown');
   assert.equal(manualResponse.body.host_results[0].ok, null);

@@ -74,6 +74,8 @@ test('update history lists host updates, reboots and bulk runs within the caller
   assert.equal(response.body.find(item => item.name === 'System update').status, 'failed');
   assert.ok(!JSON.stringify(response.body).includes('secret-output'));
   assert.deepEqual(response.body.find(item => item.name === 'Bulk system update').hosts, [first.name, second.name]);
+  db.db.prepare("INSERT INTO schedule_history (id, environment_id, schedule_name, playbook, targets, status) VALUES ('legacy-run', 'default', 'Legacy weekly', 'update.yml', ?, 'success')").run(`${first.name},${second.name}`);
+  assert.deepEqual((await request(app).get('/servers/update-history')).body.find(item => item.name === 'Legacy weekly').hosts, [first.name, second.name]);
 
   const reader = db.roles.create('First host update reader', { canViewServers: true, canViewUpdates: true, servers: { servers: [first.id], groups: [] } });
   const scoped = await request(app).get('/servers/update-history').set('x-role', reader.id);

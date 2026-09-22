@@ -4,12 +4,7 @@ export function OsUpdateImpact({ available, deferred, rebootRequired }: {
   rebootRequired?: boolean;
 }) {
   return <div className="space-y-1 text-xs text-muted-foreground">
-    <p>{available} available package updates · {deferred} deferred packages</p>
-    <p className={rebootRequired ? 'text-warning' : undefined}>
-      {rebootRequired === true ? 'Reboot required.' : rebootRequired === false
-        ? 'No reboot pending; updates may require one.'
-        : 'Reboot status unknown.'}
-    </p>
-    <details><summary className="cursor-pointer">Service impact</summary><p className="mt-1">Updates may restart services. Preview package changes for service details.</p></details>
+    <p>{available} {available === 1 ? 'package' : 'packages'} to update{deferred ? ` · ${deferred} deferred` : ''}. Services may restart.</p>
+    {rebootRequired && <p className="text-warning">A reboot is already pending.</p>}
   </div>;
 }

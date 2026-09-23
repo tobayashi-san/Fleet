@@ -1,7 +1,8 @@
 # ── Stage 1: Build frontend ───────────────────────────────────
 # Keep the Node release explicit so builds do not silently move to a different
 # runtime. Update this value through the normal dependency-update process.
-FROM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS builder
+# The frontend bundle is architecture-independent, so it always builds natively.
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS builder
 WORKDIR /app
 COPY frontend-next/package*.json ./frontend-next/
 RUN cd frontend-next && npm ci
@@ -12,7 +13,8 @@ RUN cd frontend-next && npm run build
 # Use Debian for the runtime and native SQLite addon; both stages use Node 24.
 FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+# Apply Debian security updates published after the pinned base image.
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
       ansible openssh-client openssl gosu curl unzip git build-essential util-linux \
     && rm -rf /var/lib/apt/lists/*
 
@@ -21,8 +23,12 @@ RUN groupadd -r -g 1001 fleet && useradd -r -u 1001 -g fleet -d /app fleet
 
 WORKDIR /app
 COPY server/package*.json ./server/
+# npm is only needed to install dependencies; removing it keeps its bundled
+# packages out of the runtime image and its vulnerability surface.
 RUN cd server && npm ci --omit=dev \
-    && apt-get purge -y --auto-remove build-essential
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
+       /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack /root/.npm
 COPY server/ ./server/
 COPY --from=builder /app/frontend-next/dist ./frontend-next/dist
 COPY docker-entrypoint.sh ./

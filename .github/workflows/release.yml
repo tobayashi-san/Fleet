@@ -8,7 +8,7 @@ on:
         required: true
         type: string
       release_notes:
-        description: 'Optional release notes. Leave empty to use the default generated note.'
+        description: 'Optional release notes. Leave empty to use the CHANGELOG.md section for this version.'
         required: false
         type: string
 
@@ -53,6 +53,17 @@ jobs:
             echo "is_rc=false" >> "$GITHUB_OUTPUT"
           fi
           echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Require changelog entry
+        run: node tools/release-notes.mjs "$VERSION" > /dev/null
 
   backend-tests:
     name: Backend tests
@@ -220,7 +231,7 @@ jobs:
           if [[ -n "$RELEASE_NOTES" ]]; then
             printf '%s\n' "$RELEASE_NOTES" > release-notes.md
           else
-            echo "Release candidate ${{ needs.validate.outputs.tag }}." > release-notes.md
+            node tools/release-notes.mjs "$VERSION" > release-notes.md
           fi
 
       - name: Create GitHub prerelease
@@ -288,7 +299,7 @@ jobs:
           if [[ -n "$RELEASE_NOTES" ]]; then
             printf '%s\n' "$RELEASE_NOTES" > release-notes.md
           else
-            echo "Stable release ${{ needs.validate.outputs.tag }}." > release-notes.md
+            node tools/release-notes.mjs "$VERSION" > release-notes.md
           fi
 
       - name: Create GitHub release

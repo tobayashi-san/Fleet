@@ -8,8 +8,11 @@
 - [SSH key import](ssh-key-import.md) — importing and reviewing credentials.
 - [Audit log](audit-log.md) — event visibility, filtering, exports, and retention.
 
-## Upgrading from Shipyard
+## Upgrading
 
+- [Upgrade and support policy](UPGRADE_POLICY.md) — version meaning, image
+  tags, supported releases, and verifying signed images.
+- [Changelog](../CHANGELOG.md) — changes and required actions per release.
 - [Migrating from Shipyard](MIGRATING_FROM_SHIPYARD.md) — one-time move of an
   existing Shipyard installation to Fleet.
 

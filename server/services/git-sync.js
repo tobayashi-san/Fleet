@@ -274,9 +274,12 @@ function syncToWorkspace() {
     fs.readdirSync(PLAYBOOKS_DIR)
       .filter(f => (f.endsWith('.yml') || f.endsWith('.yaml')) && !f.includes('.bak.'))
   );
-  // Copy new/updated files
+  // Copy new/updated files. copyFileSync does not reject a directory on every
+  // filesystem, so a non-file entry must fail explicitly instead of syncing as empty.
   for (const f of sourceFiles) {
-    fs.copyFileSync(path.join(PLAYBOOKS_DIR, f), path.join(destDir, f));
+    const source = path.join(PLAYBOOKS_DIR, f);
+    if (!fs.statSync(source).isFile()) throw new Error(`Playbook ${f} is not a regular file.`);
+    fs.copyFileSync(source, path.join(destDir, f));
   }
   // Remove files from workspace that no longer exist in server/playbooks/
   const destFiles = fs.readdirSync(destDir)

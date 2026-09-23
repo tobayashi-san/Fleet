@@ -183,7 +183,7 @@ The default image tag, `latest`, follows **stable releases**. Release candidates
 use explicit tags and do not replace `latest`. Features described on `main` may
 be newer than your installed stable release.
 
-Read the [release notes](https://github.com/tobayashi-san/Fleet/releases) and
+Read the [changelog](CHANGELOG.md) and
 [back up your data](docs/README.md#backup-and-recovery) before updating. Then run
 these commands from your existing Fleet directory:
 
@@ -201,11 +201,17 @@ release tag without its leading `v`. Update that setting when moving to a new
 release. Do not run `docker compose down -v` during an update: it deletes named
 data volumes, including your data and generated secrets.
 
+The [upgrade and support policy](docs/UPGRADE_POLICY.md) explains what each
+release type means, which tags to pin, and how to verify that an image is
+signed by this repository. Images are available for `linux/amd64` and
+`linux/arm64`.
+
 ## Explore the documentation
 
 | Guide | Use it for |
 | --- | --- |
 | [Deployment](docs/DOCKER_DEPLOYMENT.md) | LAN access, TLS, persistent storage, and configuration |
+| [Upgrade policy](docs/UPGRADE_POLICY.md) · [Changelog](CHANGELOG.md) | Release types, supported versions, and image verification |
 | [Backup and recovery](docs/README.md#backup-and-recovery) | Choosing database-only or application backups and planning a restore |
 | [MFA](docs/mfa-policy.md) · [SSH keys](docs/ssh-key-import.md) · [Audit log](docs/audit-log.md) | Access configuration and operational history |
 | [All documentation](docs/README.md) | Deployment, administration, and development workflow |

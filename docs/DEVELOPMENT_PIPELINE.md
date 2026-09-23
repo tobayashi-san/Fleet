@@ -118,17 +118,24 @@ There is no repo-wide formatter gate. Frontend ESLint is a required gate.
 
 Fleet uses release candidates first.
 
-1. Merge the release content into `main`.
+1. Merge the release content into `main` and add a `## <version>` section to
+   `CHANGELOG.md`. List required operator actions under **Breaking changes**.
 2. Start the `Release` workflow manually.
 3. Enter a version without a leading `v`:
    - RC: `1.1.2-rc.1`
    - Stable: `1.1.2`
 4. The workflow verifies that it was dispatched from `main`, validates the
-   version, runs backend, frontend, browser, audit, and Docker build gates.
+   version, requires the changelog section, and runs backend, frontend,
+   browser, audit, and Docker build gates.
 5. If all gates pass, the workflow updates all package versions, commits the
-   version bump, creates an annotated tag, and creates a GitHub Release.
-6. The workflow starts `Build and Push Docker Image` for the new tag, which
-   publishes the container image to GHCR.
+   version bump, creates an annotated tag, and creates a GitHub Release. The
+   release notes come from `tools/release-notes.mjs`, which prints the
+   changelog section; an RC uses the section of the version it leads up to.
+6. The workflow starts `Build and Push Docker Image` for the new tag. It builds
+   the amd64 image and scans it with Trivy; a critical or high vulnerability
+   with an available fix stops the release. It then publishes the
+   `linux/amd64` and `linux/arm64` image to GHCR with an SBOM and
+   `mode=max` build provenance, and signs it keylessly with cosign.
 
 Stable releases use the `stable-release` GitHub Environment. Configure that
 environment in GitHub with a required reviewer so stable publication pauses for
@@ -161,6 +168,8 @@ Before treating a release as usable:
   successfully.
 - For RCs, test the explicit RC image tag with Docker Compose.
 - For stable releases, confirm `latest` points to the new stable release.
+- Verify the signature as described in
+  [verifying images](UPGRADE_POLICY.md#verifying-images).
 
 ## Browser failure evidence
 

@@ -140,7 +140,7 @@ export function HistoryTab() {
                       <td className="px-3 text-right">
                         <div className="flex justify-end gap-1">
                           {h.status === "running" && hasCap(profile, "canRunPlaybooks") && (
-                            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setCancelTarget({id:h.id,environment:environmentId})} title="Cancel run">
+                            <Button variant="destructive" size="icon" className="h-7 w-7" onClick={() => setCancelTarget({id:h.id,environment:environmentId})} title="Cancel run" aria-label="Cancel run">
                               <X className="h-3.5 w-3.5" />
                             </Button>
                           )}

@@ -45,6 +45,10 @@ they lead up to.
 - Networks show prefix usage and offer a global IPAM search; Proxmox IPAM data
   reconciles with Fleet's records.
 - Jobs show per-host results and name manual runs after their playbook.
+- The help menu shows the running version and links to the documentation and
+  changelog.
+- Errors without a server message explain the likely cause, for example an
+  unreachable server or a restarting proxy, instead of a bare status code.
 
 ### Fixed
 
@@ -54,3 +58,4 @@ they lead up to.
 - Playbook synchronization reports a non-file entry instead of copying it as
   an empty playbook.
 - Colour contrast meets WCAG AA in every theme.
+- Icon-only buttons have accessible names for screen readers.

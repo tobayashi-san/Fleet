@@ -3,7 +3,7 @@ import { commandModifier } from '@/lib/keyboard';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Link, useNavigate } from '@tanstack/react-router';
-import { Bug, ChevronDown, Github, HelpCircle, LogOut, Menu, Moon, PanelLeft, Pencil, Search, Sun, Trash2, User, UserRoundCog } from 'lucide-react';
+import { BookOpen, Bug, ChevronDown, Github, HelpCircle, History, LogOut, Menu, Moon, PanelLeft, Pencil, Search, Sun, Trash2, User, UserRoundCog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -241,9 +241,15 @@ export function AppShell({ children }: { children: ReactNode }) {
               <div className="absolute right-0 top-10 z-50 w-64 rounded-md border border-border/90 bg-popover p-2 text-popover-foreground shadow-xl shadow-black/30">
                 <div className="border-b px-2.5 py-2">
                   <div className="text-sm font-medium">{t('shell.helpResources')}</div>
-                  <div className="mt-0.5 text-xs text-muted-foreground">{t('shell.projectSupport')}</div>
+                  <div className="mt-0.5 text-xs text-muted-foreground">{t('shell.runningVersion', { version: __FLEET_VERSION__ })}</div>
                 </div>
                 <div className="space-y-0.5 py-1.5">
+                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet/tree/main/docs#readme')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
+                    <BookOpen className="h-4 w-4 text-muted-foreground" /> {t('shell.documentation')}
+                  </button>
+                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet/blob/main/CHANGELOG.md')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
+                    <History className="h-4 w-4 text-muted-foreground" /> {t('shell.changelog')}
+                  </button>
                   <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
                     <Github className="h-4 w-4 text-muted-foreground" /> {t('shell.githubRepository')}
                   </button>

@@ -938,7 +938,7 @@ export function PlaybookHistoryDialog({
                     size="icon"
                     className="h-7 w-7"
                     onClick={() => loadPreview(v.version)}
-                    title={t("pb.historyPreview")}
+                    title={t("pb.historyPreview")} aria-label={t("pb.historyPreview")}
                   >
                     <Eye
                       className={`h-3.5 w-3.5 ${previewVer === v.version ? "text-primary" : ""}`}
@@ -950,7 +950,7 @@ export function PlaybookHistoryDialog({
                     className="h-7 w-7"
                     onClick={() => setRestoreVersion(v.version)}
                     disabled={restoreMut.isPending}
-                    title={t("pb.restore")}
+                    title={t("pb.restore")} aria-label={t("pb.restore")}
                   >
                     <Undo2 className="h-3.5 w-3.5" />
                   </Button>}

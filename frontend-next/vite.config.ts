@@ -1,11 +1,18 @@
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
+import fs from 'node:fs';
 import path from 'node:path';
+
+// The release workflow sets this version before the image is built.
+const { version } = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string };
 
 // Default UI served from the backend root.
 export default defineConfig({
   base: '/',
   plugins: [react()],
+  define: {
+    __FLEET_VERSION__: JSON.stringify(version),
+  },
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),

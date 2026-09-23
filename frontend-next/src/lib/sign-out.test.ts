@@ -39,7 +39,7 @@ it('retains credentials after a server failure and permits a successful retry', 
 it('retains credentials on connection failure', async () => {
   storage();
   vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Network unavailable')));
-  await expect(revokeCurrentSignIn()).rejects.toThrow('Network unavailable');
+  await expect(revokeCurrentSignIn()).rejects.toThrow('Fleet could not be reached');
   expect(getToken()).toBe('active-token');
 });
 

@@ -159,7 +159,7 @@ export function ServerDockerTab({ controller }: { controller: ServerDockerTabCon
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6"
-                  title={t("det.showLogs")}
+                  title={t("det.showLogs")} aria-label={t("det.showLogs")}
                   onClick={() => loadLogs(c.container_name, logsTail)}
                 >
                   <FileText className="h-3 w-3" />

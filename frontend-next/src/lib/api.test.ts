@@ -227,6 +227,22 @@ it('100 percent browser upload waits for server acknowledgement and may still fa
   } finally { vi.unstubAllGlobals(); }
 });
 
+describe('responses without an error message', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it.each([
+    [502, 'Fleet is not responding. It may be restarting; try again in a moment.'],
+    [500, 'The request failed on the server (error 500). The server log has details.'],
+    [429, 'Too many requests. Wait a moment and try again.'],
+  ])('explains status %i', async (status, message) => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response('<html>Bad gateway</html>', {status})));
+    await expect(apiFetch('/proxy', {skipAuth:true})).rejects.toMatchObject({message,status});
+  });
+  it('explains an unreachable server instead of a browser network error', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('Failed to fetch')));
+    await expect(apiFetch('/offline', {skipAuth:true})).rejects.toMatchObject({message:expect.stringContaining('could not be reached'),status:0});
+  });
+});
+
 describe('structured validation errors', () => {
   afterEach(() => vi.unstubAllGlobals());
   it('preserves a bounded field identifier without retaining the response payload', async () => {
@@ -239,7 +255,7 @@ describe('structured validation errors', () => {
   });
   it.each([{}, null, 'a'.repeat(65), '#endpoint', ['endpoint']])('ignores malformed field metadata %j', async field => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({error:{unexpected:true},field}), {status:400})));
-    await expect(apiFetch('/validation', {skipAuth:true})).rejects.toMatchObject({message:'Request failed: 400',status:400,field:undefined});
+    await expect(apiFetch('/validation', {skipAuth:true})).rejects.toMatchObject({message:'The request failed (error 400).',status:400,field:undefined});
   });
 });
 

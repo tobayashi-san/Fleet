@@ -250,7 +250,7 @@ function EnvironmentActivityCenter({
               variant="ghost"
               size="icon"
               className="h-7 w-7"
-              title={t('activity.clearCompleted')}
+              title={t('activity.clearCompleted')} aria-label={t('activity.clearCompleted')}
               onClick={() => setItems(prev => prev.filter(item => item.status === 'running'))}
             >
               <Trash2 className="h-3.5 w-3.5" />

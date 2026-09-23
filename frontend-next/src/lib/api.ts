@@ -14,6 +14,16 @@ export class ApiError extends Error {
   }
 }
 
+/** Explains an error response that carries no message of its own, e.g. from a reverse proxy. */
+export function statusFallbackMessage(status: number, action = 'The request'): string {
+  if (status === 0) return 'Fleet could not be reached. Check your network connection and that the server is running.';
+  if (status === 413) return `${action} is too large for the server.`;
+  if (status === 429) return 'Too many requests. Wait a moment and try again.';
+  if (status === 502 || status === 503 || status === 504) return 'Fleet is not responding. It may be restarting; try again in a moment.';
+  if (status >= 500) return `${action} failed on the server (error ${status}). The server log has details.`;
+  return `${action} failed (error ${status}).`;
+}
+
 function permissionDeniedMessage(path: string, method = 'GET'): string {
   const p = path.toLowerCase();
   const m = method.toUpperCase();
@@ -116,6 +126,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     if (controller.signal.aborted && !callerSignal?.aborted) {
       throw new ApiError(`Request timed out after ${Math.round(timeoutMs / 1000)} seconds. Try again.`, 408);
     }
+    if (error instanceof TypeError) throw new ApiError(statusFallbackMessage(0), 0);
     throw error;
   } finally {
     if (timeout !== undefined) globalThis.clearTimeout(timeout);
@@ -128,7 +139,7 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
   }
 
   if (!res.ok) {
-    let msg = `Request failed: ${res.status}`;
+    let msg = statusFallbackMessage(res.status);
     let field: string | undefined;
     try {
       const j = await res.json();
@@ -168,7 +179,7 @@ export async function apiDownload(path: string, filename: string, options: { bod
     },
   });
   if (!res.ok) {
-    let message = `Download failed: ${res.status}`;
+    let message = statusFallbackMessage(res.status, 'The download');
     try {
       const payload = await res.json() as { error?: unknown };
       if (typeof payload?.error === 'string' && payload.error.trim()) message = payload.error;
@@ -213,7 +224,7 @@ export function apiUploadFile(
     request.upload.onprogress = event => {
       if (!settled && event.lengthComputable && event.total > 0 && onProgress) onProgress(Math.min(100, Math.max(0, Math.floor((event.loaded / event.total) * 100))));
     };
-    request.onerror = () => finish(() => reject(new ApiError('Upload failed', 0)));
+    request.onerror = () => finish(() => reject(new ApiError(statusFallbackMessage(0), 0)));
     request.onabort = () => finish(() => reject(new ApiError('Upload canceled', 499)));
     request.onload = () => {
       let payload: unknown = null;
@@ -221,7 +232,7 @@ export function apiUploadFile(
       if (request.status >= 200 && request.status < 300) return finish(() => resolve(payload));
       const message = payload && typeof payload === 'object' && 'error' in payload
         ? String((payload as { error: unknown }).error)
-        : `Upload failed: ${request.status}`;
+        : statusFallbackMessage(request.status, 'The upload');
       finish(() => reject(new ApiError(message, request.status)));
     };
     if (signal?.aborted) return finish(() => reject(new ApiError('Upload canceled', 499)));

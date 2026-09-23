@@ -1,6 +1,6 @@
 {
   "name": "fleet",
-  "version": "3.0.8-rc.46",
+  "version": "3.1.0",
   "description": "Modern Linux Server Management Dashboard",
   "license": "MIT",
   "private": true,

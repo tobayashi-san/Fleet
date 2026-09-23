@@ -47,3 +47,12 @@ test('existing updates cannot change the VM identity through the saved plan', as
   const update = {resource_changes:[{address,change:{actions:['update'],before:{vm_id:999,node_name:'pve',description:'Fleet VM owned-uuid'},after:{vm_id:123,node_name:'pve',description:'Fleet VM owned-uuid'}}}]};
   await assert.rejects(check({plan:update}),/different existing VM/);
 });
+
+test('VMs deployed under the Shipyard name keep their ownership until the next apply', async () => {
+  const legacy = 'Shipyard VM owned-uuid';
+  const legacyState = { values: { root_module: { resources: [{ ...state.values.root_module.resources[0], values: { ...state.values.root_module.resources[0].values, description: legacy } }] } } };
+  await check({ state: legacyState }, [guest], { ...config, description: legacy });
+  const rename = {resource_changes:[{address,change:{actions:['update'],before:{vm_id:123,node_name:'pve',description:legacy},after:{vm_id:123,node_name:'pve',description:'Fleet VM owned-uuid'}}}]};
+  await check({ state: legacyState, plan: rename }, [guest], { ...config, description: legacy });
+  await assert.rejects(check({ state: legacyState }, [guest], { ...config, description: 'Shipyard VM other-uuid' }), /Ownership/);
+});

@@ -18,6 +18,7 @@ they lead up to.
   old names. Existing installations migrate once with the
   [migration guide](docs/MIGRATING_FROM_SHIPYARD.md) before pulling the new
   image. Application backups made by Shipyard cannot be restored by Fleet.
+  VMs deployed by Shipyard remain managed; host agents need to be reinstalled.
 - **Maintenance windows are removed.** Jobs and updates run when you start or
   schedule them; existing window definitions are dropped during the upgrade.
 

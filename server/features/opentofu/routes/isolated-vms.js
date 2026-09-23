@@ -6,6 +6,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const { randomUUID } = require('crypto');
 const { requestProxmoxApi } = require('../proxmox-client');
+const { isVmOwnershipMarker } = require('../proxmox-blueprints');
 
 function publicVm(row, normalizeProxmoxVm) {
   if (!row) return null;
@@ -103,7 +104,7 @@ function registerIsolatedVmRoutes({
       const definition = vm ? publicVm(vm, normalizeProxmoxVm) : null;
       if (definition && matches.length === 1 && Number(definition.vm_id) === id && matches[0].node === definition.node_name && matches[0].name === definition.name && matches[0].type === 'qemu') {
         const config = await requestProxmoxApi(readSavedProxmoxConnection(source), `/nodes/${encodeURIComponent(definition.node_name)}/qemu/${id}/config`);
-        owned = config?.description === `Fleet VM ${vm.id}`;
+        owned = isVmOwnershipMarker(config?.description, vm.id);
       }
       res.json({ available: matches.length === 0, owned, occupied: matches.map(guest => ({ name: guest.name, node: guest.node, type: guest.type })) });
     } catch (error) { res.status(502).json({ error: `VM ID could not be checked: ${error.message}` }); }

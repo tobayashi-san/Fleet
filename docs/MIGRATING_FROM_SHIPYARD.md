@@ -95,9 +95,18 @@ your project directory had a different name.
   the old name and start fresh.
 - **Create a new backup.** Application backups made by Shipyard use the old
   format and cannot be restored by Fleet.
+- **Deployed VMs stay managed.** Fleet recognizes the `Shipyard VM <id>`
+  description on existing Proxmox VMs. The next apply of a deployment updates
+  the description to `Fleet VM <id>` in place; nothing is recreated.
 - **OpenTofu workspaces:** Fleet writes its managed outputs in a block marked
-  `BEGIN FLEET MANAGED OUTPUT`. Remove the old `BEGIN SHIPYARD MANAGED OUTPUT`
-  block from each workspace once Fleet has regenerated its own.
+  `BEGIN FLEET MANAGED OUTPUT` and saves plans under `.fleet/plans`. Remove the
+  old `BEGIN SHIPYARD MANAGED OUTPUT` block from each workspace once Fleet has
+  regenerated its own, and delete any leftover `.shipyard/` directory.
+- **Host agents:** agents installed by Shipyard run as `shipyard-agent` from
+  `/etc/shipyard`. Remove them on each host (`systemctl disable --now
+  shipyard-agent`, then delete `/etc/systemd/system/shipyard-agent.service`,
+  `/etc/shipyard`, `/var/lib/shipyard-agent` and the `shipyard-agent` user) and
+  install the agent again from the host's page in Fleet.
 - **Clean up** when Fleet runs as expected:
 
   ```bash

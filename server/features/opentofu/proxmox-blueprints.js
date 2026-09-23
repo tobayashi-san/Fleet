@@ -115,6 +115,16 @@ function isValidIpv4(value) {
   return /^\d{1,3}(?:\.\d{1,3}){3}$/.test(value) && value.split('.').every(part => Number(part) >= 0 && Number(part) <= 255);
 }
 
+/** Ownership marker written into the description of every VM Fleet deploys. */
+function vmOwnershipMarker(id) {
+  return `Fleet VM ${id}`;
+}
+
+/** VMs deployed before the rename to Fleet carry the Shipyard marker until their next apply. */
+function isVmOwnershipMarker(value, id) {
+  return Boolean(id) && (value === vmOwnershipMarker(id) || value === `Shipyard VM ${id}`);
+}
+
 function renderProxmoxVmHcl(vm) {
   const lines = [
     `resource "proxmox_virtual_environment_vm" ${JSON.stringify(vm.name)} {`,
@@ -122,7 +132,7 @@ function renderProxmoxVmHcl(vm) {
     `  node_name = ${JSON.stringify(vm.node_name)}`,
     '  lifecycle { prevent_destroy = true }',
   ];
-  if (vm.id) lines.push(`  description = ${JSON.stringify(`Fleet VM ${vm.id}`)}`);
+  if (vm.id) lines.push(`  description = ${JSON.stringify(vmOwnershipMarker(vm.id))}`);
   if (vm.vm_id !== null && vm.vm_id !== undefined) lines.push(`  vm_id     = ${vm.vm_id}`);
   lines.push(
     `  started   = ${vm.started}`,
@@ -392,6 +402,8 @@ function buildProxmoxNetworkCatalog(networkResponse, zonesResponse, vnetsRespons
 
 module.exports = {
   PROXMOX_IDENTIFIER_RE,
+  vmOwnershipMarker,
+  isVmOwnershipMarker,
   normalizeResourceKey,
   applyFleetProxmoxBlueprintMetadata,
   buildProxmoxProviderFiles,

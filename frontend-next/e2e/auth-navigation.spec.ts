@@ -121,7 +121,7 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await userActions.focus();
   await page.keyboard.press('Enter');
   const editUser = page.getByRole('menuitem', { name: 'Edit', exact: true });
-  const resetPassword = page.getByRole('menuitem', { name: 'Reset Password', exact: true });
+  const resetPassword = page.getByRole('menuitem', { name: 'Reset password', exact: true });
   const revokeSessions = page.getByRole('menuitem', { name: 'Revoke sessions', exact: true });
   await expect(editUser).toBeFocused();
   await page.keyboard.press('ArrowDown');
@@ -254,9 +254,9 @@ test('console themes apply their coordinated light and dark modes immediately', 
   await page.goto('/profile');
 
   const themeChoices = page.locator('button[aria-label$=" mode"]');
-  await expect(themeChoices).toHaveCount(8);
+  await expect(themeChoices).toHaveCount(10);
   await page.getByRole('button', { name: 'More themes' }).click();
-  await expect(themeChoices).toHaveCount(37);
+  await expect(themeChoices).toHaveCount(39);
 
   const requestedThemes = [
     ['Tokyo Night', 'tokyo-night-dark', 'dark'],

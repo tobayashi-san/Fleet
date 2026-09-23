@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { QueryErrorState } from "@/components/ui/query-error-state";
 import { StatusBadge } from "@/components/ui/status-badge";
 import { Timestamp } from '@/components/ui/timestamp';
-import { OperationRow, operationDisplayLabel, operationDisplayTone, operationSourceLabel } from '@/features/operations/model';
+import { OperationRow, operationDisplayLabel, operationDisplayTone, operationSourceLabel, workflowFacts } from '@/features/operations/model';
 import { apiFetch } from "@/lib/api";
 import { useUi } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -152,12 +152,12 @@ export function OperationDetail({
       </div>
       <Link to="/operations/executions/$id" params={{ id: row.id }} search={{ environment: environmentId }} className="mt-3 inline-block text-sm text-primary hover:underline">Open execution page</Link>
       <section className="mt-3 space-y-3 rounded-md border bg-card p-3" aria-label="Execution result">
-        {row.source === "Workflow" && <p className="text-sm">{row.check_mode ? "Dry run" : "Execution"} · {row.playbook}{row.schedule_deleted ? " · Schedule deleted" : ""}</p>}
+        {row.source === "Workflow" && workflowFacts(row) && <p className="text-sm">{workflowFacts(row)}</p>}
         {row.started_at && <p className="text-xs text-muted-foreground">Started <Timestamp value={row.started_at} /></p>}
         {details.isPending && <p role="status" className="text-sm">Loading execution details…</p>}
         {details.isError && <QueryErrorState compact error={details.error} title="Execution details unavailable" onRetry={() => void details.refetch()} />}
         {details.data && !details.isError && <>
-          <p className="text-xs text-muted-foreground">Execution {details.data.execution_id}{details.data.duration_seconds !== null ? ` · ${details.data.duration_seconds}s` : (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? ' · duration pending completion' : ' · duration not recorded')}</p>
+          <p className="text-xs text-muted-foreground" title={`Execution ID ${details.data.execution_id}`}>{details.data.duration_seconds !== null ? `Took ${details.data.duration_seconds}s` : (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'Still running' : 'Duration not recorded')}</p>
           <p className="break-words text-sm">{details.data.summary}</p>
           <details><summary className="cursor-pointer text-sm font-medium">Execution log</summary>
             {details.data.output_truncated && <p className="text-xs text-muted-foreground">Showing the last 200,000 characters.</p>}

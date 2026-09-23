@@ -674,7 +674,7 @@ export function ScheduleDialog({
             </p>
             <div className="flex gap-2"><Input aria-label="Search schedule targets" placeholder="Search name, IP or tag" value={hostSearch} onChange={event=>setHostSearch(event.target.value)} /><select aria-label="Target status" className="rounded-md border bg-background px-2 text-xs" value={hostStatus} onChange={event=>setHostStatus(event.target.value)}><option value="">All statuses</option><option value="online">Online</option><option value="offline">Offline</option><option value="unknown">Unknown</option></select></div>
             <p className="text-xs text-muted-foreground">{visibleHosts.length} of {srvList.length} hosts shown. Filtering does not change the selection.</p>
-            <div className="max-h-40 space-y-1 overflow-y-auto rounded-md border p-2">
+            <div className="max-h-64 space-y-1 overflow-y-auto rounded-md border p-2">
               <label className="flex items-center gap-2 text-sm font-medium">
                 <input
                   type="checkbox"

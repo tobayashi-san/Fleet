@@ -158,6 +158,19 @@
     --border: 145 14% 87%; --border-strong: 145 12% 76%; --input: 145 14% 87%; --ring: 158 66% 30%;
   }
 
+  /* Enterprise: neutral cool grays, one cobalt accent, flat surfaces and crisp corners. */
+  :root[data-console-theme='enterprise-light'] {
+    --surface-1: 220 16% 96%; --surface-2: 0 0% 100%; --surface-3: 220 16% 98%;
+    --background: 220 16% 96%; --foreground: 222 30% 12%;
+    --card: 0 0% 100%; --card-foreground: 222 30% 12%;
+    --popover: 0 0% 100%; --popover-foreground: 222 30% 12%;
+    --primary: 214 84% 38%; --primary-foreground: 0 0% 100%;
+    --secondary: 220 14% 94%; --secondary-foreground: 222 30% 14%;
+    --muted: 220 14% 94%; --muted-foreground: 220 9% 38%;
+    --accent: 214 60% 94%; --accent-foreground: 214 84% 28%;
+    --border: 220 13% 86%; --border-strong: 220 12% 76%; --input: 220 13% 84%; --ring: 214 84% 44%;
+  }
+
   :root[data-console-theme='cloud-light'] {
     --surface-1: 210 25% 98%; --surface-2: 0 0% 100%; --surface-3: 0 0% 100%;
     --background: 210 25% 98%; --foreground: 222.2 84% 4.9%;
@@ -260,6 +273,14 @@
     --popover: 156 18% 9.5%; --popover-foreground: 100 27% 95%; --primary: 144 77% 84%; --primary-foreground: 160 35% 9%;
     --secondary: 155 15% 16%; --secondary-foreground: 100 27% 95%; --muted: 155 15% 16%; --muted-foreground: 137 9% 68%;
     --accent: 155 16% 18%; --accent-foreground: 100 27% 97%; --border: 150 14% 19%; --border-strong: 150 13% 29%; --input: 150 14% 18%; --ring: 144 70% 72%;
+  }
+
+  :root.dark[data-console-theme='enterprise-dark'] {
+    --surface-1: 220 16% 8%; --surface-2: 220 15% 9.5%; --surface-3: 220 14% 12%;
+    --background: 220 16% 7%; --foreground: 216 20% 94%; --card: 220 15% 9.5%; --card-foreground: 216 20% 94%;
+    --popover: 220 14% 11.5%; --popover-foreground: 216 20% 94%; --primary: 212 92% 67%; --primary-foreground: 220 40% 10%;
+    --secondary: 220 12% 16%; --secondary-foreground: 216 20% 94%; --muted: 220 12% 16%; --muted-foreground: 218 10% 66%;
+    --accent: 218 14% 18%; --accent-foreground: 216 20% 97%; --border: 220 12% 18%; --border-strong: 220 11% 28%; --input: 220 12% 17%; --ring: 212 90% 62%;
   }
 
   :root.dark[data-console-theme='midnight-dark'] {
@@ -547,8 +568,15 @@
      while allowing the brand accent to remain reserved for action and state. */
   :root { --radius: 0.25rem; }
 
-  :root[data-console-theme^='shadcn-'] body {
+  :root[data-console-theme^='shadcn-'] body,
+  :root[data-console-theme^='enterprise-'] body {
     background-image: none;
+  }
+
+  /* Enterprise keeps square, precise corners on panels and controls alike. */
+  :root[data-console-theme^='enterprise-'] {
+    --radius: 0.1875rem;
+    --radius-panel: 4px;
   }
 
   /* Only the neutral shadcn looks opt into the rounded component scale.

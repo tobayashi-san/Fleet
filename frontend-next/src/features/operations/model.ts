@@ -80,3 +80,23 @@ export function operationDisplayLabel(row: OperationRow) {
     ? `${operationStatusLabel(row.status)} · acknowledged`
     : operationStatusLabel(row.status);
 }
+
+const plural = (count: number, one: string, other: string) => `${count} ${count === 1 ? one : other}`;
+
+/** One readable result line; zero counts are left out. */
+export function hostResultSummary(results: { status: string; changed: number | null }[]) {
+  const failed = results.filter(host => host.status === 'failed').length;
+  const unknown = results.filter(host => host.status === 'unknown').length;
+  const changed = results.reduce((sum, host) => sum + (host.changed || 0), 0);
+  const parts = [failed
+    ? `${failed} of ${plural(results.length, 'host', 'hosts')} failed`
+    : unknown === results.length ? `No result recorded for ${plural(results.length, 'host', 'hosts')}` : `${plural(results.length - unknown, 'host', 'hosts')} succeeded`];
+  if (changed) parts.push(plural(changed, 'changed task', 'changed tasks'));
+  if (unknown && unknown !== results.length) parts.push(`${unknown} without a result`);
+  return parts.join(' · ');
+}
+
+/** Workflow facts that the page title does not already say. */
+export function workflowFacts(row: { name: string; playbook?: string; check_mode?: boolean; schedule_deleted?: boolean }) {
+  return [row.check_mode ? 'Dry run' : '', row.playbook && !row.name.startsWith(row.playbook) ? `Playbook ${row.playbook}` : '', row.schedule_deleted ? 'Schedule deleted' : ''].filter(Boolean).join(' · ');
+}

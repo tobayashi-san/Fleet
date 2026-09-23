@@ -691,8 +691,8 @@ const SERVER_CAPS: CapDef[] = [
   { key: 'canUseTerminal', label: 'SSH Terminal' },
   { key: 'canViewFiles', label: 'View & download files' },
   { key: 'canManageFiles', label: 'Upload & transfer files' },
-  { key: 'canViewNotes', label: 'View Notes' },
-  { key: 'canEditNotes', label: 'Edit Notes' },
+  { key: 'canViewNotes', label: 'View notes' },
+  { key: 'canEditNotes', label: 'Edit notes' },
   { key: 'canExportImportServers', label: 'Export / Import' },
 ];
 const DOCKER_CAPS: CapDef[] = [

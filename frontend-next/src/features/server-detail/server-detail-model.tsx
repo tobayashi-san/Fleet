@@ -279,7 +279,7 @@ export function RecentHostTasks({
       </CardHeader>
       <CardContent className="p-0">
         {recent.length === 0 ? (
-          <EmptyState compact title="No tasks recorded for this host yet." />
+          <EmptyState inline title="No tasks recorded for this host yet." />
         ) : (
           <div className="divide-y">
             {recent.map((item) => (

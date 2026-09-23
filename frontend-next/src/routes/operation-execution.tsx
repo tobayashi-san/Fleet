@@ -1,3 +1,5 @@
+import { CopyButton } from '@/features/server-detail/components/summary-cards';
+import { hostResultSummary, workflowFacts } from '@/features/operations/model';
 import { filterExecutionLog } from '@/lib/execution-log';
 import { useState } from 'react';
 import { Input } from '@/components/ui/input';
@@ -49,7 +51,7 @@ export function OperationExecutionPage() {
   const visibleLog = filteredLog ? filteredLog.split('\n') : [];
   return <div className="space-y-4">
     <Link to="/operations" className="text-sm text-primary hover:underline">{environmentId === selectedEnvironmentId ? 'Back to jobs' : 'Back to current environment jobs'}</Link>
-    <PageHeader title={row?.name || 'Execution details'} description={row ? `${row.source} · ${hostResults.length ? `${hostResults.length} hosts` : row.target}` : 'Inspect the selected execution and its recorded output.'} />
+    <PageHeader title={row?.name || 'Execution details'} description={row ? `${row.source} · ${hostResults.length ? `${hostResults.length} ${hostResults.length === 1 ? 'host' : 'hosts'}` : row.target}` : 'Inspect the selected execution and its recorded output.'} />
     <div className={environmentId !== selectedEnvironmentId ? "flex flex-wrap items-center gap-3 rounded-md border bg-card p-3 text-sm" : "flex flex-wrap items-center gap-3 text-sm text-muted-foreground"} role="status">
       <span>Execution environment: <strong>{environmentName}</strong></span>
       {environmentId !== selectedEnvironmentId && <>
@@ -62,21 +64,21 @@ export function OperationExecutionPage() {
     {row && !details.isError && <>
       <section aria-label="Execution summary" className="space-y-3 rounded-md border bg-card p-4">
         <StatusBadge tone={row.status === 'failed' ? 'danger' : row.status === 'success' ? 'success' : ['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'info' : 'muted'}>{statusLabel(t, row.status)}</StatusBadge>
-        <p className="break-words">{hostResults.length ? `${hostResults.filter(host => host.status === 'failed').length} of ${hostResults.length} hosts failed or unreachable. ${hostResults.reduce((sum, host) => sum + (host.changed || 0), 0)} reported changed tasks. ${hostResults.filter(host => host.status === 'unknown').length} hosts without a recorded result.` : row.summary}</p>
-        {row.source === 'Workflow' && <p className="text-sm">{row.check_mode ? 'Dry run' : 'Execution'} · {row.playbook}{row.schedule_deleted ? ' · Schedule deleted' : ''}</p>}
+        <p className="break-words">{hostResults.length ? hostResultSummary(hostResults) : row.summary}</p>
+        {row.source === 'Workflow' && workflowFacts(row) && <p className="text-sm text-muted-foreground">{workflowFacts(row)}</p>}
         <dl className="grid gap-3 text-sm sm:grid-cols-2 xl:grid-cols-3">
           <div><dt className="text-muted-foreground">Target</dt><dd className="flex flex-wrap gap-1">{hostResults.length ? hostResults.map(host => host.server_id ? <Link key={host.name} to="/servers/$id" params={{id: host.server_id}} className="rounded border px-2 py-0.5 text-primary hover:underline">{host.name}</Link> : <span key={host.name} className="rounded border px-2 py-0.5">{host.name}</span>) : row.target}{row.target_deleted ? ' (deleted host)' : ''}{!hostResults.length && row.target_detail ? ` · ${row.target_detail}` : ''}</dd></div>
           <div><dt className="text-muted-foreground">Triggered by</dt><dd>{row.initiator}</dd></div>
           <div><dt className="text-muted-foreground">Started</dt><dd>{row.started_at ? <Timestamp value={row.started_at} /> : 'Not recorded'}</dd></div>
           <div><dt className="text-muted-foreground">Completed</dt><dd>{row.completed_at ? <Timestamp value={row.completed_at} /> : (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'Pending completion' : 'Not recorded')}</dd></div>
           <div><dt className="text-muted-foreground">Duration</dt><dd>{row.duration_seconds === null ? (['running', 'queued', 'pending', 'cancelling'].includes(row.status) ? 'Pending completion' : 'Not recorded') : `${row.duration_seconds}s`}</dd></div>
-          <div><dt className="text-muted-foreground">Execution</dt><dd className="break-all font-mono">{row.execution_id}</dd></div>
+          <div><dt className="text-muted-foreground">Execution ID</dt><dd className="flex items-center gap-1 font-mono text-xs" title={row.execution_id}>{row.execution_id.slice(0, 8)}…<CopyButton value={row.execution_id} label="Execution ID" /></dd></div>
         </dl>
 
       </section>
       {hostResults.length > 0 && <section aria-label="Host results" className="space-y-3 rounded-md border bg-card p-4">
         <h2 className="font-semibold">Host results</h2>
-        <p className="text-xs text-muted-foreground">Recorded host results; — means the recap did not report a count. Duration is cumulative observed task time per host; older executions may not include it.</p>
+        <p className="text-xs text-muted-foreground" title="Duration is the observed task time per host; older runs may not include it.">— means the run did not report a count.</p>
         <div className="overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr>{['Host', 'Result', 'OK', 'Changed', 'Failed', 'Unreachable', 'Duration', 'Log'].map(label => <th key={label} className="p-2">{label}</th>)}</tr></thead><tbody>{hostResults.map(host => <tr key={host.name} className="border-t">
           <td className="p-2">{host.server_id ? <Link to="/servers/$id" params={{id: host.server_id}} className="text-primary hover:underline">{host.name}</Link> : host.name}</td>
           <td className="p-2"><StatusBadge tone={host.status === 'failed' ? 'danger' : host.status === 'success' ? 'success' : 'muted'}>{statusLabel(t, host.status)}</StatusBadge></td>

@@ -240,12 +240,7 @@ export function OperationsPage() {
                     </Button>
                   )}
                 </div>
-                <div className="flex items-center justify-between border-b bg-background/60 px-3 py-2 md:hidden">
-                  <span className="text-xs text-muted-foreground">
-                    {sourceFilter !== "all" || targetFilter || fromDate || toDate
-                      ? "Filters active"
-                      : "Filters collapsed"}
-                  </span>
+                <div className="flex justify-end border-b bg-background/60 px-3 py-2 md:hidden">
                   <Button
                     type="button"
                     size="sm"
@@ -255,6 +250,7 @@ export function OperationsPage() {
                     onClick={() => setFiltersOpen((open) => !open)}
                   >
                     Filters
+                    {(sourceFilter !== "all" || targetFilter || fromDate || toDate) && <span aria-hidden="true" className="h-1.5 w-1.5 rounded-full bg-primary" />}
                   </Button>
                 </div>
                 <div id="activity-filters" className={`${filtersOpen ? "grid" : "hidden"} gap-2 border-b bg-background/60 px-3 py-2.5 sm:grid-cols-2 md:grid xl:grid-cols-[12rem_minmax(14rem,1fr)_10rem_10rem_auto]`}>
@@ -271,8 +267,8 @@ export function OperationsPage() {
                     <span>Target, task, or initiator</span>
                     <span className="relative block"><Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4" /><Input value={targetFilter} onChange={(event) => setTargetFilter(event.target.value)} className="pl-8" placeholder="Filter operations…" /></span>
                   </label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>From · Europe/Zurich</span><DateTextInput value={fromDate} onChange={setFromDate} ariaLabel="Activity from date" /></label>
-                  <label className="space-y-1 text-xs text-muted-foreground"><span>Through · Europe/Zurich</span><DateTextInput value={toDate} onChange={setToDate} ariaLabel="Activity to date" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>From</span><DateTextInput value={fromDate} onChange={setFromDate} ariaLabel="Activity from date" /></label>
+                  <label className="space-y-1 text-xs text-muted-foreground"><span>To</span><DateTextInput value={toDate} onChange={setToDate} ariaLabel="Activity to date" /></label>
                   <div className="flex items-end"><Button type="button" size="sm" variant="ghost" disabled={sourceFilter === "all" && !targetFilter && !fromDate && !toDate} onClick={() => { setSourceFilter("all"); setTargetFilter(""); setFromDate(""); setToDate(""); }}>Reset</Button></div>
                 </div>
                 {operationRows.length ? (

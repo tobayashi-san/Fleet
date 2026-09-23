@@ -1,7 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { ArrowRight, CircleCheck, CircleHelp, CircleX, Clock3, LoaderCircle, Plus, Rocket } from 'lucide-react';
+import { ArrowRight, ArrowUpCircle, CircleCheck, CircleHelp, CircleX, Clock3, LoaderCircle, Plus, Rocket, RotateCw } from 'lucide-react';
 import { apiFetch } from '@/lib/api';
 import { canAccessDeployments, canAccessOperations, hasCap, useEnvironments, useProfile } from '@/lib/queries';
 import { useUi } from '@/lib/store';
@@ -32,6 +32,8 @@ function entryStatus(status: string, acknowledged = false): { label: string; ton
   if (['failed', 'error'].includes(status)) return acknowledged ? { label: 'Failed · acknowledged', tone: 'muted', icon: CircleX } : { label: 'Failed', tone: 'danger', icon: CircleX };
   if (['success', 'successful', 'completed'].includes(status)) return { label: 'Successful', tone: 'success', icon: CircleCheck };
   if (status === 'online') return { label: 'Connected', tone: 'success', icon: CircleCheck };
+  if (status === 'updates') return { label: 'Updates', tone: 'warning', icon: ArrowUpCircle };
+  if (status === 'reboot') return { label: 'Reboot', tone: 'warning', icon: RotateCw };
   if (['offline', 'error'].includes(status)) return { label: 'Unreachable', tone: 'danger', icon: CircleX };
   if (['scheduled', 'queued', 'pending'].includes(status)) return { label: status === 'scheduled' ? 'Scheduled' : status === 'queued' ? 'Queued' : 'Pending', tone: 'info', icon: Clock3 };
   if (['running', 'cancelling'].includes(status)) return { label: status === 'running' ? 'Running' : 'Cancelling', tone: 'neutral', icon: LoaderCircle };
@@ -70,6 +72,10 @@ export function StartPage() {
   const schedules = useQuery({queryKey:['start',environmentId,'schedules'],queryFn:()=>apiFetch<Schedule[]>(`/schedules?environment_id=${encodeURIComponent(environmentId)}`,{environmentId}),enabled:viewSchedules,refetchInterval:30_000});
   const hostRows = hosts.data || [];
   const unreachable = hostRows.filter(host=>['offline','error'].includes(host.status || ''));
+  const pendingFor = (host:ServerRow) => (host.updates_count || 0) + (host.image_updates_count || 0);
+  const updateHosts = hostRows.filter(host=>pendingFor(host) > 0);
+  const pendingPackages = updateHosts.reduce((sum,host)=>sum+pendingFor(host),0);
+  const rebootHosts = hostRows.filter(host=>host.reboot_required);
   const jobLink = (job:OperationRow) => <Button asChild variant="ghost" size="sm"><Link to="/operations/executions/$id" params={{id:job.id}} search={{environment:environmentId}}>View run log<ArrowRight /></Link></Button>;
   const vmLink = (id:string) => <Button asChild variant="ghost" size="sm"><Link to="/deployments/$id" params={{id}}>Open deployment<ArrowRight /></Link></Button>;
   const attention:Entry[] = [
@@ -78,6 +84,9 @@ export function StartPage() {
     ...(unreachable.length > 3
       ? [{id:'hosts:unreachable',title:`${unreachable.length} hosts unreachable`,objectType:'Hosts',status:'offline',detail:unreachable.slice(0,3).map(host=>host.name).join(', ')+' …',link:<Button asChild variant="ghost" size="sm"><Link to="/servers">Show hosts<ArrowRight /></Link></Button>}]
       : unreachable.map(host=>({id:`host:${host.id}`,title:host.name,objectType:'Host',status:host.status || 'unknown',detail:'Host is unreachable',link:<Button asChild variant="ghost" size="sm"><Link to="/servers/$id" params={{id:host.id}}>Check host<ArrowRight /></Link></Button>}))),
+    // Pending patches are routine work: one summary line each, the details live on Updates.
+    ...(rebootHosts.length ? [{id:'hosts:reboot',title:`${rebootHosts.length} ${rebootHosts.length === 1 ? 'host needs' : 'hosts need'} a reboot`,objectType:'Updates',status:'reboot',detail:rebootHosts.slice(0,3).map(host=>host.name).join(', ')+(rebootHosts.length > 3 ? ' …' : ''),link:<Button asChild variant="ghost" size="sm"><Link to="/updates">Review<ArrowRight /></Link></Button>}] : []),
+    ...(updateHosts.length ? [{id:'hosts:updates',title:`${updateHosts.length} ${updateHosts.length === 1 ? 'host has' : 'hosts have'} updates`,objectType:'Updates',status:'updates',detail:`${pendingPackages} ${pendingPackages === 1 ? 'package or image' : 'packages and images'} waiting`,link:<Button asChild variant="ghost" size="sm"><Link to="/updates">Review<ArrowRight /></Link></Button>}] : []),
     ...(failed.data?.items || []).filter(job=>job.source !== 'Deployment' || !(vms.data || []).some(vm=>vm.id===job.params?.id && failedDeployment(vm))).map(job=>({id:job.id,title:job.target,objectType:job.source,status:job.status,acknowledged:job.acknowledged,detail:job.name,time:job.time,link:jobLink(job)})),
   ];
   const current:Entry[] = [

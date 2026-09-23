@@ -198,9 +198,10 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                   {hasCap(profile, "canEditCustomUpdates") && (
                     <Button
                       size="sm"
+                      variant="outline"
                       onClick={() => setTaskDialog({ open: true, task: null })}
                     >
-                      <Plus className="h-3.5 w-3.5 mr-1" /> {t("det.addTask")}
+                      <Plus /> {t("det.addTask")}
                     </Button>
                   )}
                 </CardHeader>
@@ -212,7 +213,7 @@ export function ServerUpdatesTab({ controller }: { controller: ServerUpdatesTabC
                   ) : customTasksLoading ? (
                     <p role="status" className="p-4 text-sm text-muted-foreground">Loading custom update checks…</p>
                   ) : customTaskList.length === 0 ? (
-                    <EmptyState compact title={t("det.noCustomTasks")} />
+                    <EmptyState inline title={t("det.noCustomTasks")} />
                   ) : (
                     <div className="table-scroll">
                       <table

@@ -170,7 +170,7 @@ export function CommandPalette() {
                   {serversQuery.isFetching || playbooksQuery.isFetching || ipamQuery.isFetching ? 'Searching resources…' : t('cmd.empty')}
                 </Command.Empty>
 
-                <Command.Group heading={t('cmd.navigate')} className="text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                <Command.Group heading={t('cmd.navigate')} className="text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<LayoutDashboard className="h-4 w-4" />} label="Hosts" shortcut="g d" onSelect={() => go('/')} />
                   {hasCap(profile, 'canViewServers') && hasCap(profile, 'canViewUpdates') && <PaletteItem icon={<Download className="h-4 w-4" />} label="Updates" onSelect={() => go('/updates')} />}
                   {networksAvailable && <PaletteItem icon={<Network className="h-4 w-4" />} label="Networks" shortcut="g n" onSelect={() => go('/networks')} />}
@@ -186,7 +186,7 @@ export function CommandPalette() {
                   {more("infrastructure", commandSearch(allInfrastructureItems, search, Infinity, item => item.label, item => item.keywords).length)}
                 </Command.Group>}
                 {safeServers.length > 0 && (
-                  <Command.Group heading={t('cmd.servers')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                  <Command.Group heading={t('cmd.servers')} className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                     {safeServers.map(s => (
                       <PaletteItem
                         key={s.id}
@@ -202,7 +202,7 @@ export function CommandPalette() {
                 )}
 
                 {safePlaybooks.length > 0 && (
-                  <Command.Group heading={t('cmd.playbooks')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                  <Command.Group heading={t('cmd.playbooks')} className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                     {safePlaybooks.map(p => (
                       <PaletteItem
                         key={p.id}
@@ -216,7 +216,7 @@ export function CommandPalette() {
                 )}
 
                 {ipamResults.length > 0 && (
-                  <Command.Group heading="Network search" className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                  <Command.Group heading="Network search" className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                     {(expanded.networks ? ipamResults : ipamResults.slice(0,5)).map(item => (
                       <PaletteItem
                         key={`${item.kind}:${item.id}`}
@@ -233,7 +233,7 @@ export function CommandPalette() {
                   </Command.Group>
                 )}
 
-                <Command.Group heading={t('cmd.actions')} className="mt-2 text-[10.5px] uppercase tracking-wider text-muted-foreground [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
+                <Command.Group heading={t('cmd.actions')} className="mt-2 text-muted-foreground [&_[cmdk-group-heading]]:text-[10.5px] [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5">
                   <PaletteItem icon={<Sun className="h-4 w-4" />} label={t('cmd.themeLight')} onSelect={() => { setTheme('light'); close(); }} />
                   <PaletteItem icon={<Moon className="h-4 w-4" />} label={t('cmd.themeDark')} onSelect={() => { setTheme('dark'); close(); }} />
                   <PaletteItem icon={<HelpCircle className="h-4 w-4" />} label={t('cmd.shortcutsHelp')} shortcut="?" onSelect={() => { close(); setShowHelp(true); }} />

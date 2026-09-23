@@ -40,7 +40,7 @@ test('quick run stays visible with a large host inventory and schedules have a c
   }
   await page.setViewportSize({width:390,height:844});
   await page.goto('/playbooks#tab=schedules');
-  await expect(page.getByRole('button',{name:'New Playbook',exact:true})).toHaveCount(0);
-  await inViewport(page,page.getByRole('button',{name:'New Schedule',exact:true}));
+  await expect(page.getByRole('button',{name:'New playbook',exact:true})).toHaveCount(0);
+  await inViewport(page,page.getByRole('button',{name:'New schedule',exact:true}));
   await shot(page,'schedules-390');
 });

@@ -43,7 +43,7 @@ test('host notes, package checks and container logs keep their own state and req
   await page.getByRole('button',{name:'Create host notes'}).click();
   await page.getByRole('textbox',{name:'Host notes Markdown'}).fill('# Runbook\nSaved by browser test');
   await page.getByRole('tab',{name:'Updates',exact:true}).click();
-  await page.getByRole('button',{name:'Check for Updates',exact:true}).click();
+  await page.getByRole('button',{name:'Check for updates',exact:true}).click();
   await expect(page.getByText('verified-package',{exact:true})).toBeVisible();
   await page.getByRole('tab',{name:'Notes',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Host notes Markdown'})).toHaveValue('# Runbook\nSaved by browser test');

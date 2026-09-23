@@ -10,7 +10,7 @@ async function login(page:Page) {
   });
 }
 async function fixture(page:Page) {
-  await page.route('**/api/servers?*',route=>route.fulfill({json:Array.from({length:8},(_,i)=>({id:`host${i}`,name:`Host ${i}`,status:i<2?'online':'offline',ip_address:`192.0.2.${i+1}`}))}));
+  await page.route('**/api/servers?*',route=>route.fulfill({json:Array.from({length:8},(_,i)=>({id:`host${i}`,name:`Host ${i}`,status:i<2?'online':'offline',ip_address:`192.0.2.${i+1}`,updates_count:i===0?3:0,image_updates_count:i===0?1:0,reboot_required:i===1}))}));
   await page.route('**/api/opentofu/vms?*',route=>route.fulfill({json:[{id:'vm1',name:'Application',last_run:{status:'success'},deployment:{status:'failed',deployment_phase:'connect_host'}}]}));
   await page.route('**/api/operations?*',route=>{
     const scope=new URL(route.request().url()).searchParams.get('scope');
@@ -29,6 +29,9 @@ test('start is compact, links to objects and jobs, and never requests live infra
   const attention=page.getByRole('region',{name:'Needs attention'});
   await expect(attention.getByRole('listitem')).toHaveCount(5);
   await expect(attention.getByRole('link',{name:'Open deployment'})).toHaveAttribute('href','/deployments/vm1');
+  await expect(attention.getByText('1 host has updates',{exact:true})).toBeVisible();
+  await expect(attention.getByText('4 packages and images waiting',{exact:false})).toBeVisible();
+  await expect(attention.getByText('1 host needs a reboot',{exact:true})).toBeVisible();
   const current=page.getByRole('region',{name:'Current & upcoming'});
   await expect(current.getByText('Nightly updates')).toBeVisible();
   await expect(current.getByRole('link',{name:'Open deployment'})).toHaveAttribute('href','/deployments/vm2');

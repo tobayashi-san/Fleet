@@ -8,14 +8,16 @@ export interface EmptyStateProps {
   action?: React.ReactNode;
   className?: string;
   compact?: boolean;
+  /** Small sections inside a card: one short line of height. */
+  inline?: boolean;
 }
 
-export function EmptyState({ icon, title, description, action, className, compact }: EmptyStateProps) {
+export function EmptyState({ icon, title, description, action, className, compact, inline }: EmptyStateProps) {
   return (
     <div
       className={cn(
         'flex flex-col items-center justify-center text-center gap-3',
-        compact ? 'min-h-[9rem] py-7' : 'min-h-[15rem] py-10 sm:py-12',
+        inline ? 'gap-2 py-5' : compact ? 'min-h-[9rem] py-7' : 'min-h-[15rem] py-10 sm:py-12',
         className
       )}
     >
@@ -25,7 +27,7 @@ export function EmptyState({ icon, title, description, action, className, compac
         </div>
       )}
       <div className="space-y-1">
-        <h3 className="text-sm font-semibold text-foreground">{title}</h3>
+        <h3 className={cn('text-sm text-foreground', inline ? 'font-medium text-muted-foreground' : 'font-semibold')}>{title}</h3>
         {description && <p className="max-w-md text-sm text-muted-foreground">{description}</p>}
       </div>
       {action && <div className="mt-1">{action}</div>}

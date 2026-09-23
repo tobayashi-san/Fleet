@@ -1,8 +1,9 @@
+import { BrandMark } from '@/components/BrandMark';
 import { useState, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
-import { Anchor, Lock, LogIn, Server, ShieldCheck } from 'lucide-react';
+import { Lock, LogIn, Server, ShieldCheck } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 import { applyWhiteLabel } from '@/lib/whitelabel';
@@ -136,13 +137,11 @@ export function LoginPage() {
       <main className="mx-auto grid w-full max-w-4xl overflow-hidden rounded-panel border border-border-strong bg-card shadow-xl md:min-h-[500px] md:grid-cols-[0.8fr_1fr]">
         <aside className="relative flex h-48 min-h-0 flex-col justify-between overflow-hidden text-white md:h-auto">
           <img src="/login-infrastructure.webp" alt="" className="absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-slate-950/55 md:bg-slate-950/45" />
+          <div className="absolute inset-0 bg-[#0c1411]/70 md:bg-[#0c1411]/60" />
           <div className="relative p-5 md:p-7">
           <div>
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-sm border border-white/25 bg-slate-950/35 backdrop-blur-sm md:h-10 md:w-10">
-                <Anchor className="h-4 w-4 md:h-5 md:w-5" />
-              </div>
+              <BrandMark className="h-9 w-9 md:h-10 md:w-10" />
               <div>
                 <div className="text-base font-semibold tracking-tight md:text-lg">{appName}</div>
                 <div className="text-xs text-white/75 md:text-sm">{appTagline}</div>

@@ -1,5 +1,4 @@
 import { ScheduleDialog } from './PlaybookSchedules';
-import { Link } from '@tanstack/react-router';
 import { completionStatus } from '@/lib/execution-status';
 import { statusLabel } from '@/lib/history-labels';
 import { getRunStart, subscribeRunStart, trackRunStart, clearRunStart } from './run-start-tracker';
@@ -496,8 +495,7 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
           </div>
           <h3 className="text-sm font-semibold">3. Run now or schedule</h3>
           <div className="sticky top-0 z-10 flex flex-wrap items-center gap-2 rounded-md border bg-card p-3 shadow-sm">
-            <p className="min-w-0 flex-1 text-sm"><strong className="break-all">{selPb || "Select a playbook"}</strong><span className="block text-muted-foreground">{selectedTargets.length} hosts selected · {checkMode ? "Dry run" : "Live run"}</span></p>
-            {(!selPb || selectedTargets.length === 0) && <p className="text-sm text-muted-foreground">Choose playbook and hosts.</p>}
+            <p className="min-w-0 flex-1 text-sm"><strong className="break-all">{selPb || "Select a playbook"}</strong><span className="block text-muted-foreground">{selectedTargets.length} {selectedTargets.length === 1 ? "host" : "hosts"} selected · {checkMode ? "Dry run" : "Live run"}</span></p>
             {hasCap(profile, 'canAddSchedules') && <Button variant="outline" disabled={busy || !selPb || selectedTargets.length === 0} onClick={() => { try { const variables = parseRunVariableDrafts(extraVars); setScheduleVariables(variables); setExtraVarsError(null); setScheduleOpen(true); } catch (error) { setExtraVarsError((error as Error).message); showToast((error as Error).message, 'error'); } }}>Schedule</Button>}
             <Button onClick={run} disabled={!hasCap(profile, "canRunPlaybooks") || busy || !selPb || selectedTargets.length === 0}>
               <Play className="h-4 w-4" /> {busy ? (startingRun ? "Starting…" : t("qr.running")) : checkMode ? "Start dry run" : t("qr.run")}
@@ -550,7 +548,6 @@ function QuickRunSession({ initialPlaybook, environmentId, storageKey }: { initi
             {scheduleOpen && <ScheduleDialog editId={null} schedules={[]} environmentId={environmentId} initialDraft={{playbook:selPb, targets: allChecked ? buildAllExceptTargets([...checked].filter(name => name !== 'localhost')) : [...checked].join(','), check_mode:checkMode, forks, extra_vars: scheduleVariables}} onDraftStateChange={setScheduleDraft} onSaved={() => { setScheduleOpen(false); setScheduleDraft({dirty:false,busy:false}); }} />}
           </Dialog>
           <ConfirmDialog open={discardSchedule} onOpenChange={setDiscardSchedule} title="Discard schedule changes?" description="The unsaved schedule will be lost." confirmLabel="Discard" onConfirm={() => {setDiscardSchedule(false); setScheduleOpen(false); setScheduleDraft({dirty:false,busy:false});}} />
-          <Button asChild variant="link"><Link to="/operations">View all jobs</Link></Button>
           {runConnectionError && <p role="alert" className="text-sm text-destructive">Run status could not be refreshed: {runConnectionError}. The run is still tracked; status will be retried.</p>}
           <CancelRunDialog target={cancelTarget} onClose={() => setCancelTarget(null)} />
           <ConfirmDialog

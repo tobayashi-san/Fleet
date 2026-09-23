@@ -1,7 +1,8 @@
+import { BrandMark } from '@/components/BrandMark';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from '@tanstack/react-router';
-import { Anchor, ArrowLeft, ArrowRight, Check, Key, Lock, Palette, Rocket, ServerCog } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Key, Lock, Palette, Rocket, ServerCog } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { setToken } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -109,8 +110,8 @@ export function OnboardingPage() {
       <main className="grid w-full max-w-5xl overflow-hidden rounded-panel border border-border-strong bg-card shadow-xl lg:min-h-[620px] lg:grid-cols-[18rem_minmax(0,1fr)]">
         <aside className="border-b border-border-strong/80 bg-[hsl(var(--surface-2))] p-4 lg:border-b-0 lg:border-r lg:p-5">
           <div className="flex items-center gap-3 border-b border-border-strong/70 pb-4">
-            <div className="flex h-9 w-9 items-center justify-center rounded-panel border border-primary/25 bg-primary/10 text-primary"><Anchor className="h-4 w-4" /></div>
-            <div className="min-w-0"><div className="truncate font-mono text-[12px] font-bold tracking-[0.12em]">{branding.appName.toUpperCase()}</div><div className="truncate text-xs text-muted-foreground">{branding.appTagline}</div></div>
+            <BrandMark className="h-9 w-9" />
+            <div className="min-w-0"><div className="truncate text-[15px] font-semibold tracking-tight">{branding.appName}</div><div className="truncate text-xs text-muted-foreground">{branding.appTagline}</div></div>
           </div>
           <div className="mt-4 hidden lg:block">
             <div className="mb-3 px-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">Initial configuration</div>

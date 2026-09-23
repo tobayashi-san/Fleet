@@ -23,9 +23,9 @@ const communityThemeIds = [
 
 describe('console theme presets', () => {
   it('provides one unique, complete preview contract for every selectable theme', () => {
-    expect(THEME_PRESETS).toHaveLength(37);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(13);
-    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(24);
+    expect(THEME_PRESETS).toHaveLength(39);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'light')).toHaveLength(14);
+    expect(THEME_PRESETS.filter(theme => theme.mode === 'dark')).toHaveLength(25);
     expect(new Set(THEME_PRESETS.map(theme => theme.id)).size).toBe(THEME_PRESETS.length);
 
     for (const theme of THEME_PRESETS) {
@@ -61,6 +61,8 @@ describe('console theme presets', () => {
     expect(resolveThemePreset('system', 'papercolor-dark')).toBe('papercolor-dark');
     expect(resolveThemePreset('light', 'tokyo-night-dark')).toBe('shipyard-light');
     expect(resolveThemePreset('dark', 'shipyard-light')).toBe('shipyard-dark');
+    expect(resolveThemePreset('dark', 'enterprise-light')).toBe('enterprise-dark');
+    expect(resolveThemePreset('light', 'enterprise-dark')).toBe('enterprise-light');
   });
 });
 

@@ -10,7 +10,7 @@ import { TablePagination } from "@/components/ui/table-pagination";
 import { api } from "@/lib/api";
 import { auditActionLabel, gitPolicyChanges, guestAuditPresentation, normalizeAuditIp, parseAuditDetail } from "@/lib/audit-display";
 import { useUi } from "@/lib/store";
-import { asArray, formatDateTimeWithZone } from "@/lib/utils";
+import { asArray, formatDateTime, formatDateTimeWithZone } from "@/lib/utils";
 import { SettingsSection } from "@/routes/settings/_row";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import {
@@ -100,6 +100,7 @@ export function AuditLogPanel() {
     queryFn: () =>
       api.getAuditMeta({ ...filterParams, environment_id: environmentId }) as unknown as Promise<AuditMeta>,
     staleTime: 60_000,
+    refetchInterval: 60_000,
   });
 
   const rowsQ = useQuery<AuditRow[]>({
@@ -122,6 +123,7 @@ export function AuditLogPanel() {
         limit: AUDIT_PAGE_SIZE,
         offset: (page - 1) * AUDIT_PAGE_SIZE,
       }) as unknown as Promise<AuditRow[]>,
+    refetchInterval: 60_000,
   });
 
   const exportParams = {...filterParams,environment_id:environmentId};
@@ -150,74 +152,53 @@ export function AuditLogPanel() {
     if (page > totalPages) setPage(totalPages);
   }, [page, totalPages]);
 
+  // Search applies while typing, after a short pause.
+  useEffect(() => {
+    const next = searchDraft.trim();
+    if (next === filters.q) return;
+    const timer = setTimeout(() => { setPage(1); setFilters(current => ({ ...current, q: next })); }, 300);
+    return () => clearTimeout(timer);
+  }, [searchDraft, filters.q]);
+
   useEffect(() => {
     setPage(1);
   }, [environmentId]);
 
   return (
-    <SettingsSection
-      icon={<ScrollText className="h-4 w-4" />}
-      title={t("set.auditTitle")}
-    >
-      <div className="console-toolbar border-b border-border/70 px-0 py-2">
-        <div>
-          <span className="text-xs text-muted-foreground">
-            {metaQ.isError
-              ? "Audit metadata unavailable"
-              : metaQ.isLoading ? "Loading audit count…" : `${meta.count || 0} ${(meta.count || 0) === 1 ? "entry" : "entries"} total`} ·{" "}
-            {t("set.auditRetention")}
-          </span>
-          <div className="mt-1 flex rounded-md border p-0.5" aria-label="Audit event focus">
-            <Button size="sm" variant={focus === "changes" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("changes"); setPage(1); }}>
-              Security & changes
-            </Button>
-            <Button size="sm" variant={focus === "all" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("all"); setPage(1); }}>
-              All events
-            </Button>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant={filtersOpen ? "secondary" : "outline"}
-            size="sm"
-            onClick={() => setFiltersOpen((open) => !open)}
-          >
-            <Settings2 className="h-4 w-4" />
-            Filter
-            {Object.values(filters).some((value) => value !== "")
-              ? ": active"
-              : ""}
+    <SettingsSection>
+      {/* One row: search, focus, filter and export. Count and retention live in the tooltip. */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-border/70 p-3">
+        <Input className="min-w-0 flex-1 sm:max-w-sm" aria-label="Search audit events" placeholder="Search action, user, IP or details" maxLength={200} value={searchDraft} onChange={event=>setSearchDraft(event.target.value)} />
+        <div className="flex rounded-md border p-0.5" aria-label="Audit event focus" title={`${metaQ.isError ? "Audit metadata unavailable" : `${total} ${total === 1 ? "entry" : "entries"}`} · ${t("set.auditRetention")}`}>
+          <Button size="sm" variant={focus === "changes" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("changes"); setPage(1); }}>
+            Security & changes
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => exportMutation.mutate(exportParams)}
-            disabled={exportMutation.isPending || metaQ.isLoading || total > 10_000}
-          >
-            <Download className="h-4 w-4" />
-            {exportMutation.isPending ? "Exporting…" : "Export"}
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => {
-              void rowsQ.refetch();
-              void metaQ.refetch();
-            }}
-          >
-            <RotateCw className="h-4 w-4" />
-            {t("set.auditRefresh")}
+          <Button size="sm" variant={focus === "all" ? "secondary" : "ghost"} className="h-7" onClick={() => { setFocus("all"); setPage(1); }}>
+            All events
           </Button>
         </div>
+        <Button
+          variant={filtersOpen ? "secondary" : "outline"}
+          size="sm"
+          onClick={() => setFiltersOpen((open) => !open)}
+        >
+          <Settings2 className="h-4 w-4" />
+          Filter{Object.entries(filters).some(([key, value]) => key !== "q" && value !== "") ? ": active" : ""}
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          title="CSV of the filtered entries, up to 10,000."
+          onClick={() => exportMutation.mutate(exportParams)}
+          disabled={exportMutation.isPending || metaQ.isLoading || total > 10_000}
+        >
+          <Download className="h-4 w-4" />
+          {exportMutation.isPending ? "Exporting…" : "Export"}
+        </Button>
+        <span className="ml-auto text-xs text-muted-foreground tabular-nums">{metaQ.isSuccess ? `${total} ${total === 1 ? "entry" : "entries"}` : ""}</span>
       </div>
-
-      <details className="py-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Export and retention policy</summary><p className="mt-1">CSV of the filtered entries, up to 10,000. Entries older than 90 days are removed at server start.</p></details>
-      {total > 10_000 && <p role="status" className="text-sm text-warning">{total} entries match. Narrow the filters to 10,000 or fewer before exporting.</p>}
-      {exportErrorCurrent && exportMutation.isError && <p role="alert" className="text-sm text-destructive">{exportMutation.error.message}</p>}
-      <form className="flex gap-2 py-3" onSubmit={event=>{event.preventDefault();resetAndSet({q:searchDraft.trim()});}}>
-        <Input aria-label="Search audit events" placeholder="Search action, user, IP or resource details" maxLength={200} value={searchDraft} onChange={event=>setSearchDraft(event.target.value)} />
-        <Button type="submit" variant="outline" size="sm">Search</Button>
-      </form>
+      {total > 10_000 && <p role="status" className="px-3 pt-2 text-sm text-warning">{total} entries match. Narrow the filters to 10,000 or fewer before exporting.</p>}
+      {exportErrorCurrent && exportMutation.isError && <p role="alert" className="px-3 pt-2 text-sm text-destructive">{exportMutation.error.message}</p>}
 
       {metaQ.isError && (
         <QueryErrorState
@@ -346,8 +327,7 @@ export function AuditLogPanel() {
                   <th>Details</th>
                   <th>Triggered by</th>
                   <th>Object</th>
-                  <th>Time</th>
-                  <th>Status</th>
+                  <th>Time · Europe/Zurich</th>
                 </tr>
               </thead>
               <tbody>
@@ -396,7 +376,10 @@ export function AuditTableRow({ row }: { row: AuditRow }) {
   const presentation = guestAuditPresentation(row);
   return (
     <tr>
-      <td className="font-mono text-xs font-medium"><span title={row.action}>{presentation.label}</span></td>
+      <td className="text-sm font-medium">
+        <span title={row.action}>{presentation.label}</span>
+        {presentation.outcome !== "Recorded" && <StatusBadge className="ml-2" tone={presentation.tone} dot>{presentation.outcome}</StatusBadge>}
+      </td>
       <td className="max-w-[28rem]">
         <AuditDetail detail={row.detail} action={row.action} />
       </td>
@@ -407,13 +390,8 @@ export function AuditTableRow({ row }: { row: AuditRow }) {
       <td>
         <AuditObjectLinks links={row.object_links} />
       </td>
-      <td className="whitespace-nowrap font-mono text-xs text-muted-foreground">
-        {formatDateTimeWithZone(row.created_at)}
-      </td>
-      <td>
-        <StatusBadge tone={presentation.tone} dot>
-          {presentation.outcome}
-        </StatusBadge>
+      <td className="whitespace-nowrap text-xs tabular-nums text-muted-foreground" title={formatDateTimeWithZone(row.created_at)}>
+        {formatDateTime(row.created_at)}
       </td>
     </tr>
   );
@@ -429,9 +407,9 @@ export function AuditMobileRow({ row }: { row: AuditRow }) {
             <span title={row.action}>{presentation.label}</span>
           </div>
         </div>
-        <StatusBadge tone={presentation.tone} dot>
+        {presentation.outcome !== "Recorded" && <StatusBadge tone={presentation.tone} dot>
           {presentation.outcome}
-        </StatusBadge>
+        </StatusBadge>}
       </div>
       <div className="min-w-0 overflow-x-auto text-xs text-muted-foreground">
         <AuditDetail detail={row.detail} action={row.action} />
@@ -487,15 +465,8 @@ function SelectInput({
 function AuditIp({ ip }: { ip?: string }) {
   const normalized = normalizeAuditIp(ip);
   if (!ip) return <span className="font-mono text-[11px] text-muted-foreground">—</span>;
-  if (normalized === ip) {
-    return <span className="font-mono text-[11px] text-muted-foreground">{ip}</span>;
-  }
-  return (
-    <details className="text-[11px] text-muted-foreground">
-      <summary className="cursor-pointer font-mono text-foreground">{normalized}</summary>
-      <div className="mt-0.5">Raw IP: <code>{ip}</code></div>
-    </details>
-  );
+  // The recorded form (for example an IPv4-mapped IPv6 address) stays available on hover.
+  return <span className="font-mono text-[11px] text-muted-foreground" title={normalized === ip ? undefined : `Recorded as ${ip}`}>{normalized}</span>;
 }
 
 function AuditDetail({ detail, action }: { detail?: string; action?: string }) {

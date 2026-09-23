@@ -28,7 +28,7 @@ export function MfaPolicyOverview() {
       <p className="text-sm text-muted-foreground">
         {data.requiredAccounts
           ? <>{data.enrolledRequiredAccounts} of {accounts(data.requiredAccounts)} set up{data.needsEnrollment.length ? <> · <span className="text-warning">{data.needsEnrollment.length} still {data.needsEnrollment.length === 1 ? 'needs' : 'need'} setup</span></> : ''}</>
-          : <>MFA is optional for all {accounts(data.activeAccounts)}.</>}
+          : <>{data.activeAccounts === 1 ? 'MFA is optional for this account.' : `MFA is optional for all ${accounts(data.activeAccounts)}.`}</>}
       </p>
       {data.needsEnrollment.length>0 && <details className="rounded-md border p-3 text-sm"><summary className="cursor-pointer font-medium">Accounts that must finish setup ({data.needsEnrollment.length})</summary><p className="mt-2 text-xs text-muted-foreground">They can sign in only to set up an authenticator.</p><ul className="mt-2 max-h-48 space-y-1 overflow-y-auto">{data.needsEnrollment.map(user=><li key={user.id} className="break-words">{user.displayName || user.username}{user.displayName && <span className="text-muted-foreground"> · @{user.username}</span>}</li>)}</ul></details>}
     </>}

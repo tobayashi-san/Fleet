@@ -104,6 +104,7 @@ export function NetworksPage() {
   // Only top-level prefixes belong in the environment total. Child prefixes
   // already consume capacity inside their parent and must not be counted twice.
   const visibleIds = hierarchicalRows.map(({ prefix }) => prefix.id);
+  const [addressMatches, setAddressMatches] = useState(0);
   // Hide the description column while no prefix has one.
   const showDescription = rows.some(prefix => prefix.description);
   const selectedCount = visibleIds.filter((id) => selectedIds.has(id)).length;
@@ -213,7 +214,6 @@ export function NetworksPage() {
           </div>
         }
       />
-      <GlobalIpamSearch environmentId={environmentId} />
       {query.isError ? (
         <Card>
           <EmptyState
@@ -242,9 +242,6 @@ export function NetworksPage() {
                       {rows.length}
                     </span>
                   </CardTitle>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {tr("prefixInventoryDescription")}
-                  </p>
                 </div>
                 <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
                   {canEdit && selectedCount > 0 && (
@@ -263,14 +260,14 @@ export function NetworksPage() {
                       </OverflowMenu>
                     </>
                   )}
-                  <label className="relative min-w-0 flex-1 sm:w-64">
+                  <label className="relative min-w-0 flex-1 sm:w-80">
                     <Search className="pointer-events-none absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
                     <Input
                       value={search}
                       onChange={(event) => setSearch(event.target.value)}
                       className="pl-8"
-                      placeholder={tr("searchPrefixes")}
-                      aria-label={tr("searchPrefixes")}
+                      placeholder={tr("globalSearch")}
+                      aria-label={tr("globalSearchLabel")}
                     />
                   </label>
                   <Button
@@ -283,6 +280,7 @@ export function NetworksPage() {
                   </Button>
                 </div>
               </div>
+              <GlobalIpamSearch environmentId={environmentId} value={search} onMatches={setAddressMatches} />
               {filtersOpen && (
                 <div className="flex flex-wrap items-center gap-2 border-t bg-background/60 px-4 py-2.5">
                   <Label
@@ -334,9 +332,8 @@ export function NetworksPage() {
               {query.isPending ? (
                 <EmptyState compact title={tr("loadingPrefixes")} />
               ) : hierarchicalRows.length === 0 ? (
-                <p className="p-10 text-sm text-muted-foreground">
-                  {tr("noPrefixes")}
-                </p>
+                // Address matches above already answer the search; only say "nothing" when nothing matched.
+                addressMatches > 0 ? null : <EmptyState compact title={search.trim() ? tr("noResults") : tr("noPrefixes")} />
               ) : (
                 <>
                   <div className="hidden md:block">
@@ -363,6 +360,7 @@ export function NetworksPage() {
                           </th>}
                           <th className="px-3">{tr("prefixNameColumn")}</th>
                           <th className="px-3">{tr("status")}</th>
+                          <th className="px-3">{tr("usageColumn")}</th>
                           <th className="px-3">{tr("vlanBridge")}</th>
                           {showDescription && <th className="px-3">{tr("descriptionLabel")}</th>}
                           <th className="w-10 px-3">

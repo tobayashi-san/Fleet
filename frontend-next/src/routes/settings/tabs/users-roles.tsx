@@ -124,7 +124,7 @@ function UsersPanel() {
       title={t('set.userManagement')}
       headerRight={
         <div className="flex items-center gap-3">
-          {usersQ.isSuccess && <span className="text-xs text-muted-foreground">{users.length} users</span>}
+          {usersQ.isSuccess && <span className="text-xs text-muted-foreground">{users.length} {users.length === 1 ? 'user' : 'users'}</span>}
           <Button size="sm" onClick={() => setCreating(true)}>
             <UserPlus className="h-4 w-4" /> {t('set.addUser')}
           </Button>
@@ -183,7 +183,7 @@ function UsersPanel() {
           >
             <StatusBadge tone={u.role === 'admin' ? 'info' : 'neutral'}>{roleName}</StatusBadge>
             <StatusBadge tone={u.totp_enabled ? 'success' : 'muted'}>{u.totp_enabled ? '2FA on' : '2FA off'}</StatusBadge>
-            {u.disabled && <StatusBadge tone="danger">{t('set.disabled')}</StatusBadge>}
+            {Boolean(u.disabled) && <StatusBadge tone="danger">{t('set.disabled')}</StatusBadge>}
             <OverflowMenu title={`Actions for ${shown}`}>
               <OverflowItem icon={Pencil} onClick={() => setEditing(u)}>
                 {t('common.edit')}

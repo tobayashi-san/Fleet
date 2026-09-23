@@ -269,7 +269,7 @@ describe("UI refactor contract", () => {
     expect(profile).toContain("More themes");
     expect(users).toContain("flex max-h-[90vh] max-w-4xl flex-col overflow-hidden p-0");
     expect(users).toContain("shrink-0 border-t bg-card px-5 py-3");
-    expect(users).toContain("{users.length} users");
+    expect(users).toContain("{users.length} {users.length === 1 ? 'user' : 'users'}");
     expect(activity).toContain("serverNames.get(text(data.serverId))");
     expect(activity).not.toContain("`Host ${text(data.serverId)}`");
     expect(activity).toContain("Cause:");

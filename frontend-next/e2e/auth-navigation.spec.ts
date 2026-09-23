@@ -106,7 +106,7 @@ test('initial setup, login and protected console navigation work end-to-end', as
   await expect(page).toHaveURL(/\/servers/);
 
   await page.goto('/networks');
-  await expect(page.getByRole('heading', { name: /ip address management|ip-adressverwaltung/i })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Networks', exact: true })).toBeVisible();
 
   await page.goto('/operations');
   await expect(page.getByRole('heading', { name: /^Jobs$/ })).toBeVisible();

@@ -185,9 +185,9 @@ export function OperationsPage() {
         title="Jobs"
         description="Runs and scheduled changes."
       />
-      <nav className="flex gap-1 overflow-x-auto rounded-panel border bg-card p-1" aria-label="Operations sections">
-        <Button asChild size="sm" variant={activeSection === "tasks" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "tasks" }}>Activity</Link></Button>
-        {canViewAudit && <Button asChild size="sm" variant={activeSection === "audit" ? "secondary" : "ghost"}><Link to="/operations" search={{ ...routeSearch, section: "audit" }}>Audit</Link></Button>}
+      <nav className="console-tabs" aria-label="Operations sections">
+        <Link to="/operations" search={{ ...routeSearch, section: "tasks" }} aria-current={activeSection === "tasks" ? "page" : undefined}>Activity</Link>
+        {canViewAudit && <Link to="/operations" search={{ ...routeSearch, section: "audit" }} aria-current={activeSection === "audit" ? "page" : undefined}>Audit</Link>}
       </nav>
       <div className="flex flex-col gap-5">
         {activeSection === "tasks" && <Card id="operation-tasks" className="scroll-mt-16">

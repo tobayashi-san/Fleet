@@ -1432,8 +1432,8 @@
     "closeDialog": "Close dialog"
   },
   "ipam": {
-    "title": "IP address management",
-    "description": "Address spaces, reservations, and network assignments for the active environment.",
+    "title": "Networks",
+    "description": "Prefixes, address reservations and VLANs for this environment.",
     "refresh": "Refresh",
     "sources": "Sources",
     "addPrefix": "Add prefix",
@@ -1473,8 +1473,8 @@
     "reset": "Reset",
     "loadingPrefixes": "Loading prefixes…",
     "noPrefixes": "No prefixes found.",
-    "globalSearch": "Search all IPs, prefixes, hostnames, MAC addresses, and hosts…",
-    "globalSearchLabel": "Search all IPAM data",
+    "globalSearch": "Search prefixes, IPs, hostnames or MACs…",
+    "globalSearchLabel": "Search networks",
     "searching": "Searching IPAM…",
     "searchFailed": "Search could not be completed.",
     "searchEmpty": "No IPAM records match this search.",
@@ -1795,7 +1795,11 @@
     "diagnosticEmptyChecks": "Check the selected site/API path, source client or lease inventory, token read permissions and supported IP address fields.",
     "diagnosticOutside": "Review managed prefixes in this environment: addresses outside them are excluded from the import.",
     "diagnosticCompare": "Compare these counts with the source inventory to verify the intended site and network coverage.",
-    "diagnosticCompleteness": "Shipyard cannot infer the number of addresses the source should contain. No conflicts only describes imported addresses."
+    "diagnosticCompleteness": "Shipyard cannot infer the number of addresses the source should contain. No conflicts only describes imported addresses.",
+    "noResults": "Nothing matches this search.",
+    "usageColumn": "Usage",
+    "usedOfTotal": "{{used}} of {{total}}",
+    "usedSummary": "{{used}} of {{total}} used · {{percent}}%"
   },
   "pagination": {
     "aria": "{{item}} pagination",

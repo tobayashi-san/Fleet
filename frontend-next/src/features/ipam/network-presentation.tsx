@@ -93,31 +93,6 @@ export function Field({
     </div>
   );
 }
-export function NetworkFact({
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  detail: string;
-  tone?: "success";
-}) {
-  return (
-    <div className="console-object-info !min-h-10 !py-1">
-      <div>{label}</div>
-      <div
-        className={
-          tone === "success" ? "[color:hsl(var(--success))]" : undefined
-        }
-      >
-        {value}
-      </div>
-      <p>{detail}</p>
-    </div>
-  );
-}
 export function Info({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 bg-card px-3 py-2.5">

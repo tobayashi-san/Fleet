@@ -42,7 +42,7 @@ import {
 
 import { AllocationTable } from "@/features/ipam/AllocationTable";
 import { ChildPrefixTable } from "@/features/ipam/ChildPrefixTable";
-import { capacityTone, Info, NetworkFact, QueryLoadError, sourceSystemName, statusLabel, statusTone, tr } from "@/features/ipam/network-presentation";
+import { capacityTone, Info, QueryLoadError, sourceSystemName, statusLabel, statusTone, tr } from "@/features/ipam/network-presentation";
 import type { Allocation, FreeSpaceSegment, Paginated, Prefix, ProxmoxConnection, Reservation, Server, SyncConflict } from "@/features/ipam/network-types";
 import { AddressForm, DeviceNameDialog, EditAddressDialog, EditPrefixDialog, RangeForm } from "@/features/ipam/ReservationForms";
 import { SyncConflictPanel } from "@/features/ipam/SyncConflictPanel";
@@ -89,6 +89,7 @@ function NetworkDetailContent({ id }: { id: string }) {
   const detail = useQuery({
     queryKey: ["ipam", "network", id],
     queryFn: () => apiFetch<Prefix>(`/ipam/subnets/${encodeURIComponent(id)}`),
+    refetchInterval: 60_000,
   });
   const targetEnvironmentId = detail.data?.environment_id || environmentId;
   const allocations = useQuery({
@@ -97,6 +98,7 @@ function NetworkDetailContent({ id }: { id: string }) {
       apiFetch<Paginated<Allocation>>(
         `/ipam/subnets/${encodeURIComponent(id)}/allocations?paginated=1&page=${allocationPage}&page_size=${allocationPageSize}&q=${encodeURIComponent(allocationSearch)}&status=${encodeURIComponent(allocationStatus === "unassigned" ? "all" : allocationStatus)}`,
       ),
+    refetchInterval: 60_000,
   });
   const reservationValidation = useQuery({
     queryKey: ["ipam", "reservation-validation", id, targetEnvironmentId, addKind, deferredAddress, deferredRangeStart, deferredRangeEnd],
@@ -395,6 +397,16 @@ function NetworkDetailContent({ id }: { id: string }) {
         </Card>
       </div>
     );
+  // Only configured values; an unconfigured network shows no row of dashes.
+  const bridge = network.bridge && !(network.vlan_id && network.bridge.toLowerCase() === `vlan${network.vlan_id}`) ? network.bridge : "";
+  const configuration = ([
+    [tr("vlanBridge"), [network.vlan_id ? `VLAN ${network.vlan_id}` : "", bridge].filter(Boolean).join(" · ")],
+    [tr("gateway"), network.gateway || ""],
+    [tr("dhcpRange"), network.dhcp_start && network.dhcp_end ? `${network.dhcp_start} – ${network.dhcp_end} (${tr("dhcpPoolCount", { count: network.dhcp_address_count || 0 })})` : ""],
+    [tr("dns"), (network.dns_servers || []).join(", ")],
+    [tr("role"), network.role || ""],
+    [tr("descriptionLabel"), network.description || ""],
+  ] as [string, string][]).filter(([, value]) => value);
   const usagePercent = network.usable_address_count
     ? Math.round(
         (network.used_address_count / network.usable_address_count) * 100,
@@ -423,21 +435,6 @@ function NetworkDetailContent({ id }: { id: string }) {
             <StatusBadge tone={statusTone(network.status)} dot>
               {statusLabel[network.status] || network.status}
             </StatusBadge>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={detail.isFetching || allocations.isFetching}
-              onClick={refresh}
-            >
-              <RefreshCw
-                className={
-                  detail.isFetching || allocations.isFetching
-                    ? "animate-spin"
-                    : undefined
-                }
-              />
-              {tr("refresh")}
-            </Button>
             {canEdit && <Button
               size="sm"
               onClick={() => {
@@ -447,14 +444,13 @@ function NetworkDetailContent({ id }: { id: string }) {
               <Plus />
               {tr("reserveAddress")}
             </Button>}
-            {canEdit && <Button
+            {canEdit && connectionRows.length > 0 && <Button
               variant="outline"
               size="sm"
               onClick={() => {
                 setConnectionId(connectionRows[0]?.id || "");
                 setSyncOpen(true);
               }}
-              disabled={connections.isLoading || connectionRows.length === 0}
               title={
                 connections.isError
                   ? tr("proxmoxConnectionsFailed")
@@ -495,115 +491,35 @@ function NetworkDetailContent({ id }: { id: string }) {
           />
         </Card>
       )}
-      <section className="console-object-summary overflow-hidden">
-        <div className="grid xl:grid-cols-[minmax(0,1.25fr)_minmax(20rem,.75fr)]">
-          <div className="console-object-summary-main !py-2.5">
-            <div className="flex items-center gap-2 border-b pb-2.5 text-sm font-semibold">
-              <Network className="h-4 w-4 text-brand" />
-              {tr("addressSpace")}
-            </div>
-            <div className="console-object-info-grid grid-cols-2 lg:grid-cols-4">
-              <NetworkFact
-                label={tr("usableIps")}
-                value={network.usable_address_count}
-                detail={tr("assignedCount", { count: network.used_address_count })}
-              />
-              <NetworkFact
-                label={tr("free")}
-                value={network.free_address_count}
-                detail={tr("availablePercent", { count: Math.max(0, 100 - usagePercent) })}
-                tone="success"
-              />
-              <NetworkFact
-                label={tr("individualAddresses")}
-                value={network.reservation_count}
-                detail={tr("usedOrReserved")}
-              />
-              <NetworkFact
-                label={tr("ranges")}
-                value={network.range_count}
-                detail={
-                  network.child_prefix_count
-                    ? tr("childCount", { count: network.child_prefix_count })
-                    : tr("noChildren")
-                }
-              />
-            </div>
-          </div>
-          <div className="console-object-capacity border-t !py-2.5 xl:border-l xl:border-t-0">
-            <div className="flex items-center justify-between gap-3 border-b pb-2.5 text-sm font-semibold">
-              <span>{tr("usage")}</span>
-              <span className="font-mono text-muted-foreground">
-                {usagePercent} %
-              </span>
-            </div>
-            <div className="mt-2.5 flex items-center justify-between gap-3 text-xs">
-              <span>{tr("used")}</span>
-              <span className="font-mono text-muted-foreground">
-                {network.used_address_count} / {network.usable_address_count}
-              </span>
-            </div>
-            <div className="console-capacity-track mt-2">
-              <span
-                data-capacity-tone={capacityTone(usagePercent)}
-                style={{ width: `${usagePercent}%` }}
-              />
-            </div>
-            <div className="mt-2.5 flex items-center justify-between gap-3">
-              <span className="text-xs text-muted-foreground">
-                {tr("nextFree")}
-              </span>
-              {network.next_free_address ? (
-                <button
-                  type="button"
-                  onClick={() => {
-                    openAddressReservation(network.next_free_address || "");
-                  }}
-                  className="font-mono text-sm font-medium text-brand hover:underline"
-                >
-                  {network.next_free_address}
-                </button>
-              ) : (
-                <span className="text-xs text-muted-foreground">
-                  {tr("noneFree")}
-                </span>
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
+      {/* Utilisation, the next free address and the counts in one place. */}
       <Card>
+        <CardContent className="space-y-3 p-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h2 className="flex items-center gap-2 text-sm font-semibold"><Network className="h-4 w-4 text-brand" />{tr("addressSpace")}</h2>
+            <span className="text-sm text-muted-foreground tabular-nums">{tr("usedSummary", { used: network.used_address_count, total: network.usable_address_count, percent: usagePercent })}</span>
+          </div>
+          <div className="console-capacity-track">
+            <span data-capacity-tone={capacityTone(usagePercent)} style={{ width: `${usagePercent}%` }} />
+          </div>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-1 text-xs text-muted-foreground">
+            <span>{tr("nextFree")}: {network.next_free_address ? <button type="button" onClick={() => openAddressReservation(network.next_free_address || "")} className="font-mono text-sm font-medium text-brand hover:underline">{network.next_free_address}</button> : tr("noneFree")}</span>
+            <span>{network.reservation_count} {network.reservation_count === 1 ? "reservation" : "reservations"}</span>
+            <span>{network.range_count} {network.range_count === 1 ? "range" : "ranges"}</span>
+            {network.child_prefix_count > 0 && <span>{tr("childCount", { count: network.child_prefix_count })}</span>}
+          </div>
+        </CardContent>
+      </Card>
+      {configuration.length > 0 && <Card>
         <CardHeader className="border-b px-3 py-2.5">
           <CardTitle className="flex items-center gap-2 text-sm">
             <Network className="h-4 w-4" />
             {tr("networkConfiguration")}
           </CardTitle>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-px bg-border p-0 text-sm sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          <Info
-            label={tr("vlanBridge")}
-            value={`${network.vlan_id ? `VLAN ${network.vlan_id}` : "—"} · ${network.bridge || "—"}`}
-          />
-          <Info label={tr("gateway")} value={network.gateway || "—"} />
-          <Info
-            label={tr("dhcpRange")}
-            value={
-              network.dhcp_start && network.dhcp_end
-                ? `${network.dhcp_start} – ${network.dhcp_end} (${tr("dhcpPoolCount", { count: network.dhcp_address_count || 0 })})`
-                : tr("dhcpNotConfigured")
-            }
-          />
-          <Info
-            label={tr("dns")}
-            value={(network.dns_servers || []).join(", ") || "—"}
-          />
-          <Info label={tr("role")} value={network.role || "—"} />
-          <Info
-            label={tr("descriptionLabel")}
-            value={network.description || "—"}
-          />
+        <CardContent className="grid grid-cols-1 gap-px bg-border p-0 text-sm sm:grid-cols-[repeat(auto-fit,minmax(12rem,1fr))]">
+          {configuration.map(([label, value]) => <Info key={label} label={label} value={value} />)}
         </CardContent>
-      </Card>
+      </Card>}
       {syncConflicts.isError && (
         <Card className="border-destructive/40">
           <EmptyState

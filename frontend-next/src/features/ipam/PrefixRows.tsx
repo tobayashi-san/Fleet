@@ -7,6 +7,19 @@ import {
 } from "lucide-react";
 import { statusLabel } from './prefix-model';
 
+/** Address utilisation; colour changes only when the prefix is filling up. */
+export function PrefixUsage({ prefix }: { prefix: Prefix }) {
+  const total = prefix.usable_address_count || 0;
+  if (!total) return <span className="text-muted-foreground">—</span>;
+  const used = prefix.used_address_count || 0;
+  const pct = Math.min(100, Math.round((used / total) * 100));
+  const tone = pct >= 90 ? "bg-destructive" : pct >= 80 ? "bg-[hsl(var(--warning))]" : "bg-muted-foreground/45";
+  return <div className="flex items-center gap-2 text-xs" title={`${pct}% used`}>
+    <span className="h-1.5 w-20 overflow-hidden rounded-full bg-muted"><span className={`block h-full rounded-full ${tone}`} style={{ width: `${pct}%` }} /></span>
+    <span className="whitespace-nowrap tabular-nums text-muted-foreground">{tr("usedOfTotal", { used, total })}</span>
+  </div>;
+}
+
 /** A bridge named after its VLAN (vlan10 for VLAN 10) repeats information. */
 export function distinctBridge(prefix: Prefix) {
   const bridge = prefix.bridge || '';
@@ -75,6 +88,7 @@ export function PrefixRow({
           )}
         </div>
       </td>
+      <td className="px-3"><PrefixUsage prefix={prefix} /></td>
       <td className="px-3">
         <span>{prefix.vlan_id ? `VLAN ${prefix.vlan_id}` : distinctBridge(prefix) ? "" : "—"}</span>
         {distinctBridge(prefix) && <span className="ml-1.5 font-mono text-xs text-muted-foreground">
@@ -161,44 +175,22 @@ export function PrefixMobileCard({
             </Badge>
           </div>
           <dl className="mt-2 grid min-w-0 gap-1.5 text-xs">
+            <div className="flex min-w-0 items-center gap-2">
+              <dt className="shrink-0 text-muted-foreground">{tr("usageColumn")}</dt>
+              <dd className="min-w-0"><PrefixUsage prefix={prefix} /></dd>
+            </div>
             <div className="flex min-w-0 gap-2">
               <dt className="shrink-0 text-muted-foreground">{tr("vlanBridge")}</dt>
               <dd className="min-w-0 break-all font-mono text-foreground">{networkLabel}</dd>
             </div>
-            <div className="flex min-w-0 gap-2">
+            {prefix.description && <div className="flex min-w-0 gap-2">
               <dt className="shrink-0 text-muted-foreground">{tr("descriptionLabel")}</dt>
-              <dd className="min-w-0 break-words text-foreground">{prefix.description || "—"}</dd>
-            </div>
+              <dd className="min-w-0 break-words text-foreground">{prefix.description}</dd>
+            </div>}
           </dl>
         </Link>
         <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground" />
       </div>
     </article>
-  );
-}
-
-export function NetworkFact({
-  label,
-  value,
-  detail,
-  tone,
-}: {
-  label: string;
-  value: string | number;
-  detail: string;
-  tone?: "success";
-}) {
-  return (
-    <div className="console-object-info">
-      <div>{label}</div>
-      <div
-        className={
-          tone === "success" ? "[color:hsl(var(--success))]" : undefined
-        }
-      >
-        {value}
-      </div>
-      <p>{detail}</p>
-    </div>
   );
 }

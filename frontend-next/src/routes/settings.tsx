@@ -4,7 +4,6 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { PageHeader } from '@/components/ui/page-header';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 import { useProfile, useSettings } from '@/lib/queries';
-import { cn } from '@/lib/utils';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { Lock } from 'lucide-react';
 import { useEffect, useState } from 'react';
@@ -102,8 +101,8 @@ function AdminSettingsPage() {
     <div className="space-y-5">
       <PageHeader title={t('set.title')} />
 
-      <nav className="flex gap-1 overflow-x-auto border-b pb-2" aria-label="Settings">
-        {GROUPS.map(group => <Link key={group.id} to="/settings/$tab" params={{tab: group.id}} aria-current={activeId === group.id ? 'page' : undefined} className={cn('shrink-0 whitespace-nowrap rounded-sm px-3 py-2 text-sm sm:px-4', activeId === group.id ? 'bg-accent font-semibold' : 'text-muted-foreground hover:bg-accent')}>{group.label}</Link>)}
+      <nav className="console-tabs" aria-label="Settings">
+        {GROUPS.map(group => <Link key={group.id} to="/settings/$tab" params={{tab: group.id}} aria-current={activeId === group.id ? 'page' : undefined} >{group.label}</Link>)}
       </nav>
       <div key={params.tab || 'general'} className="space-y-4">
         {activeId === 'general' && <>

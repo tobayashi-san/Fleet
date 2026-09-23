@@ -5,7 +5,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { hasCap, useProfile } from '@/lib/queries';
 import { useUrlTab } from '@/lib/use-url-tab';
 import { GitTab } from '@/routes/settings/tabs/git';
-import { Link, useLocation } from '@tanstack/react-router';
+import { useLocation } from '@tanstack/react-router';
 import { Clock, FileText, GitBranch, Play, Plus, SlidersHorizontal } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -81,6 +81,10 @@ export function PlaybooksPage() {
                 <Plus />{t("pb.new")}
               </Button>
             )}
+            {/* Variables and Git live behind the page menu; the jobs list has its own navigation entry. */}
+            {allowed.some(tb => ['vars', 'git'].includes(tb.value)) && <OverflowMenu title="Advanced automation settings">
+              {allowed.filter(tb => ['vars', 'git'].includes(tb.value)).map(tb => <OverflowItem key={tb.value} onClick={() => playbookTabs.onValueChange(tb.value)}>{tb.label}</OverflowItem>)}
+            </OverflowMenu>}
           </div>
         }
       />
@@ -93,12 +97,6 @@ export function PlaybooksPage() {
             </TabsTrigger>
           ))}
         </TabsList>
-        <div className="flex items-center justify-end gap-2">
-          <Button variant="link" asChild><Link to="/operations">View jobs</Link></Button>
-          <OverflowMenu title="Advanced automation settings">
-            {allowed.filter(tb => ['vars', 'git'].includes(tb.value)).map(tb => <OverflowItem key={tb.value} onClick={() => playbookTabs.onValueChange(tb.value)}>{tb.label}</OverflowItem>)}
-          </OverflowMenu>
-        </div>
 
         {isAdmin && <TabsContent value="git"><GitTab workspace /></TabsContent>}
         {hasCap(profile, "canViewPlaybooks") && <TabsContent value="templates">

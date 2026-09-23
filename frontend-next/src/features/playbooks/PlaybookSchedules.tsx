@@ -328,13 +328,13 @@ export function SchedulesTab() {
                             {cronLabel(s.cron_expression)}
                             {scheduleNameMismatch(s.name, s.cron_expression) && <p className="mt-1 text-xs text-warning">{scheduleNameMismatch(s.name, s.cron_expression)}</p>}
                           </span>
-                          {s.enabled && s.registration_status === 'unregistered' && <div className="my-1 space-y-1">
+                          {Boolean(s.enabled) && s.registration_status === 'unregistered' && <div className="my-1 space-y-1">
                             <p role="alert" className="text-warning">Saved but not registered · will not run automatically.</p>
                             {hasCap(profile,'canToggleSchedules') && <Button size="sm" variant="outline" disabled={registrationMut.isPending} onClick={() => registrationMut.mutate({id:s.id,environment:environmentId})}>{registrationMut.isPending && registrationMut.variables?.id === s.id ? 'Retrying…' : 'Retry registration'}</Button>}
                             {registrationMut.isError && registrationMut.variables?.id === s.id && registrationMut.variables.environment === environmentId && <p role="alert" className="text-destructive">{registrationMut.error.message}</p>}
                           </div>}
                           <span className="mt-0.5 block text-[11px] text-muted-foreground">
-                            {s.enabled && s.next_run ? `Next ${fmtDate(s.next_run)}` : s.enabled ? (s.registration_status === "unregistered" ? "No automatic start registered" : "Next run pending") : "Paused"} · {s.timezone || "server timezone"}
+                            {Boolean(s.enabled) && s.next_run ? `Next ${fmtDate(s.next_run)}` : s.enabled ? (s.registration_status === "unregistered" ? "No automatic start registered" : "Next run pending") : "Paused"} · {s.timezone || "server timezone"}
                           </span>
                         </td>
                         <td className="px-3 text-xs">

@@ -951,7 +951,8 @@
       mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 1.75rem), transparent 100%);
     }
   }
-  .console-tabs > [role='tab'] {
+  .console-tabs > [role='tab'],
+  .console-tabs > a {
     flex: 0 0 auto;
     min-height: 2.5rem;
     border-radius: 0;
@@ -961,7 +962,11 @@
     color: hsl(var(--muted-foreground));
     box-shadow: none;
   }
-  .console-tabs > [role='tab']:hover { color: hsl(var(--foreground)); }
+  .console-tabs > a { font-size: 0.8125rem; font-weight: 500; white-space: nowrap; }
+  .console-tabs > [role='tab']:hover,
+  .console-tabs > a:hover { color: hsl(var(--foreground)); }
+  /* Section navigation built from links shares the tab rail. */
+  .console-tabs > a[aria-current='page'],
   .console-tabs > [role='tab'][data-state='active'] {
     border-bottom-color: hsl(var(--primary));
     background: transparent;

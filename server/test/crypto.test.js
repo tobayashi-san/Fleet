@@ -16,14 +16,14 @@ after(() => {
   }
 });
 
-// ── encrypt/decrypt without SHIPYARD_KEY_SECRET ───────────────────────────────
+// ── encrypt/decrypt without FLEET_KEY_SECRET ───────────────────────────────
 
-describe('crypto without SHIPYARD_KEY_SECRET', () => {
+describe('crypto without FLEET_KEY_SECRET', () => {
   // Clear the key before importing
-  const originalKey = process.env.SHIPYARD_KEY_SECRET;
+  const originalKey = process.env.FLEET_KEY_SECRET;
 
   test('encrypt returns plaintext when no key set', () => {
-    delete process.env.SHIPYARD_KEY_SECRET;
+    delete process.env.FLEET_KEY_SECRET;
     // Re-require to reset state
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt } = require('../utils/crypto');
@@ -31,7 +31,7 @@ describe('crypto without SHIPYARD_KEY_SECRET', () => {
   });
 
   test('decrypt returns value as-is for non-encrypted values', () => {
-    delete process.env.SHIPYARD_KEY_SECRET;
+    delete process.env.FLEET_KEY_SECRET;
     delete require.cache[require.resolve('../utils/crypto')];
     const { decrypt } = require('../utils/crypto');
     assert.equal(decrypt('plaintext'), 'plaintext');
@@ -41,15 +41,15 @@ describe('crypto without SHIPYARD_KEY_SECRET', () => {
 
   // Restore
   after(() => {
-    if (originalKey) process.env.SHIPYARD_KEY_SECRET = originalKey;
+    if (originalKey) process.env.FLEET_KEY_SECRET = originalKey;
   });
 });
 
-// ── encrypt/decrypt with SHIPYARD_KEY_SECRET ──────────────────────────────────
+// ── encrypt/decrypt with FLEET_KEY_SECRET ──────────────────────────────────
 
-describe('crypto with SHIPYARD_KEY_SECRET', () => {
+describe('crypto with FLEET_KEY_SECRET', () => {
   test('encrypts and decrypts correctly', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    process.env.FLEET_KEY_SECRET = 'test-master-key-for-crypto';
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt, decrypt } = require('../utils/crypto');
 
@@ -64,7 +64,7 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   test('each encryption produces different ciphertext (random IV)', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    process.env.FLEET_KEY_SECRET = 'test-master-key-for-crypto';
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt } = require('../utils/crypto');
 
@@ -74,13 +74,13 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   test('decrypt returns opaque blob when key is missing', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    process.env.FLEET_KEY_SECRET = 'test-master-key-for-crypto';
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt } = require('../utils/crypto');
     const encrypted = encrypt('secret');
 
     // Now remove key and try to decrypt
-    delete process.env.SHIPYARD_KEY_SECRET;
+    delete process.env.FLEET_KEY_SECRET;
     delete require.cache[require.resolve('../utils/crypto')];
     const { decrypt } = require('../utils/crypto');
     const result = decrypt(encrypted);
@@ -88,7 +88,7 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   test('encrypt handles empty/null input', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    process.env.FLEET_KEY_SECRET = 'test-master-key-for-crypto';
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt } = require('../utils/crypto');
     assert.equal(encrypt(''), '');
@@ -97,7 +97,7 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   test('decrypt returns null (not throw) on corrupt ciphertext', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-master-key-for-crypto';
+    process.env.FLEET_KEY_SECRET = 'test-master-key-for-crypto';
     delete require.cache[require.resolve('../utils/crypto')];
     const { decrypt } = require('../utils/crypto');
     // Too short
@@ -107,13 +107,13 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   test('decrypt returns null (not throw) when key changes', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'original-key';
+    process.env.FLEET_KEY_SECRET = 'original-key';
     delete require.cache[require.resolve('../utils/crypto')];
     const { encrypt } = require('../utils/crypto');
     const encrypted = encrypt('secret-value');
 
     // Change the key and re-import
-    process.env.SHIPYARD_KEY_SECRET = 'different-key';
+    process.env.FLEET_KEY_SECRET = 'different-key';
     delete require.cache[require.resolve('../utils/crypto')];
     const { decrypt } = require('../utils/crypto');
     // Auth tag verification fails → must return null, not throw
@@ -121,7 +121,7 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
   });
 
   after(() => {
-    delete process.env.SHIPYARD_KEY_SECRET;
+    delete process.env.FLEET_KEY_SECRET;
   });
 });
 
@@ -129,7 +129,7 @@ describe('crypto with SHIPYARD_KEY_SECRET', () => {
 
 describe('getSecret / setSecret', () => {
   test('stores and retrieves encrypted secrets', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-key-for-get-set';
+    process.env.FLEET_KEY_SECRET = 'test-key-for-get-set';
     delete require.cache[require.resolve('../utils/crypto')];
     const { getSecret, setSecret } = require('../utils/crypto');
     const db = require('../db');
@@ -143,7 +143,7 @@ describe('getSecret / setSecret', () => {
   });
 
   test('getSecret returns null for missing key', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-key-for-get-set';
+    process.env.FLEET_KEY_SECRET = 'test-key-for-get-set';
     delete require.cache[require.resolve('../utils/crypto')];
     const { getSecret } = require('../utils/crypto');
     const db = require('../db');
@@ -151,7 +151,7 @@ describe('getSecret / setSecret', () => {
   });
 
   test('getSecret auto-encrypts plaintext values', () => {
-    process.env.SHIPYARD_KEY_SECRET = 'test-key-for-auto-encrypt';
+    process.env.FLEET_KEY_SECRET = 'test-key-for-auto-encrypt';
     delete require.cache[require.resolve('../utils/crypto')];
     const { getSecret } = require('../utils/crypto');
     const db = require('../db');
@@ -167,6 +167,6 @@ describe('getSecret / setSecret', () => {
   });
 
   after(() => {
-    delete process.env.SHIPYARD_KEY_SECRET;
+    delete process.env.FLEET_KEY_SECRET;
   });
 });

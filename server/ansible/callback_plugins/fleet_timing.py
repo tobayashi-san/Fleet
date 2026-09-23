@@ -7,7 +7,7 @@ from ansible.plugins.callback import CallbackBase
 class CallbackModule(CallbackBase):
     CALLBACK_VERSION = 2.0
     CALLBACK_TYPE = 'aggregate'
-    CALLBACK_NAME = 'shipyard_timing'
+    CALLBACK_NAME = 'fleet_timing'
     CALLBACK_NEEDS_ENABLED = True
 
     def __init__(self):
@@ -37,4 +37,4 @@ class CallbackModule(CallbackBase):
         self._finish(result)
 
     def v2_playbook_on_stats(self, stats):
-        self._display.display('__SHIPYARD_HOST_TIMING__' + json.dumps({name: round(seconds, 3) for name, seconds in self.duration.items()}))
+        self._display.display('__FLEET_HOST_TIMING__' + json.dumps({name: round(seconds, 3) for name, seconds in self.duration.items()}))

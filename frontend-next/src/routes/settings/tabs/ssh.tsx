@@ -167,7 +167,7 @@ function KeyAssignments({ environmentId }: { environmentId: string }) {
   return (
     <div className="space-y-3 py-3.5">
       <p className="text-sm text-muted-foreground">
-        Define which resources should use the central Shipyard key. Private keys
+        Define which resources should use the central Fleet key. Private keys
         are not duplicated. Removing an assignment does not revoke the public key on a host.
       </p>
       <div className="grid gap-2 sm:grid-cols-[150px_minmax(0,1fr)_auto]">
@@ -300,7 +300,7 @@ function SshKeyView({
   return (
     <>
       <SettingsRow label={t("set.sshName")}>
-        <span className="font-mono text-sm">{ssh.name || "shipyard"}</span>
+        <span className="font-mono text-sm">{ssh.name || "fleet"}</span>
       </SettingsRow>
       <SettingsRow label={t("set.sshType")}>
         <span className="font-mono text-sm">{ssh.algorithm || ssh.publicKey.trim().split(/\s+/)[0] || "Unavailable"}</span>
@@ -320,7 +320,7 @@ function SshKeyView({
       <SettingsRow label="SHA-256 fingerprint" hint="Compare this fingerprint with the trusted key on your hosts.">
         <span className="break-all font-mono text-xs">{ssh.fingerprint || 'Unavailable'}</span>
       </SettingsRow>
-      <SettingsRow label="Registered in Shipyard" hint="Registration or replacement time; an imported key may have been created earlier.">
+      <SettingsRow label="Registered in Fleet" hint="Registration or replacement time; an imported key may have been created earlier.">
         <span className="text-sm">{formatDateTime(ssh.registeredAt)}</span>
       </SettingsRow>
       <SettingsRow label={t("set.sshPublicKey")} align="start">
@@ -405,7 +405,7 @@ function SshKeyMissing({
   const generate = async () => {
     setBusy(true);
     try {
-      await api.generateSSHKey("shipyard");
+      await api.generateSSHKey("fleet");
       showToast(t("set.sshGenerated"), "success");
       onChanged();
     } catch (err) {
@@ -485,7 +485,7 @@ function ExportKeyDialog({
       const blob = new Blob([res.privateKey], { type: "text/plain" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = "shipyard_id_ed25519";
+      a.download = "fleet_id_ed25519";
       a.click();
       URL.revokeObjectURL(a.href);
       onOpenChange(false);
@@ -576,11 +576,11 @@ export function ImportKeyDialog({file,onClose,onImported}: {file:File|null;onClo
           </dl>
           <details className="rounded-md border p-3 text-sm">
             <summary className="cursor-pointer font-medium">Prepare the new public key</summary>
-            <p className="my-2 text-xs text-muted-foreground">Add this public key to the intended remote account before activation. This does not change Shipyard's active key or contact any host.</p>
+            <p className="my-2 text-xs text-muted-foreground">Add this public key to the intended remote account before activation. This does not change Fleet's active key or contact any host.</p>
             <textarea readOnly aria-label="Selected public key" value={review.candidate.publicKey} rows={3} className="w-full resize-y rounded-md border bg-background p-2 font-mono text-xs"/>
             <Button type="button" size="sm" variant="secondary" className="mt-2" onClick={()=>{void navigator.clipboard.writeText(review.candidate.publicKey).then(()=>setCopied(true)).catch(()=>setError('Could not copy. Select and copy the public key from the field.'));}}>{copied?'Copied':'Copy public key'}</Button>
           </details>
-          <p className="text-sm text-warning">Import replaces the central key used for new Shipyard SSH connections across environments. Hosts that do not trust the selected key can become unreachable. Existing remote authorized_keys entries are neither updated nor revoked.</p>
+          <p className="text-sm text-warning">Import replaces the central key used for new Fleet SSH connections across environments. Hosts that do not trust the selected key can become unreachable. Existing remote authorized_keys entries are neither updated nor revoked.</p>
           <p className="text-sm text-muted-foreground">Prepare access using the new public key and retain a recovery copy of the old key before replacing it. Intended-use assignments do not prove which hosts trust the key.</p>
         </> : <>
           <p className="text-sm text-muted-foreground">Validate the selected file and compare fingerprints before activating it. Preview does not replace the current key.</p>

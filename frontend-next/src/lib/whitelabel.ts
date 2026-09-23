@@ -3,7 +3,7 @@
  * Call this whenever settings change to update document.title, favicon, accent CSS vars, and meta tags.
  */
 
-const DEFAULT_NAME = 'Shipyard';
+const DEFAULT_NAME = 'Fleet';
 const DEFAULT_ACCENT = '#17704f';
 
 export interface WhiteLabelSettings {
@@ -62,7 +62,7 @@ function shadeHsl(hslComponents: string, pctDelta: number): string {
 }
 
 function buildFaviconDataUrl(accent: string): string {
-  // Keep the shipyard mark recognizable at browser-tab size while allowing
+  // Keep the fleet mark recognizable at browser-tab size while allowing
   // the configured accent colour to carry through white-label installations.
   const safeAccent = /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_ACCENT;
   // Dark glyph on light accents, white glyph on dark ones.

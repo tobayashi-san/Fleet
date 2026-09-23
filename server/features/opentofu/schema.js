@@ -64,7 +64,7 @@ function setupOpenTofuDatabase(database) {
     )
   `).run();
   try { db.db.prepare("ALTER TABLE proxmox_inventory_servers ADD COLUMN guest_type TEXT NOT NULL DEFAULT 'qemu'").run(); } catch {}
-  // Existing Shipyard installations get the same default environment as legacy
+  // Existing Fleet installations get the same default environment as legacy
   // servers. The guards keep this migration safe for fresh and old databases.
   try { db.db.prepare("CREATE TABLE IF NOT EXISTS environments (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE, created_at TEXT DEFAULT (datetime('now'))) ").run(); } catch {}
   try { db.db.prepare("INSERT OR IGNORE INTO environments (id, name) VALUES ('default', 'Standardumgebung')").run(); } catch {}
@@ -106,7 +106,7 @@ function setupOpenTofuDatabase(database) {
   db.db.prepare(`
     UPDATE tofu_runs
     SET status = 'interrupted',
-        output = output || '\n[Shipyard] Run interrupted by a restart. Review state before a new apply.\n',
+        output = output || '\n[Fleet] Run interrupted by a restart. Review state before a new apply.\n',
         completed_at = datetime('now')
     WHERE status IN ('running', 'cancelling')
   `).run();

@@ -209,7 +209,7 @@ function SchedulerTimezone() {
           <Input
             aria-label={t('set.schedulerTimezone')}
             name="schedulerTimezone"
-            list="shipyard-timezones"
+            list="fleet-timezones"
             value={timezone}
             onChange={(e) => setEditedTimezone(e.target.value)}
             disabled={save.isPending}
@@ -218,7 +218,7 @@ function SchedulerTimezone() {
             placeholder="Europe/Zurich"
             className="w-full sm:w-64"
           />
-          <datalist id="shipyard-timezones">
+          <datalist id="fleet-timezones">
             {COMMON_TIMEZONES.map((tz) => <option key={tz} value={tz} />)}
           </datalist>
           <Button size="sm" onClick={() => save.mutate(timezone)} disabled={save.isPending || !validTimezone || !timezoneDirty}>

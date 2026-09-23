@@ -1,7 +1,7 @@
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-process.env.DB_PATH = path.join(os.tmpdir(), `shipyard-update-meta-${process.pid}.db`);
+process.env.DB_PATH = path.join(os.tmpdir(), `fleet-update-meta-${process.pid}.db`);
 process.env.NODE_ENV = 'test';
 const { test, after } = require('node:test');
 const assert = require('node:assert/strict');

@@ -24,7 +24,7 @@ export function DatabaseBackupCard() {
     if (!valid || inFlight.current) return;
     inFlight.current=true;setPending(true);setError('');setComplete(false);
     try {
-      await apiDownload('/system/database-backup',`shipyard-database-${new Date().toISOString().slice(0,10)}.backup`,{body:{password,code,passphrase,scope:'all-environments-database'}});
+      await apiDownload('/system/database-backup',`fleet-database-${new Date().toISOString().slice(0,10)}.backup`,{body:{password,code,passphrase,scope:'all-environments-database'}});
       setComplete(true);
       void qc.invalidateQueries({queryKey:['recovery-status']});
     } catch(error) {setError(error instanceof Error ? error.message : 'Backup could not be created');}
@@ -33,7 +33,7 @@ export function DatabaseBackupCard() {
   return <Card>
     <CardHeader><CardTitle>Encrypted database backup</CardTitle><p className="text-sm text-muted-foreground">Includes database records and stored credentials from all environments. Playbooks, Git workspace, infrastructure state files and remote workload data are not included.</p></CardHeader>
     <CardContent>
-      <p className="mb-4 text-sm">Keep the original SHIPYARD_KEY_SECRET and deployment files separately. The backup passphrase protects this archive; it does not replace the original application encryption key. Restore into a new database with the server recovery CLI; this page does not activate a restore.</p>
+      <p className="mb-4 text-sm">Keep the original FLEET_KEY_SECRET and deployment files separately. The backup passphrase protects this archive; it does not replace the original application encryption key. Restore into a new database with the server recovery CLI; this page does not activate a restore.</p>
       <form onSubmit={download} className="space-y-3">
         <fieldset disabled={pending} className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">Current account password<Input type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} required maxLength={1024}/></label>
@@ -52,18 +52,18 @@ export function DatabaseBackupCard() {
       <details className="mt-5 rounded-md border p-3 text-sm">
         <summary className="cursor-pointer font-medium">Verify a download and prepare a database restore</summary>
         <div className="mt-3 space-y-3">
-          <p>Use a trusted recovery machine with the Shipyard server tools and dependencies installed. Run these Bash commands from the Shipyard project directory. Replace the example archive path with your downloaded file.</p>
+          <p>Use a trusted recovery machine with the Fleet server tools and dependencies installed. Run these Bash commands from the Fleet project directory. Replace the example archive path with your downloaded file.</p>
           <p><strong>1. Verify the downloaded copy.</strong> Enter the backup passphrase at the hidden prompt. An exit code of 0 and <code>integrity: "ok"</code> confirm archive authentication and database integrity.</p>
-          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs"><code>{`read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs"><code>{`read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/database-backup.js verify /secure/backups/database.backup
-unset SHIPYARD_BACKUP_PASSPHRASE`}</code></pre>
+unset FLEET_BACKUP_PASSPHRASE`}</code></pre>
           <p><strong>2. Prepare a separate database.</strong> The destination file must not exist; its parent directory must exist. This leaves the current database untouched and invalidates copied versioned sessions.</p>
-          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs"><code>{`read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+          <pre className="overflow-x-auto rounded bg-muted p-3 text-xs"><code>{`read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/database-backup.js restore /secure/backups/database.backup /secure/recovery/database.db
-unset SHIPYARD_BACKUP_PASSPHRASE`}</code></pre>
-          <p><strong>3. Review before activation.</strong> Preserve the current deployment for rollback, stop application writers, and review the restored database together with the original application key, deployment configuration and separately backed-up files. Validate recovery in an isolated deployment before changing the production database path. These commands do not switch databases or restart Shipyard.</p>
+unset FLEET_BACKUP_PASSPHRASE`}</code></pre>
+          <p><strong>3. Review before activation.</strong> Preserve the current deployment for rollback, stop application writers, and review the restored database together with the original application key, deployment configuration and separately backed-up files. Validate recovery in an isolated deployment before changing the production database path. These commands do not switch databases or restart Fleet.</p>
           <p>For a package containing application files as well as the database, use the offline application-backup procedure in <code>docs/application-backup.md</code>. Remote workloads still need their own backups. A successful verification here does not establish that a complete deployment can be recovered.</p>
         </div>
       </details>

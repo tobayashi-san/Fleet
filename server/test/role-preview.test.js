@@ -2,7 +2,7 @@
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-process.env.DB_PATH = path.join(os.tmpdir(), `shipyard-role-preview-${process.pid}.db`);
+process.env.DB_PATH = path.join(os.tmpdir(), `fleet-role-preview-${process.pid}.db`);
 process.env.JWT_SECRET = 'test-role-preview';
 process.env.NODE_ENV = 'test';
 const { test, after } = require('node:test');

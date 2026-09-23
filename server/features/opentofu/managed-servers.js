@@ -20,9 +20,9 @@ const {
 
 const execFileAsync = promisify(execFileCallback);
 const SERVER_TYPE_HINTS = ['server', 'instance', 'vm', 'machine', 'droplet', 'compute', 'node', 'guest'];
-const DIRECT_NAME_KEYS = ['shipyard_name', 'name', 'vm_name', 'hostname', 'host'];
-const DIRECT_SSH_USER_KEYS = ['shipyard_ssh_user', 'ssh_user', 'default_user', 'admin_user', 'username'];
-const DIRECT_SSH_PORT_KEYS = ['shipyard_ssh_port', 'ssh_port', 'port'];
+const DIRECT_NAME_KEYS = ['fleet_name', 'name', 'vm_name', 'hostname', 'host'];
+const DIRECT_SSH_USER_KEYS = ['fleet_ssh_user', 'ssh_user', 'default_user', 'admin_user', 'username'];
+const DIRECT_SSH_PORT_KEYS = ['fleet_ssh_port', 'ssh_port', 'port'];
 const APPLY_SYNC_MAX_WAIT_MS = Math.max(0, parseInt(process.env.TOFU_SYNC_MAX_WAIT_MS || '90000', 10) || 90000);
 const APPLY_SYNC_RETRY_MS = Math.max(1000, parseInt(process.env.TOFU_SYNC_RETRY_MS || '5000', 10) || 5000);
 function normalizeServerCandidate(candidate, {
@@ -81,7 +81,7 @@ function resourceLooksLikeServer(resource) {
 
   const values = resource?.values;
   if (!isPlainObject(values)) return false;
-  if (values.shipyard_managed === true) return true;
+  if (values.fleet_managed === true) return true;
   return !!findFirstIp(values) && !!firstNonEmptyString(values.name, values.hostname, values.vm_name);
 }
 
@@ -100,20 +100,20 @@ function extractServersFromOutputs(outputs, workspaceName) {
     if (normalized) extracted.push(normalized);
   };
 
-  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'shipyard_server')) {
-    pushCandidate(outputs.shipyard_server?.value, 'output:shipyard_server');
+  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'fleet_server')) {
+    pushCandidate(outputs.fleet_server?.value, 'output:fleet_server');
   }
 
-  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'shipyard_servers')) {
-    const value = outputs.shipyard_servers?.value;
+  if (Object.prototype.hasOwnProperty.call(outputs || {}, 'fleet_servers')) {
+    const value = outputs.fleet_servers?.value;
     if (Array.isArray(value)) {
-      value.forEach((entry, index) => pushCandidate(entry, 'output:shipyard_servers', `server-${index + 1}`));
+      value.forEach((entry, index) => pushCandidate(entry, 'output:fleet_servers', `server-${index + 1}`));
     } else if (isPlainObject(value)) {
       for (const [key, entry] of Object.entries(value)) {
-        pushCandidate(entry, 'output:shipyard_servers', key);
+        pushCandidate(entry, 'output:fleet_servers', key);
       }
     } else if (value != null) {
-      pushCandidate(value, 'output:shipyard_servers');
+      pushCandidate(value, 'output:fleet_servers');
     }
   }
 
@@ -141,13 +141,13 @@ function extractServersFromResources(state, workspaceName) {
 function extractManagedServersFromState(state, workspaceName) {
   const outputs = state?.values?.outputs || {};
   const hasExplicitOutputs =
-    Object.prototype.hasOwnProperty.call(outputs, 'shipyard_server') ||
-    Object.prototype.hasOwnProperty.call(outputs, 'shipyard_servers');
+    Object.prototype.hasOwnProperty.call(outputs, 'fleet_server') ||
+    Object.prototype.hasOwnProperty.call(outputs, 'fleet_servers');
 
   if (hasExplicitOutputs) {
     const rawValues = [];
-    if (Object.prototype.hasOwnProperty.call(outputs, 'shipyard_server')) rawValues.push(outputs.shipyard_server?.value);
-    if (Object.prototype.hasOwnProperty.call(outputs, 'shipyard_servers')) rawValues.push(outputs.shipyard_servers?.value);
+    if (Object.prototype.hasOwnProperty.call(outputs, 'fleet_server')) rawValues.push(outputs.fleet_server?.value);
+    if (Object.prototype.hasOwnProperty.call(outputs, 'fleet_servers')) rawValues.push(outputs.fleet_servers?.value);
     const hasNonEmptyRaw = rawValues.some(value => {
       if (value == null) return false;
       if (Array.isArray(value)) return value.length > 0;
@@ -252,8 +252,8 @@ async function reconcileManagedServers({ db, workspace, desiredServers, logMeta 
   for (const mapping of mappings) {
     if (desiredKeys.has(mapping.resource_key)) continue;
     // A Terraform/OpenTofu state is a desired deployment definition, not an
-    // ownership claim over Shipyard's central inventory.  Removing a resource
-    // from state must only detach the deployment mapping; deleting the Shipyard
+    // ownership claim over Fleet's central inventory.  Removing a resource
+    // from state must only detach the deployment mapping; deleting the Fleet
     // host here made ordinary inventory vanish on the next Apply.
     if (db.servers.getById(mapping.server_id)) detached++;
     deleteMapping.run(workspace.id, mapping.resource_key);
@@ -323,7 +323,7 @@ function ensureManagedServersTable(db) {
 
 // A host can be removed independently from an OpenTofu deployment or
 // from the imported Proxmox inventory. These tables deliberately have no
-// foreign keys so the feature remains compatible with existing Shipyard DBs. The
+// foreign keys so the feature remains compatible with existing Fleet DBs. The
 // cleanup only removes mappings whose target host is already absent.
 function removeOrphanedServerMappings(db) {
   let staleManaged = 0;

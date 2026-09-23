@@ -40,7 +40,7 @@
           # A stable marker makes the result independent of Ansible's selected
           # stdout callback format. The server only accepts a result set after
           # it has received the completion marker below.
-          emit() { printf '__SHIPYARD_IMAGE_UPDATE__%s|%s|%s\n' "$CONTAINER" "$IMAGE" "$1"; }
+          emit() { printf '__FLEET_IMAGE_UPDATE__%s|%s|%s\n' "$CONTAINER" "$IMAGE" "$1"; }
           [[ "$IMAGE" != *:* ]] && IMAGE="${IMAGE}:latest"
           local TAG="${IMAGE##*:}"
           local IMAGE_NOTAG="${IMAGE%:*}"
@@ -139,7 +139,7 @@
         rm -rf "$TMPDIR_RESULTS"
         # This is emitted by the check itself, not merely by a later Ansible
         # task. A cache entry is valid only when it is present.
-        printf '__SHIPYARD_IMAGE_UPDATE_DONE__\n'
+        printf '__FLEET_IMAGE_UPDATE_DONE__\n'
       args:
         executable: /bin/bash
       register: update_results

@@ -48,7 +48,7 @@ export interface ServerInfo {
   disk_total_gb?: number;
 }
 
-const STORAGE_KEY_COLLAPSED = 'shipyard.ui.servers.collapsedGroups';
+const STORAGE_KEY_COLLAPSED = 'fleet.ui.servers.collapsedGroups';
 
 function parseArray<T>(value: unknown): T[] {
   if (Array.isArray(value)) return value as T[];

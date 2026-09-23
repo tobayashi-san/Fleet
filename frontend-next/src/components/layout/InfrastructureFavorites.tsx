@@ -6,7 +6,7 @@ import { showToast } from '@/lib/toast';
 export interface FavoriteResource { path: string; label: string; context?: string }
 export function InfrastructureFavorites({scope, currentPath, resources, inventoryComplete, onNavigate}: {scope:string|null;currentPath:string;resources:FavoriteResource[];inventoryComplete:boolean;onNavigate?:()=>void}) {
   const [stored,setStored]=useState<{scope:string|null;paths:string[]}>({scope:null,paths:[]});
-  const key=scope ? `shipyard.infrastructure.favorites:${scope}` : null;
+  const key=scope ? `fleet.infrastructure.favorites:${scope}` : null;
   useEffect(()=>{
     try {
       const parsed=key ? JSON.parse(localStorage.getItem(key)||'[]') : [];

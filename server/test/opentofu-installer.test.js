@@ -15,7 +15,7 @@ test('checksum parsing selects the exact OpenTofu archive', () => {
 });
 
 test('installer verifies and atomically replaces the persistent OpenTofu binary', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-tofu-installer-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-tofu-installer-'));
   const installPath = path.join(root, 'bin', 'tofu');
   fs.mkdirSync(path.dirname(installPath), { recursive: true });
   fs.writeFileSync(installPath, 'old binary');

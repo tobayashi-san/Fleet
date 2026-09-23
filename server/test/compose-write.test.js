@@ -19,7 +19,7 @@ test('createComposeTempFile writes content and cleans up temp directory', () => 
 });
 
 test('buildComposeWriteOperations uses ansible file and copy modules', () => {
-  const ops = buildComposeWriteOperations('/opt/stacks/demo', '/tmp/shipyard-compose-123/docker-compose.yml');
+  const ops = buildComposeWriteOperations('/opt/stacks/demo', '/tmp/fleet-compose-123/docker-compose.yml');
   assert.deepEqual(ops, {
     ensureDir: {
       module: 'file',
@@ -27,7 +27,7 @@ test('buildComposeWriteOperations uses ansible file and copy modules', () => {
     },
     copyFile: {
       module: 'copy',
-      args: 'src=/tmp/shipyard-compose-123/docker-compose.yml dest=/opt/stacks/demo/docker-compose.yml mode=0644',
+      args: 'src=/tmp/fleet-compose-123/docker-compose.yml dest=/opt/stacks/demo/docker-compose.yml mode=0644',
     },
   });
 });

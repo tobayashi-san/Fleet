@@ -1,6 +1,6 @@
 /**
  * AES-256-GCM encryption for sensitive settings (SMTP password, git token, webhook secret).
- * Reuses the same SHIPYARD_KEY_SECRET used for SSH key encryption at rest.
+ * Reuses the same FLEET_KEY_SECRET used for SSH key encryption at rest.
  * Values are stored with an 'enc:' prefix; plaintext values are auto-encrypted on read.
  */
 const crypto = require('crypto');
@@ -8,7 +8,7 @@ const log = require('./logger').child('crypto');
 const ALGORITHM = 'aes-256-gcm';
 
 function getMasterKey() {
-  const secret = process.env.SHIPYARD_KEY_SECRET;
+  const secret = process.env.FLEET_KEY_SECRET;
   if (!secret) return null;
   return crypto.createHash('sha256').update(secret).digest();
 }
@@ -24,7 +24,7 @@ function encrypt(plaintext) {
   const masterKey = getMasterKey();
   if (!masterKey) {
     if (!_noKeyWarned) {
-      log.warn('SHIPYARD_KEY_SECRET not set — secrets stored unencrypted. Set this env var to enable encryption at rest.');
+      log.warn('FLEET_KEY_SECRET not set — secrets stored unencrypted. Set this env var to enable encryption at rest.');
       _noKeyWarned = true;
     }
     return plaintext;

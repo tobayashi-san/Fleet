@@ -163,7 +163,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     const token = String(body.api_token || '').trim();
     const sshPublicKey = String(body.ssh_public_key || '').trim();
     const caCertificate = String(body.ca_certificate || '').trim();
-    if ((token || sshPublicKey || caCertificate) && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'SHIPYARD_KEY_SECRET is required before platform secrets can be stored.' });
+    if ((token || sshPublicKey || caCertificate) && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'FLEET_KEY_SECRET is required before platform secrets can be stored.' });
     if (!environmentId) return res.status(400).json({ error: 'environment_id is required' });
     if (!name) return res.status(400).json({ field: 'name', error: 'Connection name is required' });
     if (!db.db.prepare('SELECT 1 FROM environments WHERE id = ?').get(environmentId)) return res.status(400).json({ error: 'Environment not found' });
@@ -188,7 +188,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
     const endpoint = body.endpoint === undefined ? existing.endpoint : String(body.endpoint || '').trim();
     const token = typeof body.api_token === 'string' && body.api_token.trim() ? body.api_token.trim() : null;
     const caCertificate = typeof body.ca_certificate === 'string' && body.ca_certificate.trim() ? body.ca_certificate.trim() : null;
-    if ((token || caCertificate || (typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim())) && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'SHIPYARD_KEY_SECRET is required before platform secrets can be stored.' });
+    if ((token || caCertificate || (typeof body.ssh_public_key === 'string' && body.ssh_public_key.trim())) && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'FLEET_KEY_SECRET is required before platform secrets can be stored.' });
     const insecure = body.insecure === undefined ? Boolean(existing.insecure) : body.insecure === true;
     const autoSyncIpam = body.auto_sync_ipam === undefined ? Boolean(existing.auto_sync_ipam) : body.auto_sync_ipam === true;
     const syncIntervalMin = syncInterval(body.sync_interval_min, existing.sync_interval_min);
@@ -574,7 +574,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
   
   // Synchronise guest addresses without making Proxmox the source of truth for
   // manual IPAM metadata. Existing manual addresses are deliberately left
-  // untouched; only Shipyard's own Proxmox-sourced rows are refreshed.
+  // untouched; only Fleet's own Proxmox-sourced rows are refreshed.
   router.post('/proxmox-connections/:id/sync-ipam', async (req, res) => {
     if (!can(getPermissions(req.user), 'canEditServers')) return res.status(403).json({ error: 'Permission denied' });
     try {
@@ -635,7 +635,7 @@ function registerPlatformRoutes({ db, router, listProxmoxConnectionRows, publicP
       res.status(201).json({ success: true, server: db.servers.getById(server.id) });
     } catch (error) {
       if (error.code === 'SQLITE_BUSY' || error.code === 'SQLITE_LOCKED') return res.status(409).json({ error: 'Inventory is being changed by another operation. Try again.' });
-      res.status(error.status || 400).json({ error: error.message || 'The VM could not be adopted into Shipyard.' });
+      res.status(error.status || 400).json({ error: error.message || 'The VM could not be adopted into Fleet.' });
     }
   });
   

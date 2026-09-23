@@ -145,7 +145,7 @@ function ImportForm(props: ImportProxmoxVmDialogProps) {
         result.keyDeployError
           ? `${kind} adopted. SSH key: ${result.keyDeployError}`
           : result.keyAttempted
-            ? `${kind} adopted and Shipyard SSH key installed.`
+            ? `${kind} adopted and Fleet SSH key installed.`
             : `${kind} adopted as a host.`,
         result.keyDeployError ? 'warning' : 'success',
       );
@@ -174,7 +174,7 @@ function ImportForm(props: ImportProxmoxVmDialogProps) {
             <ServerCog className="h-5 w-5" /> Adopt {kind} as host
           </DialogTitle>
           <DialogDescription>
-            Shipyard creates a host record for the existing Proxmox {kind}. No Proxmox resources are created. Optional SSH key installation adds Shipyard’s key inside the guest.
+            Fleet creates a host record for the existing Proxmox {kind}. No Proxmox resources are created. Optional SSH key installation adds Fleet’s key inside the guest.
           </DialogDescription>
         </DialogHeader>
         <p className="text-xs text-muted-foreground">Environment: <strong>{environmentId}</strong></p>
@@ -226,8 +226,8 @@ function ImportForm(props: ImportProxmoxVmDialogProps) {
             {groupsQuery.isError && <p className="text-xs text-destructive">Folders could not be loaded. You can adopt the host without a folder.</p>}
           </Field>
           <div className="rounded-md border border-primary/20 bg-primary/5 p-3">
-            <div className="flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4" /> Shipyard SSH key</div>
-            <p className="mt-1 text-xs text-muted-foreground">Shipyard installs its configured SSH key using a temporary password. The password is used only for this action and is not stored.</p>
+            <div className="flex items-center gap-2 text-sm font-medium"><KeyRound className="h-4 w-4" /> Fleet SSH key</div>
+            <p className="mt-1 text-xs text-muted-foreground">Fleet installs its configured SSH key using a temporary password. The password is used only for this action and is not stored.</p>
             {canInstallKey ? <><Label className="mt-3 block" htmlFor="import-vm-password">Temporary password <span className="font-normal text-muted-foreground">(optional)</span></Label>
             <Input id="import-vm-password" className="mt-1.5" value={temporaryPassword} onChange={event => setTemporaryPassword(event.target.value)} type="password" autoComplete="new-password" /></> : <p className="mt-3 text-sm">{profile.isPending ? 'Checking permission for SSH key installation…' : profile.isError ? 'SSH key permissions could not be verified. You can adopt the host without installing a key.' : 'SSH key installation requires an administrator. You can adopt the host using existing SSH access.'}</p>}
             {profile.isError && <Button type="button" variant="outline" onClick={() => void profile.refetch()}>Retry permission check</Button>}

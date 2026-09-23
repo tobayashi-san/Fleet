@@ -1,6 +1,6 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-assignment-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-assignment-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');const bcrypt=require('bcryptjs');const {roleRevision}=require('../utils/role-revision');const express=require('express');const request=require('supertest');
 const actor=db.users.create('admin',null,'synthetic','admin');
 const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user=actor;next();});app.use('/users',require('../routes/users'));

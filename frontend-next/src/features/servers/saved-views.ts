@@ -11,7 +11,7 @@ export interface HostView {
   columns: { state: boolean; contact: boolean; owner: boolean };
 }
 export interface SavedHostView { name: string; view: HostView }
-export const savedViewKey = (user: string, environment: string) => `shipyard.ui.hostViews.v1:${JSON.stringify([user, environment])}`;
+export const savedViewKey = (user: string, environment: string) => `fleet.ui.hostViews.v1:${JSON.stringify([user, environment])}`;
 export function readSavedViews(raw: string | null): SavedHostView[] {
   try {
     const parsed: unknown = JSON.parse(raw || '[]');

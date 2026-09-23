@@ -22,8 +22,8 @@ const {
   cleanupManagedServersForWorkspace,
   waitForManagedServers,
   detectTerraformResources,
-  generateShipyardOutputsBlock,
-  upsertManagedShipyardOutputs,
+  generateFleetOutputsBlock,
+  upsertManagedFleetOutputs,
   applyFleetProxmoxBlueprintMetadata,
   extractProxmoxGuestIpv4,
   extractProxmoxGuestNetworkRecords,
@@ -80,7 +80,7 @@ test('workspace names are safe for the Git workspace and plans are summarized', 
 
 test('OpenTofu Git synchronization never exports .local workspace content', () => {
   const name = `local-sync-test-${process.pid}-${Date.now()}`;
-  const source = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-local-sync-'));
+  const source = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-local-sync-'));
   const destination = path.join(__dirname, '..', 'data', 'git-workspace', 'tofu', name);
   try {
     fs.writeFileSync(path.join(source, 'main.tf'), 'resource "example" "safe" {}\n');
@@ -193,11 +193,11 @@ test('VM definitions preserve ordered pre-deploy workflows and require a target 
   }), /target host/i);
 });
 
-test('extractManagedServersFromState prefers explicit shipyard outputs', () => {
+test('extractManagedServersFromState prefers explicit fleet outputs', () => {
   const state = {
     values: {
       outputs: {
-        shipyard_servers: {
+        fleet_servers: {
           value: {
             web: { name: 'web-1', ip_address: '10.0.0.10', ssh_user: 'ubuntu', tags: ['web'] },
             db: '10.0.0.11',
@@ -317,7 +317,7 @@ test('waitForManagedServers retries until DHCP-style IP appears in state', async
   assert.equal(result.timedOut, false);
 });
 
-test('generateShipyardOutputsBlock builds a managed output for supported VM resources', () => {
+test('generateFleetOutputsBlock builds a managed output for supported VM resources', () => {
   const resources = detectTerraformResources([{
     name: 'main.tf',
     content: `
@@ -326,15 +326,15 @@ test('generateShipyardOutputsBlock builds a managed output for supported VM reso
     `,
   }]);
 
-  const block = generateShipyardOutputsBlock(resources);
-  assert.match(block, /output "shipyard_servers"/);
+  const block = generateFleetOutputsBlock(resources);
+  assert.match(block, /output "fleet_servers"/);
   assert.match(block, /"ubuntu_cloud_vm" = \{/);
   assert.match(block, /flatten\(proxmox_virtual_environment_vm\.ubuntu_cloud_vm\.ipv4_addresses\)/);
   assert.match(block, /!startswith\(ip, "127\."\)/);
   assert.match(block, /tags\s+= \["proxmox"\]/);
 });
 
-test('Shipyard Proxmox blueprints use the selected guest user and guest-agent DHCP address', () => {
+test('Fleet Proxmox blueprints use the selected guest user and guest-agent DHCP address', () => {
   const state = {
     values: { root_module: { resources: [{
       address: 'proxmox_virtual_environment_vm.app',
@@ -370,20 +370,20 @@ test('Proxmox guest network records retain normalized interface MAC addresses', 
   }] }), [{ address: '10.20.30.40', mac_address: 'aa:bb:cc:dd:ee:ff' }]);
 });
 
-test('upsertManagedShipyardOutputs replaces only the managed section', () => {
-  const first = upsertManagedShipyardOutputs(
+test('upsertManagedFleetOutputs replaces only the managed section', () => {
+  const first = upsertManagedFleetOutputs(
     '# custom output\noutput "foo" { value = 1 }\n',
-    '# BEGIN SHIPYARD MANAGED OUTPUT\noutput "shipyard_servers" { value = {} }\n# END SHIPYARD MANAGED OUTPUT\n'
+    '# BEGIN FLEET MANAGED OUTPUT\noutput "fleet_servers" { value = {} }\n# END FLEET MANAGED OUTPUT\n'
   );
   assert.match(first, /output "foo"/);
-  assert.equal((first.match(/BEGIN SHIPYARD MANAGED OUTPUT/g) || []).length, 1);
+  assert.equal((first.match(/BEGIN FLEET MANAGED OUTPUT/g) || []).length, 1);
 
-  const second = upsertManagedShipyardOutputs(
+  const second = upsertManagedFleetOutputs(
     first,
-    '# BEGIN SHIPYARD MANAGED OUTPUT\noutput "shipyard_servers" { value = { "vm" = {} } }\n# END SHIPYARD MANAGED OUTPUT\n'
+    '# BEGIN FLEET MANAGED OUTPUT\noutput "fleet_servers" { value = { "vm" = {} } }\n# END FLEET MANAGED OUTPUT\n'
   );
   assert.match(second, /"vm" = \{\}/);
-  assert.equal((second.match(/BEGIN SHIPYARD MANAGED OUTPUT/g) || []).length, 1);
+  assert.equal((second.match(/BEGIN FLEET MANAGED OUTPUT/g) || []).length, 1);
   assert.match(second, /output "foo"/);
 });
 
@@ -437,7 +437,7 @@ test('moveWorkspaceDirectory moves an existing workspace without losing files', 
 test('reconcileManagedServers creates, updates and detaches deployment-managed servers without deleting inventory', async () => {
   const workspace = { id: 'ws-managed', name: 'lab-managed' };
   const desired = [{
-    resource_key: 'output:shipyard_servers:web-1',
+    resource_key: 'output:fleet_servers:web-1',
     name: 'web-1',
     hostname: 'web-1.local',
     ip_address: '10.10.10.10',
@@ -498,7 +498,7 @@ test('cleanupManagedServersForWorkspace keeps reused manual servers', async () =
     db,
     workspace,
     desiredServers: [{
-      resource_key: 'output:shipyard_servers:manual-node',
+      resource_key: 'output:fleet_servers:manual-node',
       name: 'manual-node',
       hostname: 'manual-node.local',
       ip_address: '10.20.30.40',
@@ -564,7 +564,7 @@ test('host registration never reuses an identically addressed host from another 
 
 test('explicit outputs for a blueprint keep the canonical resource key for post-deploy', () => {
   const state = {values:{root_module:{resources:[{address:'proxmox_virtual_environment_vm.web',type:'proxmox_virtual_environment_vm',values:{name:'web',ipv4_addresses:[['192.0.2.42']]}}]}}};
-  const result = applyFleetProxmoxBlueprintMetadata({state,vms:[{name:'web',username:'debian',ssh_port:2222,ipv4_address:'192.0.2.42'}],servers:[{resource_key:'output:shipyard_servers:web',name:'web',ip_address:'192.0.2.42'}]});
+  const result = applyFleetProxmoxBlueprintMetadata({state,vms:[{name:'web',username:'debian',ssh_port:2222,ipv4_address:'192.0.2.42'}],servers:[{resource_key:'output:fleet_servers:web',name:'web',ip_address:'192.0.2.42'}]});
   assert.equal(result.servers.length,1);
   assert.equal(result.servers[0].resource_key,'resource:proxmox_virtual_environment_vm.web');
   assert.equal(result.servers[0].ssh_port,2222);

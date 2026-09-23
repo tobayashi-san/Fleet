@@ -5,10 +5,10 @@ const { verifyVmIdentity } = require('../features/opentofu/vm-identity-safety');
 const vm = { id: 'owned-uuid', name: 'app', vm_id: 123, node_name: 'pve', cpu_cores: 2, memory_mb: 2048, bridge: 'vmbr0', vlan_id: null };
 const address = 'proxmox_virtual_environment_vm.app';
 const workspace = { env_vars: { TF_VAR_proxmox_endpoint: 'https://pve:8006', TF_VAR_proxmox_api_token: 'user@pve!token=secret' } };
-const state = { values: { root_module: { resources: [{ type: 'proxmox_virtual_environment_vm', address, values: { vm_id: 123, node_name: 'pve', description: 'Shipyard VM owned-uuid' } }] } } };
+const state = { values: { root_module: { resources: [{ type: 'proxmox_virtual_environment_vm', address, values: { vm_id: 123, node_name: 'pve', description: 'Fleet VM owned-uuid' } }] } } };
 const guest = { vmid: 123, node: 'pve', name: 'app', type: 'qemu' };
-const config = { description: 'Shipyard VM owned-uuid', cores: 2, memory: 2048, net0: 'virtio=AA:BB,bridge=vmbr0' };
-const plan = { resource_changes: [{ address, change: { actions: ['create'], after: { vm_id: 123, node_name: 'pve', description: 'Shipyard VM owned-uuid' } } }] };
+const config = { description: 'Fleet VM owned-uuid', cores: 2, memory: 2048, net0: 'virtio=AA:BB,bridge=vmbr0' };
+const plan = { resource_changes: [{ address, change: { actions: ['create'], after: { vm_id: 123, node_name: 'pve', description: 'Fleet VM owned-uuid' } } }] };
 const check = (options = {}, guests = [guest], liveConfig = config) => verifyVmIdentity({ workspace, vms: [vm], state, request: async (_connection, path) => path.startsWith('/cluster') ? guests : liveConfig, ...options });
 test('new deployment requires an unused ID and empty state', async () => {
   await check({ state: {}, plan }, []);
@@ -44,6 +44,6 @@ test('retry checks disk, static IP, SSH user and running state', async () => {
 });
 
 test('existing updates cannot change the VM identity through the saved plan', async () => {
-  const update = {resource_changes:[{address,change:{actions:['update'],before:{vm_id:999,node_name:'pve',description:'Shipyard VM owned-uuid'},after:{vm_id:123,node_name:'pve',description:'Shipyard VM owned-uuid'}}}]};
+  const update = {resource_changes:[{address,change:{actions:['update'],before:{vm_id:999,node_name:'pve',description:'Fleet VM owned-uuid'},after:{vm_id:123,node_name:'pve',description:'Fleet VM owned-uuid'}}}]};
   await assert.rejects(check({plan:update}),/different existing VM/);
 });

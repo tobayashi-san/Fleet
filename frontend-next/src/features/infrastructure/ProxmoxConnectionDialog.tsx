@@ -212,7 +212,7 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
               placeholder={
                 connection?.api_token_configured
                   ? "Saved — enter only to change"
-                  : "shipyard@pve!automation=…"
+                  : "fleet@pve!automation=…"
               }
             />
             {fieldError('api_token')}
@@ -222,7 +222,7 @@ function ConnectionForm({environmentId, connection: requestedConnection, onOpenC
             </p>
             <div className="rounded-md border bg-muted/15 p-3 text-xs text-muted-foreground">
               <strong className="text-foreground">Use a dedicated service account.</strong>{' '}
-              Example token ID: <code>shipyard@pve!automation</code>. Start with <code>Sys.Audit</code>, <code>VM.Audit</code> and <code>Datastore.Audit</code>; add <code>VM.PowerMgmt</code>, <code>VM.Snapshot</code> or <code>Sys.Modify</code> only for the actions Shipyard should perform. Avoid root tokens.
+              Example token ID: <code>fleet@pve!automation</code>. Start with <code>Sys.Audit</code>, <code>VM.Audit</code> and <code>Datastore.Audit</code>; add <code>VM.PowerMgmt</code>, <code>VM.Snapshot</code> or <code>Sys.Modify</code> only for the actions Fleet should perform. Avoid root tokens.
             </div>
           </div>
           <div className="space-y-1.5">

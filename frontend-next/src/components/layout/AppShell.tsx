@@ -173,7 +173,7 @@ export function AppShell({ children }: { children: ReactNode }) {
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-background text-foreground">
       <header className="sticky top-0 z-40 flex h-11 shrink-0 items-center border-b border-border-strong/80 bg-[hsl(var(--surface-2))] shadow-[0_1px_2px_hsl(var(--foreground)/0.06)]">
         <div style={{ width: collapsed ? undefined : `${sidebarWidth}px` }} className={cn('hidden h-full max-w-[28vw] shrink-0 items-center border-r border-border-strong/70 px-4 lg:flex', collapsed ? 'w-16 justify-center px-2' : '')}>
-          <span className="flex min-w-0 items-center gap-2.5"><BrandMark />{!collapsed && <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">{appName || 'Shipyard'}</span>}</span>
+          <span className="flex min-w-0 items-center gap-2.5"><BrandMark />{!collapsed && <span className="truncate text-[15px] font-semibold tracking-tight text-foreground">{appName || 'Fleet'}</span>}</span>
         </div>
         <div className="flex min-w-0 flex-1 items-center gap-2 px-3 lg:px-3">
           <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={() => setMobileNavOpen(true)} aria-label={t('shell.openNavigation')}>
@@ -182,7 +182,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           <Button variant="ghost" size="icon" className="hidden h-8 w-8 lg:inline-flex" onClick={toggleSidebar} aria-label={t('shell.toggleNavigation')}>
             <PanelLeft className="h-4 w-4" />
           </Button>
-          <span className="hidden truncate text-sm font-semibold sm:inline lg:hidden">{appName || 'Shipyard'}</span>
+          <span className="hidden truncate text-sm font-semibold sm:inline lg:hidden">{appName || 'Fleet'}</span>
           <Button variant="ghost" size="icon" className="h-10 w-10 lg:hidden" onClick={openCommandPalette} aria-label={t('shell.searchCommands')}>
             <Search className="h-4 w-4" />
           </Button>
@@ -244,10 +244,10 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <div className="mt-0.5 text-xs text-muted-foreground">{t('shell.projectSupport')}</div>
                 </div>
                 <div className="space-y-0.5 py-1.5">
-                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
+                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
                     <Github className="h-4 w-4 text-muted-foreground" /> {t('shell.githubRepository')}
                   </button>
-                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard/issues')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
+                  <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet/issues')} className="flex w-full items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm hover:bg-accent">
                     <Bug className="h-4 w-4 text-muted-foreground" /> {t('shell.reportIssue')}
                   </button>
                 </div>
@@ -273,8 +273,8 @@ export function AppShell({ children }: { children: ReactNode }) {
                     <UserRoundCog className="h-4 w-4 text-muted-foreground" /> {t('shell.accountSecurity')}
                   </Link>
                   <div className="mt-1 space-y-0.5 border-t pt-1 lg:hidden">
-                    <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Github className="h-4 w-4 text-muted-foreground" />{t('shell.githubRepository')}</button>
-                    <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Shipyard/issues')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Bug className="h-4 w-4 text-muted-foreground" />{t('shell.reportIssue')}</button>
+                    <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Github className="h-4 w-4 text-muted-foreground" />{t('shell.githubRepository')}</button>
+                    <button type="button" onClick={() => openExternal('https://github.com/tobayashi-san/Fleet/issues')} className="flex w-full items-center gap-3 rounded-sm px-3 py-2 text-sm hover:bg-accent"><Bug className="h-4 w-4 text-muted-foreground" />{t('shell.reportIssue')}</button>
                   </div>
                 </div>
                 <div className="space-y-2 border-b bg-background/10 px-3 py-2.5">

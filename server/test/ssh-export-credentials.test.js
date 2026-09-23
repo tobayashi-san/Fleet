@@ -1,6 +1,6 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-key-export-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.SHIPYARD_KEY_SECRET='fixture-secret';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-key-export-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.FLEET_KEY_SECRET='fixture-secret';
 const db=require('../db');const bcrypt=require('bcryptjs');const otplib=require('otplib');const express=require('express');const request=require('supertest');const ssh=require('../services/ssh-manager');const scheduler=require('../services/scheduler');
 const password='Synthetic-account-password';const user=db.users.create('export-admin','',bcrypt.hashSync(password,4),'admin');
 let exportCalls=0;const original=ssh.getPrivateKeyExport;ssh.getPrivateKeyExport=pass=>{exportCalls++;assert.equal(pass,'Fixture-file-passphrase');return 'SYNTHETIC PRIVATE KEY';};

@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const os=require('node:os');
 const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-path-security-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-path-security-'));
 const allowed=path.join(root,'allowed');const outside=path.join(root,'outside');
 fs.mkdirSync(allowed);fs.mkdirSync(outside);
 process.env.OPENTOFU_WORKSPACE_ROOTS=allowed;

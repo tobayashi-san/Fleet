@@ -6,7 +6,7 @@ const path = require('path');
 const fs = require('fs');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_security_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-security';
-process.env.SHIPYARD_KEY_SECRET = 'test-master-key-security';
+process.env.FLEET_KEY_SECRET = 'test-master-key-security';
 process.env.NODE_ENV = 'test';
 
 const { test, after } = require('node:test');

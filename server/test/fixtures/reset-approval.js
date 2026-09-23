@@ -11,7 +11,7 @@ module.exports = async function resetApproval({app, database, action, password, 
   const files = action === 'playbooks' || action === 'all';
   try {
     if (files) {
-      let playbooks = process.env.SHIPYARD_PLAYBOOKS_DIR;
+      let playbooks = process.env.FLEET_PLAYBOOKS_DIR;
       try { await fs.access(playbooks); } catch { playbooks = path.join(dir, 'empty'); await fs.mkdir(playbooks); }
       await require('../../services/application-backup').createApplicationBackup({database, destination: filename, passphrase, offline: true, roots: [{id: 'playbooks', path: playbooks, required: true}]});
     } else await require('../../services/database-backup').createEncryptedDatabaseBackup(database, filename, passphrase);

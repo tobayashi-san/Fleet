@@ -4,7 +4,7 @@ function terminalLimits(env = process.env) {
     const number=Number(value);
     return Number.isInteger(number) && number>=0 && number<=10080 ? number : fallback;
   };
-  return {idleSeconds:minutes(env.SHIPYARD_TERMINAL_IDLE_MINUTES,30)*60,maxSeconds:minutes(env.SHIPYARD_TERMINAL_MAX_MINUTES,480)*60};
+  return {idleSeconds:minutes(env.FLEET_TERMINAL_IDLE_MINUTES,30)*60,maxSeconds:minutes(env.FLEET_TERMINAL_MAX_MINUTES,480)*60};
 }
 function createTerminalTimers(limits,expire,timers={set:setTimeout,clear:clearTimeout}) {
   let idle=null;let maximum=null;let stopped=false;

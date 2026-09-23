@@ -19,7 +19,7 @@ test('image update parser keeps legacy image-scoped results compatible', () => {
 });
 
 test('marked results survive Ansible callback formatting and report completion', () => {
-  const report = parseImageUpdateReport('ok: [hms] => {"msg": ["__SHIPYARD_IMAGE_UPDATE__sonarr|lscr.io/linuxserver/sonarr:latest|update_available"]}\nok: [hms] => {"msg": "__SHIPYARD_IMAGE_UPDATE_DONE__"}');
+  const report = parseImageUpdateReport('ok: [hms] => {"msg": ["__FLEET_IMAGE_UPDATE__sonarr|lscr.io/linuxserver/sonarr:latest|update_available"]}\nok: [hms] => {"msg": "__FLEET_IMAGE_UPDATE_DONE__"}');
   assert.equal(report.complete, true);
   assert.deepEqual(report.results, [
     { container_name: 'sonarr', image: 'lscr.io/linuxserver/sonarr:latest', status: 'update_available' },
@@ -27,7 +27,7 @@ test('marked results survive Ansible callback formatting and report completion',
 });
 
 test('a partial result is never considered a completed image update check', () => {
-  const report = parseImageUpdateReport('__SHIPYARD_IMAGE_UPDATE__sonarr|lscr.io/linuxserver/sonarr:latest|up_to_date');
+  const report = parseImageUpdateReport('__FLEET_IMAGE_UPDATE__sonarr|lscr.io/linuxserver/sonarr:latest|up_to_date');
   assert.equal(report.complete, false);
   assert.equal(report.results.length, 1);
 });

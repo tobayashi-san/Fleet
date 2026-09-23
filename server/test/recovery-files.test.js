@@ -2,7 +2,7 @@
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const crypto=require('node:crypto');const Database=require('better-sqlite3');
 const {recoveryRoots,stageRecoveryFiles}=require('../services/recovery-files');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-recovery-files-'));const source=path.join(root,'source');fs.mkdirSync(source);fs.mkdirSync(path.join(source,'nested'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-recovery-files-'));const source=path.join(root,'source');fs.mkdirSync(source);fs.mkdirSync(path.join(source,'nested'));
 fs.writeFileSync(path.join(source,'nested','playbook.yml'),'fixture: true\n');fs.writeFileSync(path.join(source,'exclude.db'),'not a live DB snapshot');fs.symlinkSync('nested/playbook.yml',path.join(source,'local-link'));
 after(()=>fs.rmSync(root,{recursive:true,force:true}));
 test('staging preserves file contents, empty directories and internal links with a hash manifest',async()=>{
@@ -37,7 +37,7 @@ test('optional missing roots are explicit and staging cannot overwrite or recurs
 test('recovery root discovery includes configured paths and each registered infrastructure workspace',()=>{
  const db=new Database(':memory:');db.exec('CREATE TABLE tofu_workspaces(id TEXT,path TEXT)');db.prepare('INSERT INTO tofu_workspaces VALUES (?,?)').run('workspace-id',path.join(root,'workspace'));
  try {
-  const roots=recoveryRoots(db,{SHIPYARD_PLAYBOOKS_DIR:source,PLUGINS_DIR:path.join(root,'plugins'),SHIPYARD_SSH_DIR:path.join(root,'ssh'),SSL_CERT:path.join(root,'cert.pem')});
+  const roots=recoveryRoots(db,{FLEET_PLAYBOOKS_DIR:source,PLUGINS_DIR:path.join(root,'plugins'),FLEET_SSH_DIR:path.join(root,'ssh'),SSL_CERT:path.join(root,'cert.pem')});
   assert.equal(roots.find(row=>row.id==='playbooks').path,source);
   assert.equal(roots.find(row=>row.id==='plugins').required,true);
   assert.ok(roots.some(row=>row.path===path.join(root,'workspace') && row.required));

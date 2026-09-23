@@ -140,10 +140,10 @@ function GitSetup({ onSetupResult }: { onSetupResult: (warning: string | null) =
         </SettingsRow>
       )}
       <SettingsRow label={t('git.userName')} hint={t('git.userNameHint')}>
-        <Input aria-label={t('git.userName')} name="gitUserName" maxLength={200} autoComplete="name" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Shipyard" className="max-w-xs" />
+        <Input aria-label={t('git.userName')} name="gitUserName" maxLength={200} autoComplete="name" value={userName} onChange={(e) => setUserName(e.target.value)} placeholder="Fleet" className="max-w-xs" />
       </SettingsRow>
       <SettingsRow label={t('git.userEmail')} hint={t('git.userEmailHint')}>
-        <Input aria-label={t('git.userEmail')} name="gitUserEmail" maxLength={254} type="email" autoComplete="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="shipyard@localhost" className="max-w-sm" />
+        <Input aria-label={t('git.userEmail')} name="gitUserEmail" maxLength={254} type="email" autoComplete="email" value={userEmail} onChange={(e) => setUserEmail(e.target.value)} placeholder="fleet@localhost" className="max-w-sm" />
       </SettingsRow>
       <SettingsRow label={t('git.autoPull')} hint={t('git.autoPullHint')}>
         <Switch aria-label={t('git.autoPull')} checked={autoPull} onCheckedChange={setAutoPull} />

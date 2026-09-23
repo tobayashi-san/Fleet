@@ -6,7 +6,7 @@ async function setup(page: Page) {
     const body = JSON.stringify({username:'e2e-admin',password:'E2e-password-2026!'});
     let response = await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body});
     if (!response.ok) response = await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body});
-    localStorage.setItem('shipyard_token',(await response.json()).token);
+    localStorage.setItem('fleet_token',(await response.json()).token);
   });
   const calls: {path:string;method:string;body:unknown}[] = [];
   let notes = {notes:'',revision:0,author:null as string|null,updated_at:null as string|null};

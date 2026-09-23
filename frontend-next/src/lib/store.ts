@@ -3,7 +3,7 @@ import { ws } from './ws';
 
 type Theme = 'light' | 'dark' | 'system';
 export type ThemePreset =
-  | 'shipyard-light' | 'shipyard-dark'
+  | 'fleet-light' | 'fleet-dark'
   | 'enterprise-light' | 'enterprise-dark'
   | 'shadcn-light' | 'shadcn-dark'
   | 'cloud-light' | 'paper-light' | 'slate-light'
@@ -30,8 +30,8 @@ export interface ThemePresetDefinition {
 }
 
 export const THEME_PRESETS: ThemePresetDefinition[] = [
-  { id: 'shipyard-light', name: 'Shipyard Light', style: 'Default', description: 'Shipyard green on a calm light canvas', mode: 'light', recommended: true, counterpart: 'shipyard-dark', preview: { canvas: '#f7faf8', surface: '#ffffff', card: '#ffffff', accent: '#17704f' } },
-  { id: 'shipyard-dark', name: 'Shipyard Dark', style: 'Default', description: 'The Shipyard website look: deep green-black with mint', mode: 'dark', recommended: true, counterpart: 'shipyard-light', preview: { canvas: '#101715', surface: '#101715', card: '#17211d', accent: '#b5f5cf' } },
+  { id: 'fleet-light', name: 'Fleet Light', style: 'Default', description: 'Fleet green on a calm light canvas', mode: 'light', recommended: true, counterpart: 'fleet-dark', preview: { canvas: '#f7faf8', surface: '#ffffff', card: '#ffffff', accent: '#17704f' } },
+  { id: 'fleet-dark', name: 'Fleet Dark', style: 'Default', description: 'The Fleet website look: deep green-black with mint', mode: 'dark', recommended: true, counterpart: 'fleet-light', preview: { canvas: '#101715', surface: '#101715', card: '#17211d', accent: '#b5f5cf' } },
   { id: 'enterprise-light', name: 'Enterprise Light', style: 'Enterprise', description: 'Neutral grays with a restrained cobalt accent for corporate operations', mode: 'light', recommended: true, counterpart: 'enterprise-dark', preview: { canvas: '#f3f4f7', surface: '#ffffff', card: '#ffffff', accent: '#0f55b0' } },
   { id: 'enterprise-dark', name: 'Enterprise Dark', style: 'Enterprise', description: 'Graphite surfaces with a clear cobalt accent for long NOC sessions', mode: 'dark', recommended: true, counterpart: 'enterprise-light', preview: { canvas: '#0f1115', surface: '#0f1115', card: '#14171c', accent: '#5aa1ff' } },
   { id: 'shadcn-light', name: 'shadcn Light', style: 'Default', description: 'Neutral shadcn/ui light look, without colored accents', mode: 'light', recommended: true, counterpart: 'shadcn-dark', preview: { canvas: '#ffffff', surface: '#ffffff', card: '#ffffff', accent: '#171717' } },
@@ -91,14 +91,14 @@ interface UiState {
   setEnvironmentId: (id: string) => void;
 }
 
-const THEME_KEY = 'shipyard_theme_next';
-const THEME_PRESET_KEY = 'shipyard_theme_preset_next';
-const SIDEBAR_KEY = 'shipyard_sidebar_collapsed_next';
-const SIDEBAR_WIDTH_KEY = 'shipyard_sidebar_width_next';
-const TREE_VM_IDS_KEY = 'shipyard_tree_show_vm_ids';
-const DENSITY_KEY = 'shipyard_ui_density_next';
+const THEME_KEY = 'fleet_theme_next';
+const THEME_PRESET_KEY = 'fleet_theme_preset_next';
+const SIDEBAR_KEY = 'fleet_sidebar_collapsed_next';
+const SIDEBAR_WIDTH_KEY = 'fleet_sidebar_width_next';
+const TREE_VM_IDS_KEY = 'fleet_tree_show_vm_ids';
+const DENSITY_KEY = 'fleet_ui_density_next';
 const TIME_FORMAT_KEY = 'timeFormat';
-const ENVIRONMENT_KEY = 'shipyard_environment';
+const ENVIRONMENT_KEY = 'fleet_environment';
 
 function readTheme(): Theme {
   try {
@@ -113,7 +113,7 @@ function readThemePreset(): ThemePreset {
     const value = localStorage.getItem(THEME_PRESET_KEY);
     if (THEME_PRESETS.some(preset => preset.id === value)) return value as ThemePreset;
   } catch { /* ignore */ }
-  return 'shipyard-dark';
+  return 'fleet-dark';
 }
 
 export function resolveThemePreset(theme: Theme, current: ThemePreset): ThemePreset {
@@ -124,7 +124,7 @@ export function resolveThemePreset(theme: Theme, current: ThemePreset): ThemePre
     ? THEME_PRESETS.find(item => item.id === preset.counterpart)
     : undefined;
   if (counterpart?.mode === theme) return counterpart.id;
-  return theme === 'dark' ? 'shipyard-dark' : 'shipyard-light';
+  return theme === 'dark' ? 'fleet-dark' : 'fleet-light';
 }
 
 function readSidebar(): boolean {

@@ -66,7 +66,7 @@ test('restricted activity contains only explicitly assigned host executions and 
     .get('/api/operations?source=Host&q=server.&page_size=100')
     .set({
       Authorization: `Bearer ${restrictedHistoryToken}`,
-      'X-Shipyard-Environment': 'default',
+      'X-Fleet-Environment': 'default',
     });
   assert.equal(response.status, 200);
   assert.deepEqual(response.body.items.map(item => item.name), ['Server visible']);
@@ -85,7 +85,7 @@ after(() => {
 test('operations filters and paginates the complete permitted history', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,
-    'X-Shipyard-Environment': 'default',
+    'X-Fleet-Environment': 'default',
   };
   const page = await request(app)
     .get('/api/operations?source=Host&q=dataset-item&page=3&page_size=10')
@@ -106,7 +106,7 @@ test('operations filters and paginates the complete permitted history', async ()
 test('workflow targets are condensed while preserving searchable raw details', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,
-    'X-Shipyard-Environment': 'default',
+    'X-Fleet-Environment': 'default',
   };
   const targets = Array.from({ length: 14 }, (_, index) => `host-${index + 1}`).join(',');
   const condensedId = db.scheduleHistory.create(
@@ -144,7 +144,7 @@ test('workflow targets are condensed while preserving searchable raw details', a
 test('isolated deployment activity uses the visible VM name and VM route id', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,
-    'X-Shipyard-Environment': 'default',
+    'X-Fleet-Environment': 'default',
   };
   db.db.prepare(`
     INSERT INTO tofu_workspaces
@@ -172,7 +172,7 @@ test('isolated deployment activity uses the visible VM name and VM route id', as
 test('failed activity can be acknowledged without removing its history', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,
-    'X-Shipyard-Environment': 'default',
+    'X-Fleet-Environment': 'default',
   };
   const historyId = db.updateHistory.create(visibleHost.id, 'acknowledge-me', 'operator');
   db.updateHistory.updateStatus(historyId, 'failed', 'command exited with status 1');
@@ -213,7 +213,7 @@ test('failed activity can be acknowledged without removing its history', async (
 test('all currently visible failures can be acknowledged together', async () => {
   const headers = {
     Authorization: `Bearer ${token}`,
-    'X-Shipyard-Environment': 'default',
+    'X-Fleet-Environment': 'default',
   };
   for (const action of ['bulk-ack-one', 'bulk-ack-two']) {
     const id = db.updateHistory.create(visibleHost.id, action, 'operator');
@@ -242,7 +242,7 @@ test('execution details return the exact scoped log and UTC duration', async () 
   db.db.prepare('UPDATE update_history SET started_at = ?, completed_at = ? WHERE id = ?')
     .run('2026-09-09 01:00:00', '2026-09-09T01:02:00Z', id);
   const response = await request(app).get(`/api/operations/host-${id}/details`)
-    .set({ Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Shipyard-Environment': 'default' });
+    .set({ Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Fleet-Environment': 'default' });
   assert.equal(response.status, 200);
   assert.equal(response.body.name, 'Pull container images · media');
   assert.equal(response.body.execution_id, id);
@@ -255,7 +255,7 @@ test('execution details do not expose another host or environment', async () => 
   const id = db.updateHistory.create(hiddenHost.id, 'system_update', 'operator');
   db.updateHistory.updateStatus(id, 'success', 'private output');
   const response = await request(app).get(`/api/operations/host-${id}/details`)
-    .set({ Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Shipyard-Environment': 'default' });
+    .set({ Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Fleet-Environment': 'default' });
   assert.equal(response.status, 404);
   assert.equal(JSON.stringify(response.body).includes('private output'), false);
 });
@@ -264,7 +264,7 @@ test('execution output is bounded and keeps the most recent lines', async () => 
   const id = db.updateHistory.create(visibleHost.id, 'system_update', 'operator');
   db.updateHistory.updateStatus(id, 'success', 'x'.repeat(210000) + '\nFinished');
   const response = await request(app).get(`/api/operations/host-${id}/details`)
-    .set({ Authorization: `Bearer ${token}`, 'X-Shipyard-Environment': 'default' });
+    .set({ Authorization: `Bearer ${token}`, 'X-Fleet-Environment': 'default' });
   assert.equal(response.status, 200);
   assert.equal(response.body.output.length, 200000);
   assert.equal(response.body.output_truncated, true);
@@ -277,7 +277,7 @@ test('viewing update counts does not implicitly grant access to host logs', asyn
   const viewerToken = jwt.sign({ userId: user.id, tv: 0 }, process.env.JWT_SECRET, { expiresIn: '5m' });
   const id = db.updateHistory.create(visibleHost.id, 'system_update', 'operator');
   const response = await request(app).get(`/api/operations/host-${id}/details`)
-    .set({ Authorization: `Bearer ${viewerToken}`, 'X-Shipyard-Environment': 'default' });
+    .set({ Authorization: `Bearer ${viewerToken}`, 'X-Fleet-Environment': 'default' });
   assert.equal(response.status, 403);
 });
 
@@ -290,7 +290,7 @@ test('dashboard count request includes all permitted running and queued rows bef
       db.db.prepare('UPDATE update_history SET status=? WHERE id=?').run(i%2 ? 'queued' : 'running',id);
     }
     const hidden=db.updateHistory.create(hiddenHost.id,'count-active-fixture','operator');ids.push(hidden);
-    const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'};
+    const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'};
     const dashboard=await request(app).get('/api/operations?scope=failed&q=count-active-fixture&page_size=1').set(headers);
     const active=await request(app).get('/api/operations?scope=active&q=count-active-fixture&page_size=1').set(headers);
     assert.equal(dashboard.status,200);assert.equal(active.status,200);
@@ -309,13 +309,13 @@ test('deleted host executions retain their original name only for complete host 
   db.updateHistory.updateStatus(id,'failed','Repository unavailable');
   db.db.prepare('UPDATE servers SET name=? WHERE id=?').run('Renamed database',host.id);
   db.servers.delete(host.id);
-  const adminHeaders={Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'};
+  const adminHeaders={Authorization:`Bearer ${token}`,'X-Fleet-Environment':'default'};
   const list=await request(app).get('/api/operations?q=Historical%20database').set(adminHeaders);
   assert.equal(list.status,200);assert.equal(list.body.items.length,1);
   assert.equal(list.body.items[0].target,'Historical database');assert.equal(list.body.items[0].target_deleted,true);assert.equal(list.body.items[0].href,null);
   const details=await request(app).get(`/api/operations/host-${id}/details`).set(adminHeaders);
   assert.equal(details.status,200);assert.equal(details.body.output,'Repository unavailable');
-  const restricted=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${assignedToken}`,'X-Shipyard-Environment':'default'});
+  const restricted=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${assignedToken}`,'X-Fleet-Environment':'default'});
   assert.equal(restricted.status,404);
   assert.throws(()=>db.updateHistory.create(host.id,'system_update'),/Host not found/);
 });
@@ -326,13 +326,13 @@ test('workflow history preserves original schedule, playbook, targets and dry-ru
   db.scheduleHistory.complete(id,'success','Dry run complete');
   db.schedules.update(scheduleId,{name:'Renamed maintenance',playbook:'different.yml',targets:hiddenHost.name});
   db.schedules.delete(scheduleId);
-  const response=await request(app).get(`/api/operations/workflow-${id}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
+  const response=await request(app).get(`/api/operations/workflow-${id}/details`).set({Authorization:`Bearer ${token}`,'X-Fleet-Environment':'default'});
   assert.equal(response.status,200);assert.equal(response.body.name,'Original maintenance');
   assert.equal(response.body.playbook,'update.yml');assert.equal(response.body.target,visibleHost.name);
   assert.equal(response.body.check_mode,true);assert.equal(response.body.schedule_deleted,true);
   assert.equal(response.body.initiator,'Planner');assert.equal(response.body.output,'Dry run complete');
   const manual=db.scheduleHistory.create(null,'Manual run','update.yml',visibleHost.name);
-  const manualResponse=await request(app).get(`/api/operations/workflow-${manual}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
+  const manualResponse=await request(app).get(`/api/operations/workflow-${manual}/details`).set({Authorization:`Bearer ${token}`,'X-Fleet-Environment':'default'});
   assert.equal(manualResponse.status,200);assert.equal(manualResponse.body.name,'update.yml','ad-hoc runs are named after their playbook');assert.equal(manualResponse.body.schedule_deleted,false);assert.equal(manualResponse.body.check_mode,false);
   assert.equal(manualResponse.body.host_results[0].name, visibleHost.name);
   assert.equal(manualResponse.body.host_results[0].status, 'unknown');
@@ -347,7 +347,7 @@ test('workflow endpoints bind access and host association to recorded IDs across
  const oldRole=db.roles.create('Original workflow viewer',{servers:{servers:[original.id],groups:[]},playbooks:'all',canViewSchedules:true,canViewServerHistory:true});
  const oldUser=db.users.create('original-workflow-viewer','','unused',oldRole.id,'');
  const oldToken=jwt.sign({userId:oldUser.id,tv:0},process.env.JWT_SECRET,{expiresIn:'5m'});
- const headers={Authorization:`Bearer ${oldToken}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${oldToken}`,'X-Fleet-Environment':'default'};
  assert.equal((await request(app).get(`/api/schedule-history/${run}`).set(headers)).status,200);
  assert.equal((await request(app).get(`/api/operations/workflow-${run}/details`).set(headers)).status,200);
  const renamedHistory=await request(app).get(`/api/servers/${original.id}/history`).set(headers);
@@ -357,11 +357,11 @@ test('workflow endpoints bind access and host association to recorded IDs across
  const newRole=db.roles.create('Replacement workflow viewer',{servers:{servers:[replacement.id],groups:[]},playbooks:'all',canViewSchedules:true,canViewServerHistory:true});
  const newUser=db.users.create('replacement-workflow-viewer','','unused',newRole.id,'');
  const newToken=jwt.sign({userId:newUser.id,tv:0},process.env.JWT_SECRET,{expiresIn:'5m'});
- const newHeaders={Authorization:`Bearer ${newToken}`,'X-Shipyard-Environment':'default'};
+ const newHeaders={Authorization:`Bearer ${newToken}`,'X-Fleet-Environment':'default'};
  assert.equal((await request(app).get(`/api/schedule-history/${run}`).set(newHeaders)).status,403);
  assert.equal((await request(app).get(`/api/operations/workflow-${run}/details`).set(newHeaders)).status,404);
  const list=await request(app).get('/api/schedule-history').set(newHeaders);assert.equal(list.body.some(row=>row.id===run),false);
- const adminDetails=await request(app).get(`/api/operations/workflow-${run}/details`).set({Authorization:`Bearer ${token}`,'X-Shipyard-Environment':'default'});
+ const adminDetails=await request(app).get(`/api/operations/workflow-${run}/details`).set({Authorization:`Bearer ${token}`,'X-Fleet-Environment':'default'});
  assert.equal(adminDetails.body.host_results[0].server_id,null);
  const history=await request(app).get(`/api/servers/${replacement.id}/history`).set(newHeaders);assert.equal(history.body.some(row=>row.id===run),false);
 });
@@ -375,9 +375,9 @@ test('history limits apply after workflow permissions',async()=>{
  const role=db.roles.create('Limit viewer',{servers:{servers:[host.id],groups:[]},playbooks:'all',canViewSchedules:true,canViewServerHistory:true});
  const user=db.users.create('limit-viewer','','unused',role.id,'');
  const userToken=jwt.sign({userId:user.id,tv:0},process.env.JWT_SECRET,{expiresIn:'5m'});
- const response=await request(app).get('/api/schedule-history?limit=1&scheduleId=limit-fixture').set({Authorization:`Bearer ${userToken}`,'X-Shipyard-Environment':'default'});
+ const response=await request(app).get('/api/schedule-history?limit=1&scheduleId=limit-fixture').set({Authorization:`Bearer ${userToken}`,'X-Fleet-Environment':'default'});
  assert.equal(response.status,200);assert.deepEqual(response.body.map(row=>row.id),[own]);
- const local=await request(app).get(`/api/servers/${host.id}/history`).set({Authorization:`Bearer ${userToken}`,'X-Shipyard-Environment':'default'});
+ const local=await request(app).get(`/api/servers/${host.id}/history`).set({Authorization:`Bearer ${userToken}`,'X-Fleet-Environment':'default'});
  assert.equal(local.status,200);assert.ok(local.body.some(row=>row.id===own));
 });
 
@@ -388,13 +388,13 @@ test('cancel preview requires run and target permissions without requiring or ex
  const role=db.roles.create('Run without logs',{servers:{servers:[visibleHost.id],groups:[]},playbooks:'all',canRunPlaybooks:true});
  const user=db.users.create('cancel-preview-viewer','','unused',role.id,'');
  const viewer=jwt.sign({userId:user.id,tv:0},process.env.JWT_SECRET,{expiresIn:'5m'});
- const response=await request(app).get(`/api/ansible/runs/${run}/cancel-preview`).set({Authorization:`Bearer ${viewer}`,'X-Shipyard-Environment':'default'});
+ const response=await request(app).get(`/api/ansible/runs/${run}/cancel-preview`).set({Authorization:`Bearer ${viewer}`,'X-Fleet-Environment':'default'});
  assert.equal(response.status,200);assert.equal(response.body.id,run);assert.equal(response.body.targets,visibleHost.name);
  assert.equal(JSON.stringify(response.body).includes('PRIVATE'),false);assert.equal(response.body.output,undefined);
  assert.equal(db.scheduleHistory.getById(run).status,'running');
  const forbidden=db.scheduleHistory.create(null,'Other host','update.yml',hiddenHost.name);
- assert.equal((await request(app).get(`/api/ansible/runs/${forbidden}/cancel-preview`).set({Authorization:`Bearer ${viewer}`,'X-Shipyard-Environment':'default'})).status,403);
- assert.equal((await request(app).get(`/api/ansible/runs/${run}/cancel-preview`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'})).status,403);
+ assert.equal((await request(app).get(`/api/ansible/runs/${forbidden}/cancel-preview`).set({Authorization:`Bearer ${viewer}`,'X-Fleet-Environment':'default'})).status,403);
+ assert.equal((await request(app).get(`/api/ansible/runs/${run}/cancel-preview`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'})).status,403);
 });
 
 test('run status is available without history rights while output and live events remain scoped', async () => {
@@ -405,7 +405,7 @@ test('run status is available without history rights while output and live event
  const role=db.roles.create('Status only',perms);
  const user=db.users.create('status-only','','unused',role.id,'');
  const viewer=jwt.sign({userId:user.id,tv:0},process.env.JWT_SECRET,{expiresIn:'5m'});
- const headers={Authorization:`Bearer ${viewer}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${viewer}`,'X-Fleet-Environment':'default'};
  const status=await request(app).get(`/api/ansible/runs/${run}/status`).set(headers);
  assert.equal(status.status,200); assert.equal(status.body.status,'running');
  assert.equal(status.body.output_available,false);assert.equal(status.body.output,undefined);
@@ -439,12 +439,12 @@ test('failed execution summary preserves the error before trailing cleanup', asy
  const id=db.updateHistory.create(visibleHost.id,'system_update','operator');
  const output='Starting\n\u001b[31mERROR: Package lock unavailable\u001b[0m\nCleanup completed\nDisconnected';
  db.updateHistory.updateStatus(id,'failed',output);
- const response=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'});
+ const response=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'});
  assert.equal(response.status,200);
  assert.equal(response.body.summary,'ERROR: Package lock unavailable');
  assert.equal(response.body.output,output);
  db.updateHistory.updateStatus(id,'failed','Cleanup completed');
- const unknown=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'});
+ const unknown=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'});
  assert.equal(unknown.body.summary,'Failure cause not identified; open the full log.');
 });
 
@@ -457,7 +457,7 @@ test('execution duration does not turn reversed or missing timestamps into zero'
   ['2026-09-11 06:00:00','2026-09-11 06:00:00',0],
  ]){
   db.db.prepare('UPDATE update_history SET started_at=?,completed_at=? WHERE id=?').run(start,end,id);
-  const result=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'});
+  const result=await request(app).get(`/api/operations/host-${id}/details`).set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'});
   assert.equal(result.status,200);assert.equal(result.body.duration_seconds,expected);
  }
 });
@@ -468,7 +468,7 @@ test('active counts, filtering and ordering include pending and cancelling opera
   const id=db.updateHistory.create(visibleHost.id,`active-consistency-${status}`,'operator');ids.push(id);
   db.db.prepare('UPDATE update_history SET status=?,started_at=?,completed_at=? WHERE id=?').run(status,status==='success'?'2026-09-11 07:00:00':'2026-09-11 06:00:00',status==='success'?'2026-09-11 07:01:00':null,id);
  }
- const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'};
  const all=await request(app).get('/api/operations?q=active-consistency').set(headers);
  assert.equal(all.status,200);assert.equal(all.body.counts.active,2);assert.equal(all.body.items.at(-1).status,'success');
  const active=await request(app).get('/api/operations?q=active-consistency&scope=active').set(headers);
@@ -483,7 +483,7 @@ test('operations filter the displayed Zurich day and reject invalid dates',async
   db.db.prepare("UPDATE update_history SET status='success',started_at=?,completed_at=? WHERE id=?").run(time,time,id);
   if(index===1||index===2)expected.push(`host-${id}`);
  }
- const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'};
  const result=await request(app).get('/api/operations?q=zurich-boundary&from=2026-09-11&to=2026-09-11').set(headers);
  assert.equal(result.status,200);assert.deepEqual(result.body.items.map(row=>row.id).sort(),expected.sort());
  for(const query of ['from=2026-02-30','from=2026-09-12&to=2026-09-11'])assert.equal((await request(app).get(`/api/operations?${query}`).set(headers)).status,400);
@@ -497,7 +497,7 @@ test('sync groups expose every permitted execution for direct log navigation',as
   db.db.prepare('UPDATE update_history SET completed_at=? WHERE id=?').run(`2026-09-11 06:00:0${i}`,id);
  }
  const hidden=db.updateHistory.create(hiddenHost.id,'inventory sync group-probe','operator');db.updateHistory.updateStatus(hidden,'success','Private sync');
- const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'};
  const list=await request(app).get('/api/operations?q=group-probe').set(headers);
  assert.equal(list.status,200);assert.equal(list.body.items.length,1);
  assert.equal(list.body.items[0].grouped_count,3);
@@ -512,7 +512,7 @@ test('filters individual syncs before grouping so an older matching run is retai
   db.updateHistory.updateStatus(id,'success','Synchronized');
   db.db.prepare('UPDATE update_history SET started_at=?,completed_at=? WHERE id=?').run(time,time,id);
  }
- const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'};
+ const headers={Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'};
  for(const query of ['q=older-operator','q=filter-group-probe&from=2026-09-11&to=2026-09-11']){
   const response=await request(app).get(`/api/operations?${query}`).set(headers);
   assert.equal(response.status,200);assert.equal(response.body.items.length,1);
@@ -529,7 +529,7 @@ test('sync grouping uses the same Zurich calendar day as displayed date filters'
     db.db.prepare('UPDATE update_history SET started_at=?,completed_at=? WHERE id=?').run(time, time, id);
     ids.push(`host-${id}`);
   }
-  const headers = { Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Shipyard-Environment': 'default' };
+  const headers = { Authorization: `Bearer ${restrictedHistoryToken}`, 'X-Fleet-Environment': 'default' };
   const response = await request(app).get('/api/operations?q=local-day-probe').set(headers);
   assert.equal(response.status, 200);
   assert.equal(response.body.items.length, 2);
@@ -548,7 +548,7 @@ test('start page completed scope excludes active jobs and retains host permissio
       const id=db.updateHistory.create(server.id,'start-completed-scope','operator');ids.push(id);
       db.updateHistory.updateStatus(id,status,'result');
     }
-    const result=await request(app).get('/api/operations?scope=completed&q=start-completed-scope&page_size=5').set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Shipyard-Environment':'default'});
+    const result=await request(app).get('/api/operations?scope=completed&q=start-completed-scope&page_size=5').set({Authorization:`Bearer ${restrictedHistoryToken}`,'X-Fleet-Environment':'default'});
     assert.equal(result.status,200);
     assert.equal(result.body.total,2);
     assert.deepEqual(result.body.items.map(row=>row.status).sort(),['failed','success']);

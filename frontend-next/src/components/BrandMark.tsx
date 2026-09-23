@@ -1,6 +1,6 @@
 import { cn } from '@/lib/utils';
 
-/** Shipyard mark: server modules stacked on a hull. Colours follow the active theme. */
+/** Fleet mark: server modules stacked on a hull. Colours follow the active theme. */
 export function BrandMark({ className }: { className?: string }) {
   return <svg viewBox="0 0 40 40" aria-hidden="true" className={cn('h-6 w-6 shrink-0', className)}>
     <rect width="40" height="40" rx="10" fill="hsl(var(--primary))" />

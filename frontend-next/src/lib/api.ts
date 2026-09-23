@@ -84,9 +84,9 @@ export async function apiFetch<T = unknown>(path: string, options: RequestOption
     const tok = getToken();
     if (tok) headers['Authorization'] = `Bearer ${tok}`;
     try {
-      headers['X-Shipyard-Environment'] = options.environmentId || localStorage.getItem('shipyard_environment') || 'default';
+      headers['X-Fleet-Environment'] = options.environmentId || localStorage.getItem('fleet_environment') || 'default';
     } catch {
-      headers['X-Shipyard-Environment'] = options.environmentId || 'default';
+      headers['X-Fleet-Environment'] = options.environmentId || 'default';
     }
   }
 
@@ -156,7 +156,7 @@ export async function apiFetchArray<T = unknown>(path: string, options: RequestO
 export async function apiDownload(path: string, filename: string, options: { body?: Record<string, unknown>; environmentId?: string } = {}): Promise<void> {
   const tok = getToken();
   let environmentId = 'default';
-  try { environmentId = localStorage.getItem('shipyard_environment') || 'default'; } catch { /* use default */ }
+  try { environmentId = localStorage.getItem('fleet_environment') || 'default'; } catch { /* use default */ }
   environmentId = options.environmentId || environmentId;
   const res = await fetch(`${API_BASE}${path}`, {
     method: options.body ? 'POST' : 'GET',
@@ -164,7 +164,7 @@ export async function apiDownload(path: string, filename: string, options: { bod
     headers: {
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(tok ? { Authorization: `Bearer ${tok}` } : {}),
-      'X-Shipyard-Environment': environmentId,
+      'X-Fleet-Environment': environmentId,
     },
   });
   if (!res.ok) {
@@ -205,9 +205,9 @@ export function apiUploadFile(
     const token = getToken();
     if (token) request.setRequestHeader('Authorization', `Bearer ${token}`);
     try {
-      request.setRequestHeader('X-Shipyard-Environment', localStorage.getItem('shipyard_environment') || 'default');
+      request.setRequestHeader('X-Fleet-Environment', localStorage.getItem('fleet_environment') || 'default');
     } catch {
-      request.setRequestHeader('X-Shipyard-Environment', 'default');
+      request.setRequestHeader('X-Fleet-Environment', 'default');
     }
     request.setRequestHeader('Content-Type', 'application/octet-stream');
     request.upload.onprogress = event => {

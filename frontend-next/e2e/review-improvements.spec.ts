@@ -12,7 +12,7 @@ async function signIn(page: Page) {
     if (!response.ok) response = await fetch('/api/auth/setup', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(credentials)});
     const data = await response.json();
     if (!response.ok || !data.token) throw new Error('Isolated review login failed');
-    localStorage.setItem('shipyard_token', data.token);
+    localStorage.setItem('fleet_token', data.token);
   });
   await page.goto('/');
   await expect(page.getByRole('heading', {name: 'Start', exact: true})).toBeVisible();
@@ -27,7 +27,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
   await page.setViewportSize({width:1280,height:800});
   await signIn(page);
   const host = await page.evaluate(async () => {
-    const response = await fetch('/api/servers', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({name:'hr01-edge-newt-admin01',hostname:'review-host',ip_address:'192.0.2.201'})});
+    const response = await fetch('/api/servers', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('fleet_token')}`},body:JSON.stringify({name:'hr01-edge-newt-admin01',hostname:'review-host',ip_address:'192.0.2.201'})});
     if(!response.ok) throw new Error('Could not create isolated review host');
     return response.json();
   });
@@ -58,7 +58,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
     await expect(page.getByRole('switch',{name:'Monitoring alerts'})).toHaveCount(0);
     await capture(page,'monitoring-status');
     await page.goto('/settings/backup');
-    await expect(page.getByText('Shipyard application data. Infrastructure backups are managed externally.')).toBeVisible();
+    await expect(page.getByText('Fleet application data. Infrastructure backups are managed externally.')).toBeVisible();
     await expect(page.getByRole('heading',{name:'Encrypted database backup'})).toBeVisible();
     await capture(page,'backup-recovery');
     await page.goto(`/servers/${host.id}#tab=notes`);
@@ -70,7 +70,7 @@ test('infrastructure home, host layout, themes and recovery are understandable',
     expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(391);
     await capture(page,'hosts-mobile');
   } finally {
-    await page.evaluate(async id=>{await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`}});},host.id);
+    await page.evaluate(async id=>{await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('fleet_token')}`}});},host.id);
   }
 });
 

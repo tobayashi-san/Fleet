@@ -25,7 +25,7 @@ function _downloadFile(url, dest, redirects = 0) {
       try { fs.unlinkSync(dest); } catch {}
       reject(error);
     };
-    const request = https.get(parsed, { headers: { 'User-Agent': 'shipyard-lab-manager' } }, (res) => {
+    const request = https.get(parsed, { headers: { 'User-Agent': 'fleet-lab-manager' } }, (res) => {
       if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
         res.resume();
         const redirectUrl = new URL(res.headers.location, parsed).toString();
@@ -71,7 +71,7 @@ async function _fetchGitHubReleases() {
       hostname: 'github.com',
       path: '/opentofu/opentofu/releases/latest',
       method: 'HEAD',
-      headers: { 'User-Agent': 'shipyard-lab-manager' },
+      headers: { 'User-Agent': 'fleet-lab-manager' },
     };
     const request = https.get(options, (res) => {
       res.resume();

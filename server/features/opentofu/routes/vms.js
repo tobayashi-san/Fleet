@@ -89,7 +89,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     return { source, connection: readSavedProxmoxConnection(source) };
   }
 
-  // ── Routes: Shipyard Proxmox VM form ────────────────────────────────────────
+  // ── Routes: Fleet Proxmox VM form ────────────────────────────────────────
   
   router.get('/workspaces/:id/proxmox-catalog', async (req, res) => {
     const workspace = getWorkspace(req.params.id);
@@ -373,7 +373,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     res.status(202).json({ accepted: true });
   
     // This is intentionally decoupled from a full tofu apply: the VM has
-    // already been reconciled and Shipyard can safely rerun just this bootstrap
+    // already been reconciled and Fleet can safely rerun just this bootstrap
     // step against its managed server mapping.
     setImmediate(() => runPostDeployPlaybooks({
       workspace,
@@ -453,7 +453,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
         .run(id, workspace.id, vm.name, JSON.stringify(vm));
       const generated = writeFleetProxmoxFiles(workspace);
       res.status(201).json({ vm: { ...vm, id }, generated_files: generated.files });
-      syncFleetWorkspace(workspace, `Add Shipyard Proxmox VM ${vm.name}`);
+      syncFleetWorkspace(workspace, `Add Fleet Proxmox VM ${vm.name}`);
     } catch (error) {
       res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
     }
@@ -475,7 +475,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
         .run(vm.name, JSON.stringify(vm), existing.id, workspace.id);
       const generated = writeFleetProxmoxFiles(workspace);
       res.json({ vm: { ...vm, id: existing.id }, generated_files: generated.files });
-      syncFleetWorkspace(workspace, `Update Shipyard Proxmox VM ${vm.name}`);
+      syncFleetWorkspace(workspace, `Update Fleet Proxmox VM ${vm.name}`);
     } catch (error) {
       res.status(/UNIQUE constraint failed/.test(error.message) ? 409 : 400).json({ error: error.message });
     }
@@ -490,7 +490,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     try {
       const generated = writeFleetProxmoxFiles(workspace);
       res.json({ success: true, generated_files: generated.files });
-      syncFleetWorkspace(workspace, 'Remove Shipyard Proxmox VM');
+      syncFleetWorkspace(workspace, 'Remove Fleet Proxmox VM');
     } catch (error) {
       res.status(500).json({ error: permissionError(error, workspace.path) });
     }
@@ -505,7 +505,7 @@ function registerVmRoutes({ db, router, ensureWorkspacePath, findBinary, getPost
     try {
       const generated = writeFleetProxmoxFiles(workspace);
       res.json({ success: true, generated_files: generated.files, count: generated.vms.length });
-      syncFleetWorkspace(workspace, 'Regenerate Shipyard Proxmox files');
+      syncFleetWorkspace(workspace, 'Regenerate Fleet Proxmox files');
     } catch (error) {
       res.status(500).json({ error: permissionError(error, workspace.path) });
     }

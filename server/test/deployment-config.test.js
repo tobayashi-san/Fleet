@@ -10,12 +10,12 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 test('documented active deployment variables are consumed by Compose', () => {
   const source = read('docker-compose.yml');
   const compose = yaml.load(source);
-  assert.equal(compose.services.shipyard.init, true);
+  assert.equal(compose.services.fleet.init, true);
   for (const match of read('.env.example').matchAll(/^([A-Z][A-Z0-9_]*)=/gm)) {
     assert.ok(source.includes('${' + match[1]), `${match[1]} is documented but not consumed by Compose`);
   }
-  const environment = compose.services.shipyard.environment;
-  for (const name of ['SHIPYARD_MFA_POLICY', 'SHIPYARD_TERMINAL_IDLE_MINUTES', 'SHIPYARD_TERMINAL_MAX_MINUTES', 'SHIPYARD_PLUGIN_TRUST_POLICY', 'SHIPYARD_TRUSTED_PLUGIN_SHA256', 'SHIPYARD_RENEW_CERT']) {
+  const environment = compose.services.fleet.environment;
+  for (const name of ['FLEET_MFA_POLICY', 'FLEET_TERMINAL_IDLE_MINUTES', 'FLEET_TERMINAL_MAX_MINUTES', 'FLEET_PLUGIN_TRUST_POLICY', 'FLEET_TRUSTED_PLUGIN_SHA256', 'FLEET_RENEW_CERT']) {
     assert.ok(environment.some(value => value.startsWith(`${name}=\${${name}`)), `${name} must reach the container`);
   }
 });

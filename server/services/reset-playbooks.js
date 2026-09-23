@@ -3,7 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const {createHash,randomUUID} = require('node:crypto');
 const log = require('../utils/logger').child('reset-playbooks');
-const PREFIX = '.shipyard-reset-';
+const PREFIX = '.fleet-reset-';
 const markerKey = id => `reset_commit:${id}`;
 const digest = data => createHash('sha256').update(data).digest('hex');
 function recoveryRequired(cause) {

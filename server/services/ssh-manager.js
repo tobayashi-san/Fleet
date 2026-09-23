@@ -16,13 +16,13 @@ const MAX_CONNECTIONS  = 20;
 const IDLE_TIMEOUT_MS  = 5 * 60 * 1000; // 5 minutes
 const CLEANUP_INTERVAL = 60 * 1000;     // check every minute
 
-const SSH_DIR = process.env.SHIPYARD_SSH_DIR ? path.resolve(process.env.SHIPYARD_SSH_DIR) : path.join(__dirname, '..', 'data', 'ssh');
+const SSH_DIR = process.env.FLEET_SSH_DIR ? path.resolve(process.env.FLEET_SSH_DIR) : path.join(__dirname, '..', 'data', 'ssh');
 const KNOWN_HOSTS_PATH = path.join(__dirname, '..', 'data', 'known_hosts');
 const ALGORITHM = 'aes-256-gcm';
 const KEY_NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
 const RESOLVED_SSH_DIR = path.resolve(SSH_DIR);
 
-function normalizeKeyName(name, fallback = 'shipyard') {
+function normalizeKeyName(name, fallback = 'fleet') {
   const raw = typeof name === 'string' && name.trim() ? name.trim() : fallback;
   if (!KEY_NAME_RE.test(raw)) {
     throw new Error('SSH key name may only contain 1-64 letters, digits, _ and -');
@@ -52,7 +52,7 @@ function unlinkManagedSshFile(value) {
 }
 
 function getMasterKey() {
-  const secret = process.env.SHIPYARD_KEY_SECRET;
+  const secret = process.env.FLEET_KEY_SECRET;
   if (!secret) return null;
   return crypto.createHash('sha256').update(secret).digest();
 }
@@ -69,7 +69,7 @@ function encryptKey(plaintext) {
 
 function decryptKey(b64) {
   const masterKey = getMasterKey();
-  if (!masterKey) throw new Error('SHIPYARD_KEY_SECRET is not set — cannot decrypt SSH key');
+  if (!masterKey) throw new Error('FLEET_KEY_SECRET is not set — cannot decrypt SSH key');
   const buf = Buffer.from(b64, 'base64');
   const iv = buf.subarray(0, 16);
   const tag = buf.subarray(16, 32);
@@ -82,7 +82,7 @@ function decryptKey(b64) {
 /**
  * Read the private key content for a given base path.
  * If a .enc file exists (encrypted at rest), decrypt it in memory.
- * If SHIPYARD_KEY_SECRET is set and only the plaintext exists, encrypt it now.
+ * If FLEET_KEY_SECRET is set and only the plaintext exists, encrypt it now.
  * Returns the plaintext key content as a string.
  */
 function readPrivateKey(keyPath) {
@@ -234,9 +234,9 @@ class SSHManager {
   }
 
   /**
-   * Generate a new SSH key pair for Shipyard
+   * Generate a new SSH key pair for Fleet
    */
-  generateKey(name = 'shipyard') {
+  generateKey(name = 'fleet') {
     const key = resolveSshKeyPath(name);
     const keyPath = key.keyPath;
     const pubKeyPath = key.pubKeyPath;
@@ -253,7 +253,7 @@ class SSHManager {
 
     // Generate ED25519 key (modern, fast, secure)
     // Use execFileSync with array args – no shell interpolation, no injection risk
-    execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', 'shipyard'], {
+    execFileSync('ssh-keygen', ['-t', 'ed25519', '-f', keyPath, '-N', '', '-C', 'fleet'], {
       stdio: 'pipe',
     });
 
@@ -261,7 +261,7 @@ class SSHManager {
     fs.chmodSync(keyPath, 0o600);
     fs.chmodSync(pubKeyPath, 0o644);
 
-    // Encrypt at rest if SHIPYARD_KEY_SECRET is configured
+    // Encrypt at rest if FLEET_KEY_SECRET is configured
     const plaintext = fs.readFileSync(keyPath, 'utf8');
     const encrypted = encryptKey(plaintext);
     if (encrypted) {
@@ -366,7 +366,7 @@ class SSHManager {
     const plaintext = this.getPrivateKey();
     if (!passphrase) return plaintext;
 
-    const tmpFile = path.join(os.tmpdir(), `shipyard_export_${crypto.randomBytes(8).toString('hex')}`);
+    const tmpFile = path.join(os.tmpdir(), `fleet_export_${crypto.randomBytes(8).toString('hex')}`);
     try {
       fs.writeFileSync(tmpFile, plaintext, { mode: 0o600 });
       // Add passphrase: change from empty ('') to the given passphrase
@@ -393,7 +393,7 @@ class SSHManager {
     } finally {fs.rmSync(directory,{recursive:true,force:true});}
   }
 
-  importKey(privateKeyContent, name = 'shipyard_imported', passphrase = '', recordAudit = () => {}, beforeReplace = () => {}) {
+  importKey(privateKeyContent, name = 'fleet_imported', passphrase = '', recordAudit = () => {}, beforeReplace = () => {}) {
     const safeName = normalizeKeyName(name);
     // Each candidate owns a new private directory; never overwrite active files.
     const candidateDir = fs.mkdtempSync(path.join(RESOLVED_SSH_DIR, '.import-'));
@@ -839,7 +839,7 @@ class SSHManager {
     const ssh = await this.createTransferConnection(server);
     const temporaryPath = path.posix.join(
       path.posix.dirname(remotePath),
-      `.${path.posix.basename(remotePath)}.shipyard-upload-${crypto.randomBytes(8).toString('hex')}`,
+      `.${path.posix.basename(remotePath)}.fleet-upload-${crypto.randomBytes(8).toString('hex')}`,
     );
     let sftp;
     let moved = false;

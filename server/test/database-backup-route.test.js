@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-backup-route-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-backup-route-'));
 process.env.DB_PATH=path.join(root,'db.sqlite');process.env.JWT_SECRET='backup-route-test';process.env.NODE_ENV='test';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const express=require('express');const request=require('supertest');const bcrypt=require('bcryptjs');const jwt=require('jsonwebtoken');
 const db=require('../db');const auth=require('../middleware/auth');const {getJwtSecret}=require('../utils/jwt-secret');const {verifyEncryptedDatabaseBackup}=require('../services/database-backup');
@@ -20,7 +20,7 @@ test('successful export is encrypted, independently verifiable and audited witho
  const response=await request(app).post('/backup').set('Authorization',token(admin)).send(body);
  assert.equal(response.status,200);
  assert.equal(response.headers['cache-control'],'no-store');
- assert.equal(response.headers['x-shipyard-backup-verification'],'authenticated-decryption-and-sqlite-integrity');
+ assert.equal(response.headers['x-fleet-backup-verification'],'authenticated-decryption-and-sqlite-integrity');
  assert.match(response.headers['content-disposition'],/attachment/);
  assert.ok(Buffer.isBuffer(response.body));
  const file=path.join(root,'download.backup');fs.writeFileSync(file,response.body);
@@ -53,7 +53,7 @@ test('failed archive verification prevents download and success audit and remove
    await new Promise(resolve=>setTimeout(resolve,10));
   }
   assert.equal(response.status,500);assert.equal(response.headers['content-disposition'],undefined);
-  assert.equal(response.headers['x-shipyard-backup-verification'],undefined);
+  assert.equal(response.headers['x-fleet-backup-verification'],undefined);
   assert.equal(db.db.prepare("SELECT COUNT(*) n FROM audit_log WHERE action='backup.database_export'").get().n,count);
   assert.ok(archive);
   // HTTP error can arrive before the handler's asynchronous finally cleanup finishes.
@@ -70,7 +70,7 @@ test('recovery records are admin-only, validated, persistent and explicitly manu
   assert.equal((await request(app).put('/backup/records/recovery').set('Authorization',token(admin)).send({...record,result:'unknown'})).status,400);
   assert.equal((await request(app).put('/backup/records/toString').set('Authorization',token(admin)).send(record)).status,404);
   const saved=await request(app).put('/backup/records/recovery').set('Authorization',token(admin)).send(record);assert.equal(saved.status,200);assert.equal(saved.body.source,'manual');
-  const status=await request(app).get('/backup/status').set('Authorization',token(admin));assert.equal(status.status,200);assert.equal(status.body.recoveryTest.recordedBy,'backup-admin');assert.equal(status.body.recoveryTest.version,'test-version');assert.equal(status.body.externalBackup,null);assert.equal(status.body.databaseExport.source,'shipyard');
+  const status=await request(app).get('/backup/status').set('Authorization',token(admin));assert.equal(status.status,200);assert.equal(status.body.recoveryTest.recordedBy,'backup-admin');assert.equal(status.body.recoveryTest.version,'test-version');assert.equal(status.body.externalBackup,null);assert.equal(status.body.databaseExport.source,'fleet');
 });
 
 test('a failed external backup does not erase the last recorded success',async()=>{

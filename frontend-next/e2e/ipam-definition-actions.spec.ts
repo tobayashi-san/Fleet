@@ -6,7 +6,7 @@ async function login(page: Page) {
     const body = JSON.stringify({username:'e2e-admin', password:'E2e-password-2026!'});
     let response = await fetch('/api/auth/login', {method:'POST', headers:{'Content-Type':'application/json'}, body});
     if (!response.ok) response = await fetch('/api/auth/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body});
-    localStorage.setItem('shipyard_token', (await response.json()).token);
+    localStorage.setItem('fleet_token', (await response.json()).token);
   });
 }
 
@@ -29,7 +29,7 @@ test('VM definition deletion keeps errors reviewable and removes the selected de
   await page.route('**/api/opentofu/vm-templates?*', route => route.fulfill({json:{templates:[]}}));
   await page.route('**/api/opentofu/vms/draft-1/forget', route => {
     expect(route.request().postDataJSON()).toEqual({confirmation:'FORGET test33'});
-    expect(route.request().headers()['x-shipyard-environment']).toBe('default');
+    expect(route.request().headers()['x-fleet-environment']).toBe('default');
     attempts++;
     if (attempts === 1) return route.fulfill({status:409,json:{error:'An operation is still running.'}});
     deleted = true;

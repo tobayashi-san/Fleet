@@ -283,7 +283,7 @@ export function VarsTab() {
               <Label htmlFor="ansible-var-description">{t("vars.description")}</Label>
               <Input id="ansible-var-description" value={desc} onChange={(e) => setDesc(e.target.value)} />
             </div>
-            {isSecret && <div className="space-y-1"><Label htmlFor="variable-rotation-due">Rotation due · optional</Label><Input id="variable-rotation-due" type="date" value={rotationDue} onChange={event=>setRotationDue(event.target.value)} /><p className="text-xs text-muted-foreground">An advisory date shown in this list; no automatic notification. Rotate the credential at its source, then replace the stored value and choose the next date. Shipyard does not revoke credentials or block runs at this date.</p></div>}
+            {isSecret && <div className="space-y-1"><Label htmlFor="variable-rotation-due">Rotation due · optional</Label><Input id="variable-rotation-due" type="date" value={rotationDue} onChange={event=>setRotationDue(event.target.value)} /><p className="text-xs text-muted-foreground">An advisory date shown in this list; no automatic notification. Rotate the credential at its source, then replace the stored value and choose the next date. Fleet does not revoke credentials or block runs at this date.</p></div>}
             {saveMut.isError && <p role="alert" className="text-xs text-destructive">{saveMut.error.message}</p>}
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => { if (!dirty || window.confirm('Discard unsaved variable changes?')) { clearDraft(); saveMut.reset(); } }}>

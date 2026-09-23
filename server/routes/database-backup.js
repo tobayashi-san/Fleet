@@ -48,17 +48,17 @@ router.post('/',adminOnly,limiter,async(req,res)=>{
   busy = true;
   let dir;
   try {
-    dir = await fs.mkdtemp(path.join(os.tmpdir(),'shipyard-export-'));
+    dir = await fs.mkdtemp(path.join(os.tmpdir(),'fleet-export-'));
     const archive = path.join(dir,'database.backup');
     const info = await backupService.createEncryptedDatabaseBackup(db.db,archive,body.passphrase);
     await backupService.verifyEncryptedDatabaseBackup(archive,body.passphrase);
     const current = db.users.getById(user.id);
     if (!current || current.disabled || current.role !== 'admin' || current.token_version !== user.token_version || !validSession(req.authPayload,req.headers.authorization.slice(7))) return res.status(403).json({error:'Authorization changed. Sign in again before exporting.'});
     db.auditLog.write('backup.database_export',`Encrypted database archive prepared and verified; scope=all-environments; bytes=${info.bytes}`,req.ip,true,user.username);
-    db.settings.set('backup_last_export',JSON.stringify({occurredAt:new Date().toISOString(),scope:'Database · all environments',result:'passed',source:'shipyard',bytes:info.bytes}));
+    db.settings.set('backup_last_export',JSON.stringify({occurredAt:new Date().toISOString(),scope:'Database · all environments',result:'passed',source:'fleet',bytes:info.bytes}));
     res.set('Cache-Control','no-store');
-    res.set('X-Shipyard-Backup-Verification','authenticated-decryption-and-sqlite-integrity');
-    await new Promise((resolve,reject)=>res.download(archive,`shipyard-database-${new Date().toISOString().slice(0,10)}.backup`,error=>error?reject(error):resolve()));
+    res.set('X-Fleet-Backup-Verification','authenticated-decryption-and-sqlite-integrity');
+    await new Promise((resolve,reject)=>res.download(archive,`fleet-database-${new Date().toISOString().slice(0,10)}.backup`,error=>error?reject(error):resolve()));
   } catch (error) {
     if (res.headersSent) res.destroy(); else serverError(res,error,'database backup export');
   } finally { try { if(dir)await fs.rm(dir,{recursive:true,force:true}); } finally { busy=false; } }

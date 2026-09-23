@@ -14,7 +14,7 @@ function playbookState(directory) {
   let names;
   try { names = fs.readdirSync(directory); }
   catch (error) { if (error.code === 'ENOENT') return []; throw error; }
-  if (names.some(name => name.startsWith('.shipyard-reset-'))) throw Error('Interrupted playbook reset requires recovery before backup comparison');
+  if (names.some(name => name.startsWith('.fleet-reset-'))) throw Error('Interrupted playbook reset requires recovery before backup comparison');
   return names.filter(name => /\.ya?ml$/.test(name)).sort().map(name => {
     const fd = fs.openSync(path.join(directory, name), fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
     try {

@@ -7,12 +7,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-ansible-integration-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-ansible-integration-'));
 process.env.NODE_ENV = 'test';
 process.env.DB_PATH = path.join(root, 'test.db');
-process.env.SHIPYARD_PLAYBOOKS_DIR = path.join(root, 'playbooks');
-process.env.SHIPYARD_SSH_DIR = path.join(root, 'ssh');
-process.env.SHIPYARD_KEY_SECRET = 'integration-only-encryption-key';
+process.env.FLEET_PLAYBOOKS_DIR = path.join(root, 'playbooks');
+process.env.FLEET_SSH_DIR = path.join(root, 'ssh');
+process.env.FLEET_KEY_SECRET = 'integration-only-encryption-key';
 process.env.ANSIBLE_CONFIG = path.join(root, 'ansible.cfg');
 process.env.ANSIBLE_LOCAL_TEMP = path.join(root, 'ansible-tmp');
 fs.writeFileSync(process.env.ANSIBLE_CONFIG, '[defaults]\nstdout_callback=default\nretry_files_enabled=False\n');
@@ -35,7 +35,7 @@ test('real local Ansible receives native stored types and overrides while output
   db.ansibleVars.create('override_secret', 'synthetic-old-credential', '', { isSecret: true });
   db.db.prepare("INSERT INTO environments (id,name) VALUES ('other','Other')").run();
   db.ansibleVars.create('foreign_value', 'must-not-arrive', '', { environmentId: 'other' });
-  fs.writeFileSync(path.join(process.env.SHIPYARD_PLAYBOOKS_DIR, 'verify.yml'), `
+  fs.writeFileSync(path.join(process.env.FLEET_PLAYBOOKS_DIR, 'verify.yml'), `
 - name: Verify local variable transport
   hosts: localhost
   connection: local

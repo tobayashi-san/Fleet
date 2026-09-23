@@ -189,7 +189,7 @@ export function ServerDetailPage() {
             onClick={() =>
               navigate({
                 to:
-                  (sessionStorage.getItem("shipyard.lastNonDetailRoute") as
+                  (sessionStorage.getItem("fleet.lastNonDetailRoute") as
                     | "/"
                     | "/infrastructure"
                     | "/servers"
@@ -335,7 +335,7 @@ export function ServerDetailPage() {
               title={t("det.reboot")}
               description={
                 managedProxmoxDeployment
-                  ? `Shipyard restarts “${server.name}” directly through the linked Proxmox platform. SSH access is not required.`
+                  ? `Fleet restarts “${server.name}” directly through the linked Proxmox platform. SSH access is not required.`
                   : t("det.confirmReboot", { name: server.name })
               }
               confirmLabel={t("det.reboot")}

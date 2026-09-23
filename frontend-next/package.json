@@ -1,12 +1,12 @@
 {
-  "name": "shipyard-frontend",
+  "name": "fleet-frontend",
   "private": true,
   "engines": {
     "node": ">=24 <25"
   },
   "version": "3.0.8-rc.46",
   "type": "module",
-  "description": "Shipyard Frontend (next) — React + TS + shadcn/ui",
+  "description": "Fleet Frontend (next) — React + TS + shadcn/ui",
   "scripts": {
     "dev": "vite --host --port 5174",
     "build": "tsc -b && vite build",

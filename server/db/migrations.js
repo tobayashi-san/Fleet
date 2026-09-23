@@ -57,8 +57,13 @@ function applyMigrations(db) {
     db.exec("ALTER TABLE users ADD COLUMN last_login_at TEXT");
   } catch {}
   try {
-    db.exec("ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT");
+    db.exec("ALTER TABLE agent_config ADD COLUMN fleet_url TEXT");
   } catch {}
+  // Databases created under the Shipyard name store the agent callback URL as shipyard_url.
+  const agentColumns = new Set(db.prepare('PRAGMA table_info(agent_config)').all().map(column => column.name));
+  if (agentColumns.has('shipyard_url') && agentColumns.has('fleet_url')) {
+    db.exec('UPDATE agent_config SET fleet_url = shipyard_url WHERE fleet_url IS NULL AND shipyard_url IS NOT NULL');
+  }
   try {
     db.exec("ALTER TABLE servers ADD COLUMN storage_mounts TEXT DEFAULT '[]'");
   } catch {}
@@ -143,10 +148,10 @@ function applyMigrations(db) {
       "CREATE INDEX IF NOT EXISTS idx_server_groups_environment ON server_groups(environment_id, position, name)",
     );
   } catch {}
-  // Rename the untouched legacy product default without overwriting a custom white-label name.
+  // The product is called Fleet again: rename the untouched default name, never a custom white-label name.
   try {
     db.exec(
-      "UPDATE app_settings SET value = 'Shipyard' WHERE key = 'wl_app_name' AND value = 'Fleet'",
+      "UPDATE app_settings SET value = 'Fleet' WHERE key = 'wl_app_name' AND value = 'Shipyard'",
     );
   } catch {}
   try {
@@ -191,7 +196,7 @@ function applyMigrations(db) {
     db.exec("CREATE INDEX IF NOT EXISTS idx_audit_log_environment_created ON audit_log(environment_id, created_at DESC)");
   } catch {}
   // NetBox-style IPAM metadata. These additive migrations preserve all early
-  // Shipyard subnet and reservation data.
+  // Fleet subnet and reservation data.
   try {
     db.exec(
       "ALTER TABLE ipam_subnets ADD COLUMN status TEXT NOT NULL DEFAULT 'active'",

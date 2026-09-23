@@ -8,7 +8,7 @@ test('table menus overlay rows without moving the page', async ({ page }, testIn
     if (!r.ok) r = await fetch('/api/auth/setup', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
     const data = await r.json();
     if (!data.token) throw new Error('Authentication failed');
-    localStorage.setItem('shipyard_token', data.token);
+    localStorage.setItem('fleet_token', data.token);
   });
   await page.route('**/api/schedules?*', route => route.fulfill({ json: Array.from({ length: 40 }, (_, i) => ({
     id: String(i), name: `Workflow ${i}`, playbook: 'ping.yml', targets: ['host'], enabled: false, cron_expression: '0 1 * * *', timezone: 'Europe/Zurich',

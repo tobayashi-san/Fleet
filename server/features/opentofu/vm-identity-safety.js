@@ -22,10 +22,10 @@ async function verifyVmIdentity({ workspace, vms, state, plan, checkConfiguratio
     const resource = resources.find(item => item.address === address);
     const change = plan?.resource_changes?.find(item => item.address === address);
     if (change && !change.change?.actions?.every(action => ['no-op', 'read'].includes(action))) {
-      if (Number(change.change.after?.vm_id) !== Number(vm.vm_id) || change.change.after?.node_name !== vm.node_name || change.change.after?.description !== `Shipyard VM ${vm.id}`) throw new Error('The plan VM identity or ownership marker differs from this deployment. Create a new plan.');
+      if (Number(change.change.after?.vm_id) !== Number(vm.vm_id) || change.change.after?.node_name !== vm.node_name || change.change.after?.description !== `Fleet VM ${vm.id}`) throw new Error('The plan VM identity or ownership marker differs from this deployment. Create a new plan.');
     }
     const creating = change?.change?.actions?.includes('create');
-    if (change?.change?.before && (Number(change.change.before.vm_id) !== Number(vm.vm_id) || change.change.before.node_name !== vm.node_name || change.change.before.description !== `Shipyard VM ${vm.id}`)) throw new Error('The saved plan references a different existing VM. Create a new plan.');
+    if (change?.change?.before && (Number(change.change.before.vm_id) !== Number(vm.vm_id) || change.change.before.node_name !== vm.node_name || change.change.before.description !== `Fleet VM ${vm.id}`)) throw new Error('The saved plan references a different existing VM. Create a new plan.');
     const id = Number(vm.vm_id || resource?.values?.vm_id);
     if (!Number.isInteger(id) || id < 100) throw new Error('Choose an explicit, available VM ID before deployment.');
     const live = inventory.filter(item => Number(item.vmid) === id);
@@ -38,9 +38,9 @@ async function verifyVmIdentity({ workspace, vms, state, plan, checkConfiguratio
       throw new Error(`VM ${id} is missing or its identity differs from this deployment. Check Proxmox and the deployment state; no VM will be recreated.`);
     }
     const config = await request(connection, `/nodes/${encodeURIComponent(vm.node_name)}/qemu/${id}/config`);
-    const marker = `Shipyard VM ${vm.id}`;
+    const marker = `Fleet VM ${vm.id}`;
     if (!vm.id || config?.description !== marker || resource.values?.description !== marker) {
-      throw new Error(`Ownership of VM ${id} cannot be verified. Check its Shipyard ownership marker and state manually.`);
+      throw new Error(`Ownership of VM ${id} cannot be verified. Check its Fleet ownership marker and state manually.`);
     }
     if (!plan && checkConfiguration) {
       const net = String(config.net0 || '');

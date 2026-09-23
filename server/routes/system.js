@@ -183,7 +183,7 @@ router.get('/key', adminOnly, (req, res) => {
 // POST /api/system/generate - Generate new SSH key
 router.post('/generate', adminOnly, (req, res) => {
   try {
-    const rawName = req.body.name || 'shipyard';
+    const rawName = req.body.name || 'fleet';
     if (!/^[a-zA-Z0-9_-]+$/.test(rawName)) {
       return res.status(400).json({ error: 'Key name may only contain letters, digits, _ and -' });
     }
@@ -229,7 +229,7 @@ router.post('/key/import', adminOnly, keyExportLimiter, (req, res) => {
     if (!privateKey || typeof privateKey !== 'string' || privateKey.length > 65536) {
       return res.status(400).json({ error: 'privateKey is required' });
     }
-    const result = sshManager.importKey(privateKey, 'shipyard_imported', passphrase || '', (before,after) => {
+    const result = sshManager.importKey(privateKey, 'fleet_imported', passphrase || '', (before,after) => {
       db.auditLog.write('ssh.import', sshKeyAuditDetail(before,after), req.ip, true, req.user?.username);
     }, candidate => {
       if ((db.sshKeys.getFirst()?.id || null) !== expectedKeyId || candidate.fingerprint !== expectedFingerprint) {const error=new Error('The current or selected key changed. Preview the replacement again.');error.status=409;throw error;}
@@ -273,7 +273,7 @@ router.post('/deploy', adminOnly, deployLimiter, async (req, res) => {
   } catch (error) {
     db.auditLog.write('ssh.deploy', `SSH key deploy failed for ${req.body?.ip_address}`, req.ip, false, req.user?.username);
     // A remote SSH connection failure is an expected operational outcome,
-    // not an internal Shipyard crash. Keep implementation details in the log.
+    // not an internal Fleet crash. Keep implementation details in the log.
     log.warn({ err: error, serverId: req.body?.server_id, ipAddress: req.body?.ip_address }, 'SSH key deployment failed');
     if (!res.headersSent) res.status(502).json({ error: 'The SSH key could not be installed. Check the IP address, SSH user, password, and host reachability.' });
     else serverError(res, error, 'deploy SSH key');
@@ -320,7 +320,7 @@ router.post('/deploy-all', adminOnly, deployLimiter, async (req, res) => {
 });
 
 // ── SSH key scope ────────────────────────────────────────────────────────
-// The private Shipyard key stays central. These records only declare the
+// The private Fleet key stays central. These records only declare the
 // resources for which its public part is intended, making access intent
 // visible in the console and auditable without duplicating key material.
 router.get('/key-assignments', adminOnly, (req, res) => {
@@ -498,7 +498,7 @@ router.get('/notification-deliveries', adminOnly, (req, res) => {
 router.post('/webhook-test', adminOnly, async (req, res) => {
   if (!db.settings.get('webhook_url')) return res.status(400).json({ error: 'Save a webhook URL before testing.' });
   try {
-    const result = await sendWebhook('Shipyard Test', 'This is a test notification from Shipyard.', true);
+    const result = await sendWebhook('Fleet Test', 'This is a test notification from Fleet.', true);
     if (result && result.ok === false) {
       return res.status(502).json({ error: 'Webhook request failed', status: result.status });
     }
@@ -512,7 +512,7 @@ router.post('/webhook-test', adminOnly, async (req, res) => {
 router.post('/smtp-test', adminOnly, async (req, res) => {
   if (!db.settings.get('smtp_host') || !db.settings.get('smtp_to')) return res.status(400).json({ error: 'Save an SMTP host and recipient before testing.' });
   try {
-    const result = await sendEmail('Shipyard Test', 'This is a test email from Shipyard.', true);
+    const result = await sendEmail('Fleet Test', 'This is a test email from Fleet.', true);
     if (!result?.ok) return res.status(502).json({ error: result?.partial ? 'The mail server rejected some recipients. Check the configured recipient list.' : 'The mail server did not accept the test message.' });
     res.json({ success: true });
   } catch (error) {

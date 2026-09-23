@@ -1,8 +1,8 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-reset-credentials-'));
-process.env.DB_PATH=path.join(root,'test.db');process.env.SHIPYARD_PLAYBOOKS_DIR=path.join(root,'playbooks');process.env.JWT_SECRET='synthetic-reset-jwt';process.env.SHIPYARD_KEY_SECRET='synthetic-reset-key';process.env.NODE_ENV='test';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-reset-credentials-'));
+process.env.DB_PATH=path.join(root,'test.db');process.env.FLEET_PLAYBOOKS_DIR=path.join(root,'playbooks');process.env.JWT_SECRET='synthetic-reset-jwt';process.env.FLEET_KEY_SECRET='synthetic-reset-key';process.env.NODE_ENV='test';
 const db=require('../db');const bcrypt=require('bcryptjs');const jwt=require('jsonwebtoken');const otplib=require('otplib');const express=require('express');const request=require('supertest');
 const {createSession}=require('../utils/auth-sessions');const credentials=require('../middleware/reset-credentials');
 const password='Synthetic-reset-password';const hash=bcrypt.hashSync(password,4);

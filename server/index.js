@@ -44,7 +44,7 @@ function start({ server, allowedOrigins, isHttps, setBroadcast }) {
   const wsProto = isHttps ? 'wss' : 'ws';
 
   server.listen(PORT, () => {
-    log.info({ url: `${proto}://localhost:${PORT}`, ws: `${wsProto}://localhost:${PORT}/ws` }, 'Shipyard running');
+    log.info({ url: `${proto}://localhost:${PORT}`, ws: `${wsProto}://localhost:${PORT}/ws` }, 'Fleet running');
     if (!isHttps && process.env.NODE_ENV === 'production') {
       log.warn('Running without HTTPS. Set SSL_KEY and SSL_CERT env vars or use a reverse proxy (nginx, Caddy) to terminate TLS.');
     }

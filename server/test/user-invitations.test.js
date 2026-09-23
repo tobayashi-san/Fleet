@@ -1,7 +1,7 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-invitations-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-invitations-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');const bcrypt=require('bcryptjs');const express=require('express');const request=require('supertest');const {roleRevision}=require('../utils/role-revision');
 const issuer=db.users.create('inviting-admin','',bcrypt.hashSync('Synthetic-password-123',4),'admin');
 const role=db.roles.create('Invited viewer',{servers:'all',canViewServers:true});

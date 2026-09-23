@@ -15,9 +15,9 @@ function executionHostResults(output) {
     if (host && !results.has(host)) results.set(host, {name: host, status: 'failed', ok: null, changed: null, failed: null, unreachable: null, skipped: null, duration_seconds: null});
   }
   for (const line of lines) {
-    if (!line.startsWith('__SHIPYARD_HOST_TIMING__')) continue;
+    if (!line.startsWith('__FLEET_HOST_TIMING__')) continue;
     try {
-      const timings = JSON.parse(line.slice('__SHIPYARD_HOST_TIMING__'.length));
+      const timings = JSON.parse(line.slice('__FLEET_HOST_TIMING__'.length));
       for (const [name, duration] of Object.entries(timings)) {
         if (results.has(name) && typeof duration === 'number' && Number.isFinite(duration) && duration >= 0) results.get(name).duration_seconds = duration;
       }

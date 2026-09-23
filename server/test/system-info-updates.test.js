@@ -87,7 +87,7 @@ test('available updates retain exact installed and candidate versions when repor
 });
 
 test('apt collection checks real shell exit statuses and distinguishes an empty upgrade plan', async () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-package-check-'));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(),'fleet-package-check-'));
   const original = sshManager.execCommand;
   const executable = (name, body) => fs.writeFileSync(path.join(root,name), `#!/bin/sh\n${body}\n`, {mode:0o755});
   // The generated remote script runs only these fake package commands. No

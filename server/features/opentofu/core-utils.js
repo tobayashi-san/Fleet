@@ -5,7 +5,7 @@ const net = require('net');
 
 const PROVISION_PLAYBOOK_RE = /^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+\.ya?ml$/;
 const DIRECT_IP_KEYS = [
-  'shipyard_ip',
+  'fleet_ip',
   'ip_address',
   'ip',
   'default_ipv4_address',

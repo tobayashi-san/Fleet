@@ -1,7 +1,7 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-schedule-transactions-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-schedule-transactions-'));
 process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');const scheduler=require('../services/scheduler');
 const express=require('express');const request=require('supertest');

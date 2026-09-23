@@ -103,7 +103,7 @@ function registerIsolatedVmRoutes({
       const definition = vm ? publicVm(vm, normalizeProxmoxVm) : null;
       if (definition && matches.length === 1 && Number(definition.vm_id) === id && matches[0].node === definition.node_name && matches[0].name === definition.name && matches[0].type === 'qemu') {
         const config = await requestProxmoxApi(readSavedProxmoxConnection(source), `/nodes/${encodeURIComponent(definition.node_name)}/qemu/${id}/config`);
-        owned = config?.description === `Shipyard VM ${vm.id}`;
+        owned = config?.description === `Fleet VM ${vm.id}`;
       }
       res.json({ available: matches.length === 0, owned, occupied: matches.map(guest => ({ name: guest.name, node: guest.node, type: guest.type })) });
     } catch (error) { res.status(502).json({ error: `VM ID could not be checked: ${error.message}` }); }

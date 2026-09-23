@@ -113,7 +113,7 @@ router.delete('/sessions/:id', authSensitiveLimiter, authMiddleware, (req,res)=>
 // GET /api/auth/status – is a password configured? Is onboarding done?
 router.get('/status', (req, res) => {
   const configured = db.users.count() > 0;
-  const appName = db.settings.get('wl_app_name') || 'Shipyard';
+  const appName = db.settings.get('wl_app_name') || 'Fleet';
   const appTagline = db.settings.get('wl_app_tagline') || 'Infrastructure';
   const accentColor = db.settings.get('wl_accent_color') || '#17704f';
   const logoIcon = db.settings.get('wl_logo_icon') || 'fa-ship';
@@ -346,7 +346,7 @@ router.post('/totp/setup', authSensitiveLimiter, authMiddleware, async (req, res
     if(req.user.totp_enabled)return res.status(409).json({error:'MFA is already enabled. Disable the existing factor before setting up a replacement.'});
     const previousPending=db.users.getPendingTotpSecret(req.user.id);
     const secret=previousPending || otplib.generateSecret();
-    const appName=db.settings.get('wl_app_name') || 'Shipyard';
+    const appName=db.settings.get('wl_app_name') || 'Fleet';
     const otpauthUrl=otplib.generateURI({label:req.user.username,issuer:appName,secret});
     const qrDataUrl=await QRCode.toDataURL(otpauthUrl);
     db.db.transaction(()=>{

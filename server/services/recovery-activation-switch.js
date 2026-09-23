@@ -37,7 +37,7 @@ async function load(options, {allowMissingStaging = false} = {}) {
   for (const [index, item] of journal.operations.entries()) {
     const expected = plan.operations[index];
     for (const key of ['id', 'source', 'target', 'database', 'coveredRoots']) if (JSON.stringify(item[key]) !== JSON.stringify(expected[key])) throw Error('Activation journal target mapping changed');
-    if (item.staging !== path.join(path.dirname(item.target), `.shipyard-activation-${journal.id}-${index}`)) throw Error('Invalid activation staging path');
+    if (item.staging !== path.join(path.dirname(item.target), `.fleet-activation-${journal.id}-${index}`)) throw Error('Invalid activation staging path');
     try {
       if ((await fs.realpath(item.staging)) !== item.staging) throw Error('Invalid activation staging path');
     } catch (error) { if (!allowMissingStaging || error.code !== 'ENOENT') throw error; }

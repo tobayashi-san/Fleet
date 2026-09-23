@@ -5,11 +5,11 @@ import fs from 'node:fs';
 const shots=path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, 'settings-regressions');
 async function signIn(page:Page){
  await page.goto('/login');
- await page.evaluate(async()=>{const credentials={username:'e2e-admin',password:'E2e-password-2026!'};let response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});if(!response.ok)response=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});const result=await response.json();if(!result.token)throw new Error('Isolated login failed');localStorage.setItem('shipyard_token',result.token);});
+ await page.evaluate(async()=>{const credentials={username:'e2e-admin',password:'E2e-password-2026!'};let response=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});if(!response.ok)response=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(credentials)});const result=await response.json();if(!result.token)throw new Error('Isolated login failed');localStorage.setItem('fleet_token',result.token);});
  await page.goto('/settings');
 }
 async function api(page:Page,url:string,body?:unknown,method=body?'PUT':'GET'){
- return page.evaluate(async({url,body,method})=>{const response=await fetch(`/api${url}`,{method,headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error(`${url}: ${response.status}`);return response.json();},{url,body,method});
+ return page.evaluate(async({url,body,method})=>{const response=await fetch(`/api${url}`,{method,headers:{Authorization:`Bearer ${localStorage.getItem('fleet_token')}`,'Content-Type':'application/json'},...(body?{body:JSON.stringify(body)}:{})});if(!response.ok)throw new Error(`${url}: ${response.status}`);return response.json();},{url,body,method});
 }
 async function shot(page:Page,name:string){fs.mkdirSync(shots,{recursive:true});await page.screenshot({path:path.join(shots,`${name}.png`),fullPage:true,animations:'disabled'});}
 

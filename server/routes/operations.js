@@ -142,7 +142,7 @@ function permittedRows(req) {
       name: operationName(row.action, 'Host'),
       action: row.action,
       target: row.server_name || row.server_id,
-      initiator: row.triggered_by || 'Shipyard',
+      initiator: row.triggered_by || 'Fleet',
       status: row.status || 'unknown',
       statusTone: statusTone(row.status),
       started_at: row.started_at,

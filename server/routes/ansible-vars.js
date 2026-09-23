@@ -66,7 +66,7 @@ router.post('/', (req, res, next) => { if (!can(getPermissions(req.user), 'canAd
   if (is_secret !== undefined && typeof is_secret !== 'boolean') return res.status(400).json({ error: 'is_secret must be a boolean' });
   const environmentId = requestedEnvironment(req);
   if (!ensureEnvironmentAccess(req, res, environmentId)) return;
-  if (is_secret === true && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'SHIPYARD_KEY_SECRET is required before storing secret variables' });
+  if (is_secret === true && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'FLEET_KEY_SECRET is required before storing secret variables' });
   const err = validateKey(key);
   if (err) return res.status(400).json({ error: err });
   if (!value || typeof value !== 'string') return res.status(400).json({ error: 'Value required' });
@@ -96,7 +96,7 @@ router.put('/:id', (req, res, next) => { if (!can(getPermissions(req.user), 'can
   const existing = db.ansibleVars.getById(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Variable not found' });
   if (!ensureEnvironmentAccess(req, res, existing.environment_id || 'default')) return;
-  if (is_secret === true && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'SHIPYARD_KEY_SECRET is required before storing secret variables' });
+  if (is_secret === true && !cryptoUtil.isEncryptionAvailable()) return res.status(503).json({ error: 'FLEET_KEY_SECRET is required before storing secret variables' });
   const err = validateKey(key);
   if (err) return res.status(400).json({ error: err });
   const keepValue = is_secret === true && (value === undefined || value === '');

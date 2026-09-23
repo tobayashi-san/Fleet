@@ -716,6 +716,6 @@ module.exports = function registerReservationRoutes(router, { guard, guardEnviro
   });
 
   // External sources are observed inventories. Their source stays authoritative
-  // for DHCP state; Shipyard only mirrors it into matching, existing prefixes.
+  // for DHCP state; Fleet only mirrors it into matching, existing prefixes.
 
 };

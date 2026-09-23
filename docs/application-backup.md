@@ -1,22 +1,22 @@
 # Encrypted application recovery package
 
-The application-backup CLI combines a consistent encrypted SQLite snapshot with recovery files in one encrypted package. It is an offline operation: stop Shipyard and other writers to its persistent files before creating it. `--offline` acknowledges this prerequisite; it does not stop processes or prove that all external writers are stopped. Detected database changes or files changing during copying cause failure, but these checks do not replace a quiescent deployment.
+The application-backup CLI combines a consistent encrypted SQLite snapshot with recovery files in one encrypted package. It is an offline operation: stop Fleet and other writers to its persistent files before creating it. `--offline` acknowledges this prerequisite; it does not stop processes or prove that all external writers are stopped. Detected database changes or files changing during copying cause failure, but these checks do not replace a quiescent deployment.
 
 The package discovers persistent data, configured playbooks/plugins/SSH/Git/state-backup directories, registered OpenTofu workspace paths and configured TLS files. Explicit configured paths and registered workspaces must exist. Missing optional default directories are recorded as absent. The source database and its WAL/SHM/journal files are excluded from file copies because the database has its own consistent snapshot.
 
-The original `SHIPYARD_KEY_SECRET`, external `JWT_SECRET`, deployment configuration and remote workload backups remain separate recovery requirements. Generated secrets live in the separate `shipyard-secrets` volume (`/app/secrets/shipyard.env`) and are deliberately not part of the package. Remote VM disks, host applications and externally referenced files outside the discovered roots are not automatically captured. Inspect configured paths and the recovery manifest as part of recovery planning. Configured root paths may themselves be symbolic links: their contents are captured from the resolved target, and both configured and resolved paths are recorded. Retargeting a root during capture causes failure. Absolute or escaping links nested inside a source root are still refused; they are not silently followed. Prepared root contents are regular files/directories, so recreating the original deployment-level root links belongs in target-path review.
+The original `FLEET_KEY_SECRET`, external `JWT_SECRET`, deployment configuration and remote workload backups remain separate recovery requirements. Generated secrets live in the separate `fleet-secrets` volume (`/app/secrets/fleet.env`) and are deliberately not part of the package. Remote VM disks, host applications and externally referenced files outside the discovered roots are not automatically captured. Inspect configured paths and the recovery manifest as part of recovery planning. Configured root paths may themselves be symbolic links: their contents are captured from the resolved target, and both configured and resolved paths are recorded. Retargeting a root during capture causes failure. Absolute or escaping links nested inside a source root are still refused; they are not silently followed. Prepared root contents are regular files/directories, so recreating the original deployment-level root links belongs in target-path review.
 
 Run with the same path configuration as the stopped deployment and an existing private destination directory outside every source root. Provision enough free space for the prepared files, package and encrypted output. The CLI's temporary material is plaintext within private directories and is removed afterward; the published archive is encrypted and mode 0600. Existing archives are never overwritten.
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/application-backup.js create /secure/backups/application.backup --offline
 node server/cli/application-backup.js verify /secure/backups/application.backup
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
-Use `DB_PATH` for a nondefault database and preserve the deployment's `SHIPYARD_PLAYBOOKS_DIR`, `PLUGINS_DIR`, `SHIPYARD_SSH_DIR`, `SHIPYARD_GIT_WORKSPACE_DIR`, `TOFU_STATE_BACKUP_DIR`, `SSL_CERT` and `SSL_KEY` values where configured. The CLI opens the existing database read-only and does not initialize a new database.
+Use `DB_PATH` for a nondefault database and preserve the deployment's `FLEET_PLAYBOOKS_DIR`, `PLUGINS_DIR`, `FLEET_SSH_DIR`, `FLEET_GIT_WORKSPACE_DIR`, `TOFU_STATE_BACKUP_DIR`, `SSL_CERT` and `SSL_KEY` values where configured. The CLI opens the existing database read-only and does not initialize a new database.
 
 Verification authenticates the entire encrypted package before processing its contents. It extracts only into a new private temporary directory, checks relative path/parent constraints and per-file SHA-256 hashes, and independently verifies the embedded encrypted SQLite archive. It never writes to the original paths recorded in manifests. Archives with escaping/duplicate paths, link parents, truncated data or altered contents are rejected. Overlapping roots and aliases (for example `data` and `data/ssh`) must contain identical copies of their shared physical source. Creation and verification compare shared contents, links and staging permissions; divergent copies are rejected even when each individual file checksum is valid. This catches changes between separate root copies but does not replace stopping all writers.
 
@@ -26,10 +26,10 @@ The format is specific to application packages; it is separate from the database
 ## Prepare an application restore
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/application-backup.js restore /secure/backups/application.backup /secure/recovery/new-directory
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
 The destination must not exist and its parent must already exist. Restore authenticates the archive, reconciles both manifests with the actual package members and checks the database. It prepares:
@@ -53,13 +53,13 @@ Before activation, keep writers stopped and compare the prepared directory again
 node server/cli/application-backup.js verify-prepared /secure/backups/application.backup /secure/recovery/new-directory
 ```
 
-Supply `SHIPYARD_BACKUP_PASSPHRASE` as for restore. This command builds a fresh private temporary restore from the authenticated archive and compares the prepared database, file roots, recovery plan, READY marker, links and restrictive staging permissions. It rejects missing, extra or changed members. The prepared directory is only read; it is never repaired, overwritten or activated. The temporary comparison is removed afterward, and needs space for an additional restore. Success reports `preparedVerified: true`, `restored: false`, `activated: false`.
+Supply `FLEET_BACKUP_PASSPHRASE` as for restore. This command builds a fresh private temporary restore from the authenticated archive and compares the prepared database, file roots, recovery plan, READY marker, links and restrictive staging permissions. It rejects missing, extra or changed members. The prepared directory is only read; it is never repaired, overwritten or activated. The temporary comparison is removed afterward, and needs space for an additional restore. Success reports `preparedVerified: true`, `restored: false`, `activated: false`.
 
 This is a point-in-time comparison, not a lock against later changes, a check of separately preserved deployment secrets, or proof that the restored application can run. A legitimate modification to prepared files requires review and will fail this exact comparison. Activation/rollback remains separate work.
 
 ## Check the separately preserved application key
 
-With `SHIPYARD_BACKUP_PASSPHRASE` and the original `SHIPYARD_KEY_SECRET` supplied through the environment, run:
+With `FLEET_BACKUP_PASSPHRASE` and the original `FLEET_KEY_SECRET` supplied through the environment, run:
 
 ```bash
 node server/cli/application-backup.js verify-key /secure/backups/application.backup
@@ -76,10 +76,10 @@ The activation planner is read-only. It verifies the prepared directory against 
 Create a JSON mapping with `database` set to its absolute destination file and `roots` mapping each included root ID from `recovery-plan.json` to its absolute destination. Omit absent roots. Map physical paths as visible to the recovery process: Docker container paths and host volume paths are not interchangeable. The plan does not stop containers, rewrite mounts or establish that a mountpoint can be replaced.
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/recovery-activation.js plan /secure/backups/application.backup /secure/recovery/new-directory /secure/recovery/targets.json
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
 The result is `planned-not-activated`. Review each operation's source, target, covered roots and database overlay. No destination files are created or changed. Staging, activation and rollback are separate commands below; a valid plan is not an activated recovery or a guarantee of runtime readiness.
@@ -89,13 +89,13 @@ The result is `planned-not-activated`. Review each operation's source, target, c
 After reviewing the destination mapping, stop application and filesystem writers and run:
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/recovery-activation.js stage /secure/backups/application.backup /secure/recovery/new-directory /secure/recovery/targets.json /secure/recovery/new-activation-journal --offline
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
-The journal directory must not exist and must be separate from the prepared directory and activation targets. Target parent directories must already exist at physical paths. Staging allocates private `.shipyard-activation-*` sibling directories on each target filesystem. It copies and compares the verified payload, adds the database overlay where planned, synchronizes file/directory contents, and writes progress through an atomically replaced journal. The prepared recovery is checked against the archive again before the final `staged-not-activated` state. Existing target files/directories are not replaced or removed.
+The journal directory must not exist and must be separate from the prepared directory and activation targets. Target parent directories must already exist at physical paths. Staging allocates private `.fleet-activation-*` sibling directories on each target filesystem. It copies and compares the verified payload, adds the database overlay where planned, synchronizes file/directory contents, and writes progress through an atomically replaced journal. The prepared recovery is checked against the archive again before the final `staged-not-activated` state. Existing target files/directories are not replaced or removed.
 
 The result gives the journal path. Preserve that directory and the listed staging directories. Ordinary copy failures remove only newly created staging material; cleanup failures report the journal to preserve. After a process or machine interruption, do not assume staging completed based on directory existence. Use cleanup-staging below for an interrupted preparation. Interrupted target switching can be rolled back with the command below. Staging alone does not switch a deployment, prove the original encryption key is usable, or validate runtime recovery. The `--offline` flag is an operator acknowledgement, not process detection.
 
@@ -107,21 +107,21 @@ Run the operator entry point `server/cli/recovery-activation.js` on the same rec
 Keep writers stopped, preserve the archive/prepared directory/target mapping, and supply the original application key for activation. Missing or nonmatching keys fail before any target is moved. Archives without encrypted values report no positive key evidence. External deployment secrets, workload data and runtime readiness still require separate verification.
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
-read -rs -p 'Original application key: ' SHIPYARD_KEY_SECRET
-export SHIPYARD_KEY_SECRET
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
+read -rs -p 'Original application key: ' FLEET_KEY_SECRET
+export FLEET_KEY_SECRET
 node server/cli/recovery-activation.js activate /secure/backups/application.backup /secure/recovery/new-directory /secure/recovery/targets.json /secure/recovery/activation-journal --offline
-unset SHIPYARD_BACKUP_PASSPHRASE SHIPYARD_KEY_SECRET
+unset FLEET_BACKUP_PASSPHRASE FLEET_KEY_SECRET
 ```
 
 The journal must come from completed staging. Activation verifies payloads again, preserves each original under its staging directory's `previous` path and installs the recovered payload. An ordinary failure attempts rollback. A process interruption may leave some targets switched and others pending: keep the application stopped and use rollback. A successful `activated:true` means the filesystem switch completed; it does not mean a service was started or tested.
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/recovery-activation.js rollback /secure/backups/application.backup /secure/recovery/new-directory /secure/recovery/targets.json /secure/recovery/activation-journal --offline
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
 Rollback checks the preserved originals and target identities, restores originals and retains withdrawn recovered data under `withdrawn`. Unexpected target replacements are refused for manual review. The original application key is not required to restore retained original files, but the authenticated archive and unchanged prepared recovery remain required to validate the journal's target mapping. Preserve the journal and all staging directories through runtime acceptance; there is no automatic deletion of the old deployment. Staging and switching now reject targets that are mountpoints or contain nested mounts using Linux mountinfo, including bind mounts. Run against the physical storage paths from the recovery host. An isolated full-route application probe covers login, old-session rejection, host inventory, decrypted configuration, playbook reads and rollback; external workloads and background runners are not exercised by that probe.
@@ -132,10 +132,10 @@ Rollback checks the preserved originals and target identities, restores original
 Keep the deployment stopped and use the original archive, unchanged prepared directory and target mapping:
 
 ```bash
-read -rs -p 'Backup passphrase: ' SHIPYARD_BACKUP_PASSPHRASE
-export SHIPYARD_BACKUP_PASSPHRASE
+read -rs -p 'Backup passphrase: ' FLEET_BACKUP_PASSPHRASE
+export FLEET_BACKUP_PASSPHRASE
 node server/cli/recovery-activation.js cleanup-staging /secure/backups/application.backup /secure/recovery/new-directory /secure/recovery/targets.json /secure/recovery/activation-journal --offline
-unset SHIPYARD_BACKUP_PASSPHRASE
+unset FLEET_BACKUP_PASSPHRASE
 ```
 
 The command applies only to preparation/cleanup states, including completed staging that has never been activated. It validates mappings against the authenticated archive, requires original target identities to remain unchanged and checks ownership markers in nonempty staging directories. It refuses activation/rollback history, preserved originals and unrecognized entries. Payloads are deleted before ownership markers, allowing another cleanup attempt after interruption during deletion. The journal remains with `staging-cleaned`; create a new journal directory when staging again.

@@ -16,7 +16,7 @@ export function PollingRuntime() {
   const setEnvironmentId = useUi(state=>state.setEnvironmentId);
   const query=useQuery({queryKey:['polling-runtime'],queryFn:()=>apiFetch<Runtime>('/system/polling-status'),refetchInterval:15_000});
   return <div className="space-y-3 py-3 text-sm">
-    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-muted-foreground">Current Shipyard process · all environments · refreshes every 15 seconds</p><Button size="sm" variant="outline" disabled={query.isFetching} onClick={()=>void query.refetch()}>Refresh runtime status</Button></div>
+    <div className="flex flex-wrap items-center justify-between gap-2"><p className="text-muted-foreground">Current Fleet process · all environments · refreshes every 15 seconds</p><Button size="sm" variant="outline" disabled={query.isFetching} onClick={()=>void query.refetch()}>Refresh runtime status</Button></div>
     {query.isError ? <QueryErrorState compact title="Runtime status unavailable" error={query.error} onRetry={()=>void query.refetch()}/> : query.isPending ? <p>Loading runtime status…</p> : <>
       <p>{query.data.registeredSchedules} registered playbook schedules · {query.data.runningSchedules} running scheduled executions</p>
       {query.data.restartPending && <p role="status" className="text-warning">Polling configuration is waiting to be applied.</p>}

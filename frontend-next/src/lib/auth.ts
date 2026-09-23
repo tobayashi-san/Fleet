@@ -1,4 +1,4 @@
-const TOKEN_KEY = 'shipyard_token';
+const TOKEN_KEY = 'fleet_token';
 
 type UnauthorizedHandler = () => void;
 let onUnauthorized: UnauthorizedHandler | null = null;

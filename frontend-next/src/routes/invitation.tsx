@@ -35,7 +35,7 @@ export function InvitationPage() {
   }
   return <main className="grid min-h-screen place-items-center bg-background p-4">
     <section className="w-full max-w-md space-y-5 rounded-xl border bg-card p-6 shadow-sm">
-      <div><p className="text-sm text-muted-foreground">Shipyard · Account invitation</p><h1 className="mt-2 text-2xl font-semibold">{accepted ? 'Your account is ready' : 'Join your workspace'}</h1></div>
+      <div><p className="text-sm text-muted-foreground">Fleet · Account invitation</p><h1 className="mt-2 text-2xl font-semibold">{accepted ? 'Your account is ready' : 'Join your workspace'}</h1></div>
       {accepted ? <><p className="text-sm">Sign in as <strong>{preview.data?.username}</strong> with your new password.</p><Button asChild><Link to="/login">Continue to sign in</Link></Button></> : <>
         {preview.isPending && <p role="status">Checking invitation…</p>}
         {preview.isError && <div role="alert" className="space-y-3 text-sm"><p>{preview.error.message}</p><p>For an expired, revoked or changed invitation, ask an administrator for a new link.</p><Button variant="outline" onClick={() => void preview.refetch()}>Check again</Button></div>}

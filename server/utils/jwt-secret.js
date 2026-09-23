@@ -10,7 +10,7 @@ function getJwtSecret() {
   if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
 
   // Fail closed in production: a DB-stored secret can be forged by anyone with
-  // DB access, especially when SHIPYARD_KEY_SECRET is also missing (plaintext).
+  // DB access, especially when FLEET_KEY_SECRET is also missing (plaintext).
   if (process.env.NODE_ENV === 'production') {
     log.fatal('JWT_SECRET env var is required in production. Refusing to start.');
     // Throw so startup code (app.js / index.js) aborts with a clear error.

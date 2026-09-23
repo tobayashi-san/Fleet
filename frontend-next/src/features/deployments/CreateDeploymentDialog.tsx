@@ -37,7 +37,7 @@ export function CreateDeploymentDialog({ environmentId, open, onOpenChange, onCo
       <DialogContent className="max-w-lg">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2"><Server className="h-5 w-5" />New virtual machine</DialogTitle>
-          <DialogDescription>Select the Proxmox platform. Shipyard keeps this virtual machine isolated with its own plans and run history.</DialogDescription>
+          <DialogDescription>Select the Proxmox platform. Fleet keeps this virtual machine isolated with its own plans and run history.</DialogDescription>
         </DialogHeader>
         {connectionsQuery.isError ? (
           <QueryErrorState compact error={connectionsQuery.error} title="Proxmox platforms could not be loaded" onRetry={() => void connectionsQuery.refetch()} />

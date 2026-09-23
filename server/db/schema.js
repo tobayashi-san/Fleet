@@ -93,7 +93,7 @@ function applySchema(db) {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    -- A key is stored once; assignments describe where Shipyard is allowed to
+    -- A key is stored once; assignments describe where Fleet is allowed to
     -- use it. target_type/target_id stay polymorphic so the core can point to
     -- optional OpenTofu deployments and VM templates without a hard DB link.
     CREATE TABLE IF NOT EXISTS ssh_key_assignments (
@@ -218,7 +218,7 @@ function applySchema(db) {
 
     -- Operator-assigned device names belong to the hardware identity, not to
     -- a lease. A reservation can therefore move to another DHCP address
-    -- without losing the name chosen in Shipyard.
+    -- without losing the name chosen in Fleet.
     CREATE TABLE IF NOT EXISTS ipam_device_names (
       environment_id TEXT NOT NULL,
       mac_address TEXT NOT NULL,
@@ -456,7 +456,7 @@ function applySchema(db) {
       mode TEXT NOT NULL DEFAULT 'legacy',
       token TEXT,
       pending_token TEXT,
-      shipyard_url TEXT,
+      fleet_url TEXT,
       interval INTEGER DEFAULT 30,
       installed_at TEXT,
       last_seen TEXT,

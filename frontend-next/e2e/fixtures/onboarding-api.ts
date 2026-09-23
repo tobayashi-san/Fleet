@@ -8,18 +8,18 @@ import type { Page, Route } from '@playwright/test';
 // The shared suite API survives Playwright worker retries. Keep the first-user
 // lifecycle on a separate real API so every attempt starts with an empty DB.
 export async function withFreshOnboardingApi(page: Page, run: () => Promise<void>) {
-  const root = mkdtempSync(join(tmpdir(), 'shipyard-onboarding-e2e-'));
+  const root = mkdtempSync(join(tmpdir(), 'fleet-onboarding-e2e-'));
   const child = fork(fileURLToPath(new URL('../../../server/test/fixtures/onboarding-browser-server.js', import.meta.url)), [], {
     env: {
       ...process.env,
       NODE_ENV: 'test',
       DB_PATH: join(root, 'test.sqlite'),
       JWT_SECRET: 'isolated-onboarding-jwt',
-      SHIPYARD_KEY_SECRET: 'isolated-onboarding-encryption',
-      SHIPYARD_MFA_POLICY: 'optional',
-      SHIPYARD_SSH_DIR: join(root, 'ssh'),
-      SHIPYARD_PLAYBOOKS_DIR: join(root, 'playbooks'),
-      SHIPYARD_GIT_WORKSPACE_DIR: join(root, 'git'),
+      FLEET_KEY_SECRET: 'isolated-onboarding-encryption',
+      FLEET_MFA_POLICY: 'optional',
+      FLEET_SSH_DIR: join(root, 'ssh'),
+      FLEET_PLAYBOOKS_DIR: join(root, 'playbooks'),
+      FLEET_GIT_WORKSPACE_DIR: join(root, 'git'),
       PLUGINS_DIR: join(root, 'plugins'),
     },
     stdio: ['ignore', 'ignore', 'pipe', 'ipc'],

@@ -36,7 +36,7 @@ const environmentId = useUi((s) => s.environmentId);
 const { data: profile } = useProfile();
 const navigate = useNavigate();
 useEffect(() => {
-    sessionStorage.setItem("shipyard.lastNonDetailRoute", "/servers");
+    sessionStorage.setItem("fleet.lastNonDetailRoute", "/servers");
   }, []);
 const {
     data: rawServers,
@@ -73,13 +73,13 @@ const servers = useMemo(() => {
 const groups = useMemo(() => asArray<ServerGroup>(rawGroups), [rawGroups]);
 const routeSearch = useSearch({ from: "/_protected/servers" });
 const [activeTag, setActiveTag] = useState<string | null>(
-    () => localStorage.getItem("shipyard-next.server-tag") || null,
+    () => localStorage.getItem("fleet-next.server-tag") || null,
   );
 const [activeStatus, setActiveStatus] = useState<
     "all" | "online" | "offline" | "unknown"
   >(() => {
     if (routeSearch.status) return routeSearch.status;
-    const saved = localStorage.getItem("shipyard-next.server-status");
+    const saved = localStorage.getItem("fleet-next.server-status");
     return saved === "online" || saved === "offline" || saved === "unknown"
       ? saved
       : "all";
@@ -88,27 +88,27 @@ const [needsUpdates, setNeedsUpdates] = useState(() => routeSearch.updates === t
 const [severity, setSeverity] = useState<'all' | 'critical' | 'warning'>(() => routeSearch.severity || 'all');
 const [needsAttention, setNeedsAttention] = useState(() => routeSearch.attention === true);
 const [activeGroup, setActiveGroup] = useState<string>(
-    () => localStorage.getItem("shipyard-next.server-group") || "all",
+    () => localStorage.getItem("fleet-next.server-group") || "all",
   );
 const [filtersOpen, setFiltersOpen] = useState(false);
 const [operatingColumns, setOperatingColumns] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('shipyard.ui.servers.operatingColumns') || '{}');
+      const saved = JSON.parse(localStorage.getItem('fleet.ui.servers.operatingColumns') || '{}');
       return { state: saved?.state !== false, contact: saved?.contact !== false, owner: saved?.owner === true };
     } catch { return { state: true, contact: true, owner: false }; }
   });
 const toggleOperatingColumn = (column: 'state' | 'contact' | 'owner') => {
     setOperatingColumns(current => {
       const next = { ...current, [column]: !current[column] };
-      try { localStorage.setItem('shipyard.ui.servers.operatingColumns', JSON.stringify(next)); } catch { /* Optional browser preference. */ }
+      try { localStorage.setItem('fleet.ui.servers.operatingColumns', JSON.stringify(next)); } catch { /* Optional browser preference. */ }
       return next;
     });
   };
 const [groupedView, setGroupedView] = useState(
-    () => localStorage.getItem("shipyard-next.server-grouped-view") === "true",
+    () => localStorage.getItem("fleet-next.server-grouped-view") === "true",
   );
 const [search, setSearch] = useState(
-    () => localStorage.getItem("shipyard-next.server-search") || "",
+    () => localStorage.getItem("fleet-next.server-search") || "",
   );
 const [page, setPage] = useState(1);
 const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -130,21 +130,21 @@ const fileInputRef = useRef<HTMLInputElement>(null);
 const searchInputRef = useRef<HTMLInputElement>(null);
 const [refreshing, setRefreshing] = useState(false);
 useEffect(() => {
-    if (activeTag) localStorage.setItem("shipyard-next.server-tag", activeTag);
-    else localStorage.removeItem("shipyard-next.server-tag");
+    if (activeTag) localStorage.setItem("fleet-next.server-tag", activeTag);
+    else localStorage.removeItem("fleet-next.server-tag");
   }, [activeTag]);
 useEffect(() => {
-    localStorage.setItem("shipyard-next.server-search", search);
+    localStorage.setItem("fleet-next.server-search", search);
   }, [search]);
 useEffect(() => {
-    localStorage.setItem("shipyard-next.server-status", activeStatus);
+    localStorage.setItem("fleet-next.server-status", activeStatus);
   }, [activeStatus]);
 useEffect(() => {
-    localStorage.setItem("shipyard-next.server-group", activeGroup);
+    localStorage.setItem("fleet-next.server-group", activeGroup);
   }, [activeGroup]);
 useEffect(() => {
     localStorage.setItem(
-      "shipyard-next.server-grouped-view",
+      "fleet-next.server-grouped-view",
       String(groupedView),
     );
   }, [groupedView]);
@@ -163,11 +163,11 @@ useEffect(() => {
     return () => window.removeEventListener("keydown", focusSearch);
   }, []);
 const [sortBy, setSortBy] = useState<"name" | "status" | "ip">(() => {
-    const saved = localStorage.getItem("shipyard-next.server-sort");
+    const saved = localStorage.getItem("fleet-next.server-sort");
     return saved === "status" || saved === "ip" ? saved : "name";
   });
 useEffect(() => {
-    localStorage.setItem("shipyard-next.server-sort", sortBy);
+    localStorage.setItem("fleet-next.server-sort", sortBy);
   }, [sortBy]);
 useEffect(() => {
     if (!routeSearch.severity) return;

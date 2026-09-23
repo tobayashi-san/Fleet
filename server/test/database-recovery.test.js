@@ -1,14 +1,14 @@
 'use strict';
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {execFileSync}=require('node:child_process');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-real-recovery-'));
-process.env.DB_PATH=path.join(root,'source.db');process.env.NODE_ENV='test';process.env.JWT_SECRET='recovery-test-jwt';process.env.SHIPYARD_KEY_SECRET='recovery-original-key';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-real-recovery-'));
+process.env.DB_PATH=path.join(root,'source.db');process.env.NODE_ENV='test';process.env.JWT_SECRET='recovery-test-jwt';process.env.FLEET_KEY_SECRET='recovery-original-key';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const bcrypt=require('bcryptjs');const jwt=require('jsonwebtoken');
 const db=require('../db');const {setSecret}=require('../utils/crypto');const {createSession}=require('../utils/auth-sessions');const {createEncryptedDatabaseBackup,restoreEncryptedDatabaseBackup}=require('../services/database-backup');
 const password='Synthetic backup passphrase';const archive=path.join(root,'snapshot.backup');const restored=path.join(root,'restored.db');
 let oldToken;
 after(()=>{db.db.close();fs.rmSync(root,{recursive:true,force:true});});
 function probe(key){
- const stdout=execFileSync(process.execPath,[path.join(__dirname,'fixtures/database-recovery-probe.js')],{encoding:'utf8',env:{...process.env,DB_PATH:restored,SHIPYARD_KEY_SECRET:key,RECOVERY_TEST_OLD_TOKEN:oldToken}});
+ const stdout=execFileSync(process.execPath,[path.join(__dirname,'fixtures/database-recovery-probe.js')],{encoding:'utf8',env:{...process.env,DB_PATH:restored,FLEET_KEY_SECRET:key,RECOVERY_TEST_OLD_TOKEN:oldToken}});
  const line=stdout.split('\n').find(line=>line.startsWith('RECOVERY_RESULT='));
  assert.ok(line,'Recovery process must report its result');
  return JSON.parse(line.slice('RECOVERY_RESULT='.length));

@@ -2,7 +2,7 @@
 const os = require('os');
 const fs = require('fs');
 const path = require('path');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-reset-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-reset-'));
 process.env.DB_PATH = path.join(root, 'test.db');
 process.env.NODE_ENV = 'test';
 const {test,after} = require('node:test');

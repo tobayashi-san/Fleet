@@ -439,7 +439,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const validVmId = Number.isInteger(Number(form.vm_id)) && Number(form.vm_id) >= 100;
   const validation = validateVmForm({ ...form }, preDeploy, preDeployTarget);
   if (form.ssh_public_key_variable && catalogQuery.data?.ssh_public_key_configured === false) {
-    validation.errors['SSH key variable'] = 'Save Shipyard’s public key under Settings → Connections before deploying.';
+    validation.errors['SSH key variable'] = 'Save Fleet’s public key under Settings → Connections before deploying.';
     validation.steps[2].push('SSH key variable');
   }
   if (!selectedBridge || selectedBridge.available_on_node === false) { validation.errors['Bridge / SDN VNet'] = 'Select a bridge or VNet available on this node.'; validation.steps[2].push('Bridge / SDN VNet'); }
@@ -849,7 +849,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
               <div className="mt-3 max-w-md">
                 <Field
                   label="SSH key variable"
-                  hint="Uses the public key saved under Settings → Connections. Leave empty only if the template already accepts Shipyard’s SSH key."
+                  hint="Uses the public key saved under Settings → Connections. Leave empty only if the template already accepts Fleet’s SSH key."
                 >
                   <Input
                     value={form.ssh_public_key_variable}

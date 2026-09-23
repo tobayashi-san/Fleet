@@ -1,6 +1,6 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-role-revisions-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-role-revisions-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');const express=require('express');const request=require('supertest');const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user={role:'admin',username:'review-admin'};next();});app.use('/roles',require('../routes/roles'));
 after(()=>{db.db.close();fs.rmSync(root,{recursive:true,force:true});});
 const create=async(name)=>{const response=await request(app).post('/roles').send({name,permissions:{servers:'all',canViewServers:true}});assert.equal(response.status,201);assert.match(response.body.revision,/^[a-f0-9]{64}$/);return response.body;};

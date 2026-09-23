@@ -12,7 +12,7 @@ const assert = require('node:assert/strict');
 
 const sshManager = require('../services/ssh-manager');
 
-const TEST_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICcAYbbebZPbEQsSs3m7h/G4kFPBPns2jk6McoNhl+K+ shipyard';
+const TEST_PUBLIC_KEY = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAICcAYbbebZPbEQsSs3m7h/G4kFPBPns2jk6McoNhl+K+ fleet';
 
 after(() => {
   for (const ext of ['', '-wal', '-shm']) {

@@ -48,7 +48,7 @@ let scheduleB;
 
 const scoped = (environmentId) => ({
   Authorization: `Bearer ${token}`,
-  'X-Shipyard-Environment': environmentId,
+  'X-Fleet-Environment': environmentId,
 });
 
 before(async () => {

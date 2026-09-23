@@ -23,7 +23,7 @@ const resetLimiter = rateLimit({
   legacyHeaders: false,
 });
 
-const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
+const PLAYBOOKS_DIR = path.resolve(process.env.FLEET_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 
 function deleteServerTables(environmentId = null) {
   if (!environmentId) {
@@ -60,7 +60,7 @@ function resetAccounts() {
 function resetResponse(res, cleanupPending, schedulerPending = false) {
   const warnings = [];
   if (cleanupPending) warnings.push('Reset completed, but private playbook staging cleanup remains. Preserve those files and ask an administrator to run the offline reset recovery procedure with the original current database. Do not repeat the reset.');
-  if (schedulerPending) warnings.push('Reset completed, but some local scheduler registrations could not be removed. Deleted schedules cannot start new runs. Ask an administrator to restart Shipyard to clear remaining scheduler registrations; do not repeat the reset.');
+  if (schedulerPending) warnings.push('Reset completed, but some local scheduler registrations could not be removed. Deleted schedules cannot start new runs. Ask an administrator to restart Fleet to clear remaining scheduler registrations; do not repeat the reset.');
   res.json({success:true, ...(warnings.length ? {warning:warnings.join(' ')} : {})});
 }
 

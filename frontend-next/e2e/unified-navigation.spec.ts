@@ -9,7 +9,7 @@ async function login(page: Page) {
     if (!response.ok) response = await fetch('/api/auth/setup', {method:'POST', headers:{'Content-Type':'application/json'}, body});
     const data = await response.json();
     if (!data.token) throw new Error('Isolated login failed');
-    localStorage.setItem('shipyard_token', data.token);
+    localStorage.setItem('fleet_token', data.token);
   });
 }
 const shots = path.join(process.env.FLEET_E2E_ARTIFACT_DIR!, '');
@@ -108,7 +108,7 @@ test('deployment details stay separate from host details and expose a draft acti
 test('a host shows host facts and snapshots without VM hardware or inventory requests', async ({page}) => {
   await login(page);
   const host = await page.evaluate(async () => {
-    const response = await fetch('/api/servers', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({name:'pve01-canonical',hostname:'pve.example',ip_address:'192.0.2.20'})});
+    const response = await fetch('/api/servers', {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('fleet_token')}`},body:JSON.stringify({name:'pve01-canonical',hostname:'pve.example',ip_address:'192.0.2.20'})});
     if (!response.ok) throw new Error('Could not create isolated host');
     return response.json();
   });
@@ -156,7 +156,7 @@ test('a host shows host facts and snapshots without VM hardware or inventory req
     await page.screenshot({path:path.join(shots,'host-tabs-mobile.png'),fullPage:true,animations:'disabled'});
 
   } finally {
-    await page.evaluate(async id => { await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`}}); },host.id);
+    await page.evaluate(async id => { await fetch(`/api/servers/${id}`,{method:'DELETE',headers:{Authorization:`Bearer ${localStorage.getItem('fleet_token')}`}}); },host.id);
   }
 });
 

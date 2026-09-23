@@ -1,7 +1,7 @@
 'use strict';
 const {test,after,beforeEach}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-mfa-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-mfa-'));
 process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.JWT_SECRET='synthetic-mfa-test';
 const db=require('../db');const express=require('express');const request=require('supertest');const bcrypt=require('bcryptjs');const jwt=require('jsonwebtoken');const otp=require('otplib');const qr=require('qrcode');
 const {createSession}=require('../utils/auth-sessions');

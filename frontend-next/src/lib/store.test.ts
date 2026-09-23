@@ -59,8 +59,8 @@ describe('console theme presets', () => {
     expect(resolveThemePreset('dark', 'papercolor-light')).toBe('papercolor-dark');
     expect(resolveThemePreset('light', 'papercolor-dark')).toBe('papercolor-light');
     expect(resolveThemePreset('system', 'papercolor-dark')).toBe('papercolor-dark');
-    expect(resolveThemePreset('light', 'tokyo-night-dark')).toBe('shipyard-light');
-    expect(resolveThemePreset('dark', 'shipyard-light')).toBe('shipyard-dark');
+    expect(resolveThemePreset('light', 'tokyo-night-dark')).toBe('fleet-light');
+    expect(resolveThemePreset('dark', 'fleet-light')).toBe('fleet-dark');
     expect(resolveThemePreset('dark', 'enterprise-light')).toBe('enterprise-dark');
     expect(resolveThemePreset('light', 'enterprise-dark')).toBe('enterprise-light');
   });

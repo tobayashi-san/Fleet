@@ -6,7 +6,7 @@ async function login(page:Page) {
     const body=JSON.stringify({username:'e2e-admin',password:'E2e-password-2026!'});
     let result=await fetch('/api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body});
     if(!result.ok) result=await fetch('/api/auth/setup',{method:'POST',headers:{'Content-Type':'application/json'},body});
-    localStorage.setItem('shipyard_token',(await result.json()).token);
+    localStorage.setItem('fleet_token',(await result.json()).token);
   });
 }
 async function fixture(page:Page) {
@@ -71,7 +71,7 @@ test('empty start provides an add-host action and opens the form',async({page})=
 test('switching environment replaces home data without showing the previous hosts',async({page})=>{
   await login(page);await fixture(page);
   await page.route('**/api/environments',route=>route.fulfill({json:[{id:'default',name:'Production'},{id:'lab',name:'Lab'}]}));
-  await page.route('**/api/servers?*',route=>route.fulfill({json:route.request().headers()['x-shipyard-environment']==='lab'?[{id:'lab-host',name:'Lab host',status:'offline'}]:[{id:'prod-host',name:'Production host',status:'offline'}]}));
+  await page.route('**/api/servers?*',route=>route.fulfill({json:route.request().headers()['x-fleet-environment']==='lab'?[{id:'lab-host',name:'Lab host',status:'offline'}]:[{id:'prod-host',name:'Production host',status:'offline'}]}));
   await page.setViewportSize({width:390,height:844});
   await page.goto('/');
   await expect(page.getByRole('region',{name:'Needs attention'}).getByText('Production host')).toBeVisible();

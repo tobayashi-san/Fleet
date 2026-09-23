@@ -16,7 +16,7 @@ export const WEEKDAYS = [
   { value: 0, labelKey: 'sc.sun' },
 ];
 
-const COLLAPSED_KEY = 'shipyard.ui.playbooks.collapsedCategories';
+const COLLAPSED_KEY = 'fleet.ui.playbooks.collapsedCategories';
 
 export const TEMPLATE_YAML = `---
 - name: My New Playbook

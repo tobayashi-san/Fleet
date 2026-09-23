@@ -13,10 +13,10 @@ test('activated application archive serves real authenticated routes and rolls b
   const source = path.join(root, 'source'); await fs.mkdir(source);
   const playbooks = path.join(root, 'source-playbooks'); await fs.mkdir(playbooks);
   await fs.writeFile(path.join(playbooks, 'recovered.yml'), '- hosts: all\n  tasks: []\n');
-  process.env.DB_PATH = path.join(source, 'shipyard.db');
+  process.env.DB_PATH = path.join(source, 'fleet.db');
   process.env.NODE_ENV = 'test';
   process.env.JWT_SECRET = 'synthetic-runtime-recovery-jwt';
-  process.env.SHIPYARD_KEY_SECRET = 'synthetic-runtime-recovery-key';
+  process.env.FLEET_KEY_SECRET = 'synthetic-runtime-recovery-key';
   db = require('../db');
   const user = db.users.create('recovery-admin', null, require('bcryptjs').hashSync('Recovery-account-password', 4), 'admin');
   require('../utils/crypto').setSecret(db, 'smtp_password', 'synthetic-recovered-smtp');
@@ -31,11 +31,11 @@ test('activated application archive serves real authenticated routes and rolls b
   const dataTarget = path.join(root, 'target-data'), playbooksTarget = path.join(root, 'target-playbooks');
   await fs.mkdir(dataTarget); await fs.writeFile(path.join(dataTarget, 'original'), 'preserved original');
   await fs.mkdir(playbooksTarget); await fs.writeFile(path.join(playbooksTarget, 'original.yml'), 'preserved playbook');
-  const options = {archive, prepared, passphrase, applicationKey: process.env.SHIPYARD_KEY_SECRET, offline: true, journalDirectory: path.join(root, 'journal'), targets: {database: path.join(dataTarget, 'shipyard.db'), roots: {data: dataTarget, playbooks: playbooksTarget}}};
+  const options = {archive, prepared, passphrase, applicationKey: process.env.FLEET_KEY_SECRET, offline: true, journalDirectory: path.join(root, 'journal'), targets: {database: path.join(dataTarget, 'fleet.db'), roots: {data: dataTarget, playbooks: playbooksTarget}}};
   await require('../services/recovery-activation-stage').stageApplicationActivation(options);
   const switching = require('../services/recovery-activation-switch');
   await switching.activateApplicationRecovery(options);
-  const result = await execFile(process.execPath, [path.join(__dirname, 'fixtures/application-recovery-probe.js')], {timeout: 30000, env: {...process.env, DB_PATH: options.targets.database, SHIPYARD_PLAYBOOKS_DIR: playbooksTarget, SHIPYARD_SSH_DIR: path.join(dataTarget, 'ssh'), SHIPYARD_GIT_WORKSPACE_DIR: path.join(dataTarget, 'git'), TOFU_STATE_BACKUP_DIR: path.join(dataTarget, 'state-backups'), PLUGINS_DIR: path.join(dataTarget, 'plugins'), RECOVERY_TEST_OLD_TOKEN: token}});
+  const result = await execFile(process.execPath, [path.join(__dirname, 'fixtures/application-recovery-probe.js')], {timeout: 30000, env: {...process.env, DB_PATH: options.targets.database, FLEET_PLAYBOOKS_DIR: playbooksTarget, FLEET_SSH_DIR: path.join(dataTarget, 'ssh'), FLEET_GIT_WORKSPACE_DIR: path.join(dataTarget, 'git'), TOFU_STATE_BACKUP_DIR: path.join(dataTarget, 'state-backups'), PLUGINS_DIR: path.join(dataTarget, 'plugins'), RECOVERY_TEST_OLD_TOKEN: token}});
   const line = result.stdout.split('\n').find(line => line.startsWith('APPLICATION_RECOVERY_RESULT='));
   assert.ok(line, result.stdout);
   assert.deepEqual(JSON.parse(line.slice('APPLICATION_RECOVERY_RESULT='.length)), {health: 200, oldSession: 401, login: 200, hosts: 200, hostRestored: true, playbook: 200, playbookRestored: true, secretRestored: true});

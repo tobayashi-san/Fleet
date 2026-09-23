@@ -2,8 +2,8 @@ const db = require('../db');
 const ansibleRunner = require('./ansible-runner');
 const log = require('../utils/logger').child('services:docker-inventory');
 
-const CONTAINER_LINE_PREFIX = '__SHIPYARD_CONTAINER__';
-const STATS_LINE_PREFIX = '__SHIPYARD_STATS__';
+const CONTAINER_LINE_PREFIX = '__FLEET_CONTAINER__';
+const STATS_LINE_PREFIX = '__FLEET_STATS__';
 // This deliberately uses Docker's own formatted image field instead of an
 // inspect call per container. Besides being much faster, it also works for
 // regular Docker installations where a restrictive sudo policy allowed
@@ -13,17 +13,17 @@ runtime="$(command -v docker 2>/dev/null || command -v podman 2>/dev/null || tru
 [ -n "$runtime" ] || exit 0
 format='{{.Names}}|{{.Image}}|{{.State}}|{{.Status}}|{{.CreatedAt}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.project.working_dir"}}'
 if output="$("$runtime" ps -a --format "$format" 2>/dev/null)"; then
-  [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'
+  [ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__FLEET_CONTAINER__/'
   stats="$("$runtime" stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}' 2>/dev/null || true)"
-  [ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__SHIPYARD_STATS__/'
+  [ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__FLEET_STATS__/'
   exit 0
 fi
-# A non-root Shipyard account may not be in the docker group. Use only non-
+# A non-root Fleet account may not be in the docker group. Use only non-
 # interactive sudo as a controlled fallback; never prompt or hang an API call.
 output="$(sudo -n "$runtime" ps -a --format "$format" 2>/dev/null)" || exit $?
-[ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__SHIPYARD_CONTAINER__/'
+[ -z "$output" ] || printf '%s\n' "$output" | sed 's/^/__FLEET_CONTAINER__/'
 stats="$(sudo -n "$runtime" stats --no-stream --format '{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}' 2>/dev/null || true)"
-[ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__SHIPYARD_STATS__/'
+[ -z "$stats" ] || printf '%s\n' "$stats" | sed 's/^/__FLEET_STATS__/'
 `;
 
 /**

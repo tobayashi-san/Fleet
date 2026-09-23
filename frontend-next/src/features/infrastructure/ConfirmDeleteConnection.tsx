@@ -43,7 +43,7 @@ function RemovalDialog({ connection, onOpenChange, onDeleted }: Props & {connect
     <DialogContent className="max-w-md">
       <DialogHeader>
         <DialogTitle>Remove platform connection?</DialogTitle>
-        <DialogDescription>Remove this saved connection from Shipyard. This does not delete virtual machines, containers or data in Proxmox. Connections still used by deployments or adopted hosts cannot be removed.</DialogDescription>
+        <DialogDescription>Remove this saved connection from Fleet. This does not delete virtual machines, containers or data in Proxmox. Connections still used by deployments or adopted hosts cannot be removed.</DialogDescription>
       </DialogHeader>
       <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-4 gap-y-2 rounded-md border p-3 text-sm">
         <dt>Connection</dt><dd className="break-words font-medium">{target.name}</dd>

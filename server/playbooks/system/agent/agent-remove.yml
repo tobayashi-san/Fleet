@@ -1,6 +1,6 @@
 ---
 # ─────────────────────────────────────────────────────────
-# Shipyard Agent – Deinstallation
+# Fleet Agent – Deinstallation
 #
 # Entfernt den Agent vollständig und sauber.
 # Server fällt automatisch auf Legacy-SSH-Polling zurück.
@@ -8,31 +8,31 @@
 #   ansible-playbook agent-remove.yml -i inventory.yml
 # ─────────────────────────────────────────────────────────
 
-- name: Shipyard Agent removal
+- name: Fleet Agent removal
   hosts: all
   become: true
   gather_facts: false
 
   vars:
-    agent_user: "shipyard-agent"
-    agent_group: "shipyard-agent"
+    agent_user: "fleet-agent"
+    agent_group: "fleet-agent"
     install_dir: "/usr/local/bin"
-    config_dir: "/etc/shipyard"
-    data_dir: "/var/lib/shipyard-agent"
-    runner_script: "shipyard-runner"
+    config_dir: "/etc/fleet"
+    data_dir: "/var/lib/fleet-agent"
+    runner_script: "fleet-runner"
 
   tasks:
 
     - name: Agent-Service stoppen und deaktivieren
       ansible.builtin.systemd:
-        name: shipyard-agent
+        name: fleet-agent
         state: stopped
         enabled: false
       ignore_errors: true
 
     - name: Systemd-Unit entfernen
       ansible.builtin.file:
-        path: /etc/systemd/system/shipyard-agent.service
+        path: /etc/systemd/system/fleet-agent.service
         state: absent
       notify: Reload systemd
 

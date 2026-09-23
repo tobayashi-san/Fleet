@@ -1,49 +1,49 @@
 services:
-  shipyard:
+  fleet:
     # Pin a released version in production. `latest` remains convenient for
-    # small private installations and is the default when SHIPYARD_IMAGE is unset.
-    image: ${SHIPYARD_IMAGE:-ghcr.io/tobayashi-san/shipyard:latest}
-    container_name: shipyard
+    # small private installations and is the default when FLEET_IMAGE is unset.
+    image: ${FLEET_IMAGE:-ghcr.io/tobayashi-san/fleet:latest}
+    container_name: fleet
     restart: unless-stopped
     init: true
     security_opt:
       - no-new-privileges:true
     ports:
       # Safe default: reachable only from this Docker host or a local reverse
-      # proxy. Set SHIPYARD_BIND_ADDRESS to a private-LAN address deliberately.
-      - "${SHIPYARD_BIND_ADDRESS:-127.0.0.1}:${SHIPYARD_PORT:-443}:8443"
+      # proxy. Set FLEET_BIND_ADDRESS to a private-LAN address deliberately.
+      - "${FLEET_BIND_ADDRESS:-127.0.0.1}:${FLEET_PORT:-443}:8443"
     volumes:
-      - shipyard-data:/app/server/data
+      - fleet-data:/app/server/data
       # Secrets generated on first start. Kept apart from the data volume so
       # application backups never include the key that decrypts them.
-      - shipyard-secrets:/app/secrets
-      - shipyard-workspaces:/workspaces
+      - fleet-secrets:/app/secrets
+      - fleet-workspaces:/workspaces
       - ./playbooks:/app/server/playbooks
       # To use a host directory for OpenTofu instead, replace the
-      # shipyard-workspaces mount above with:
+      # fleet-workspaces mount above with:
       # - /path/to/workspaces:/workspaces
       # Custom TLS certificate (optional):
-      # - /etc/ssl/certs/shipyard.crt:/certs/shipyard.crt:ro
-      # - /etc/ssl/private/shipyard.key:/certs/shipyard.key:ro
+      # - /etc/ssl/certs/fleet.crt:/certs/fleet.crt:ro
+      # - /etc/ssl/private/fleet.key:/certs/fleet.key:ro
     environment:
       - NODE_ENV=production
       - TZ=${TZ:-Europe/Zurich}
-      - SHIPYARD_TIMEZONE=${SHIPYARD_TIMEZONE:-Europe/Zurich}
-      - SHIPYARD_MAX_FILE_TRANSFER_BYTES=${SHIPYARD_MAX_FILE_TRANSFER_BYTES:-1073741824}
+      - FLEET_TIMEZONE=${FLEET_TIMEZONE:-Europe/Zurich}
+      - FLEET_MAX_FILE_TRANSFER_BYTES=${FLEET_MAX_FILE_TRANSFER_BYTES:-1073741824}
       # Optional: generated automatically on first start when left empty.
       - JWT_SECRET=${JWT_SECRET:-}
-      - SHIPYARD_KEY_SECRET=${SHIPYARD_KEY_SECRET:-}
+      - FLEET_KEY_SECRET=${FLEET_KEY_SECRET:-}
       - CERT_SANS=${CERT_SANS:-}
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - TRUST_PROXY=${TRUST_PROXY:-0}
-      - SHIPYARD_MFA_POLICY=${SHIPYARD_MFA_POLICY:-optional}
-      - SHIPYARD_TERMINAL_IDLE_MINUTES=${SHIPYARD_TERMINAL_IDLE_MINUTES:-30}
-      - SHIPYARD_TERMINAL_MAX_MINUTES=${SHIPYARD_TERMINAL_MAX_MINUTES:-480}
-      - SHIPYARD_PLUGIN_TRUST_POLICY=${SHIPYARD_PLUGIN_TRUST_POLICY:-warn}
-      - SHIPYARD_TRUSTED_PLUGIN_SHA256=${SHIPYARD_TRUSTED_PLUGIN_SHA256:-}
-      - SHIPYARD_RENEW_CERT=${SHIPYARD_RENEW_CERT:-0}
-      # - SSL_CERT=/certs/shipyard.crt
-      # - SSL_KEY=/certs/shipyard.key
+      - FLEET_MFA_POLICY=${FLEET_MFA_POLICY:-optional}
+      - FLEET_TERMINAL_IDLE_MINUTES=${FLEET_TERMINAL_IDLE_MINUTES:-30}
+      - FLEET_TERMINAL_MAX_MINUTES=${FLEET_TERMINAL_MAX_MINUTES:-480}
+      - FLEET_PLUGIN_TRUST_POLICY=${FLEET_PLUGIN_TRUST_POLICY:-warn}
+      - FLEET_TRUSTED_PLUGIN_SHA256=${FLEET_TRUSTED_PLUGIN_SHA256:-}
+      - FLEET_RENEW_CERT=${FLEET_RENEW_CERT:-0}
+      # - SSL_CERT=/certs/fleet.crt
+      # - SSL_KEY=/certs/fleet.key
       # Configure CERT_SANS, ALLOWED_ORIGINS and TRUST_PROXY in .env when needed.
     healthcheck:
       test: ["CMD", "node", "-e", "require('https').get({hostname:'localhost',port:8443,path:'/api/health',rejectUnauthorized:false}, r => process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
@@ -58,6 +58,6 @@ services:
         max-file: "3"
 
 volumes:
-  shipyard-data:
-  shipyard-secrets:
-  shipyard-workspaces:
+  fleet-data:
+  fleet-secrets:
+  fleet-workspaces:

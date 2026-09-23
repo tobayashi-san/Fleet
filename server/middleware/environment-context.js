@@ -2,7 +2,7 @@ const db = require('../db');
 const { getPermissions, canAccessEnvironment } = require('../utils/permissions');
 const { runWithEnvironment } = require('../utils/request-environment');
 
-const HEADER = 'x-shipyard-environment';
+const HEADER = 'x-fleet-environment';
 
 function clean(value) {
   return typeof value === 'string' ? value.trim() : '';

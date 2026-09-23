@@ -3,7 +3,7 @@
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-tofu-run-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-tofu-run-'));
 const workspaceRoot = path.join(root, 'workspaces');
 const binRoot = path.join(root, 'bin');
 fs.mkdirSync(workspaceRoot, { recursive: true });
@@ -23,14 +23,14 @@ if [ "$action" = "show" ]; then
     elif [ -f isolation-unsafe ]; then
       echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"]}},{"address":"proxmox_virtual_environment_vm.foreign-app","change":{"actions":["update"]}}]}'
     elif [ -f isolation-safe ]; then
-      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"],"after":{"vm_id":46001,"node_name":"pve001","description":"Shipyard VM isolated-vm"}}}]}'
+      echo '{"resource_changes":[{"address":"proxmox_virtual_environment_vm.isolated-app","change":{"actions":["create"],"after":{"vm_id":46001,"node_name":"pve001","description":"Fleet VM isolated-vm"}}}]}'
     else
       echo '{"resource_changes":[{"change":{"actions":["create"]}},{"change":{"actions":["update"]}}]}'
     fi
   else
     if [ -f custom-state.json ] && [ -f apply-count ]; then cat custom-state.json; exit 0; fi
     if [ -f discovered-state.json ]; then cat discovered-state.json
-    elif [ -f isolation-safe ] && [ -f apply-count ]; then echo '{"values":{"root_module":{"resources":[{"address":"proxmox_virtual_environment_vm.isolated-app","type":"proxmox_virtual_environment_vm","values":{"name":"isolated-app","vm_id":46001,"node_name":"pve001","description":"Shipyard VM isolated-vm"}}]}}}'
+    elif [ -f isolation-safe ] && [ -f apply-count ]; then echo '{"values":{"root_module":{"resources":[{"address":"proxmox_virtual_environment_vm.isolated-app","type":"proxmox_virtual_environment_vm","values":{"name":"isolated-app","vm_id":46001,"node_name":"pve001","description":"Fleet VM isolated-vm"}}]}}}'
     else echo '{"values":{}}'; fi
   fi
   exit 0
@@ -59,7 +59,7 @@ exit 0
 process.env.PATH = `${binRoot}:${process.env.PATH}`;
 process.env.DB_PATH = path.join(root, 'test.db');
 process.env.JWT_SECRET = 'test-jwt-secret-opentofu-runs';
-process.env.SHIPYARD_KEY_SECRET = 'test-key-secret-opentofu-runs';
+process.env.FLEET_KEY_SECRET = 'test-key-secret-opentofu-runs';
 process.env.OPENTOFU_WORKSPACE_ROOTS = workspaceRoot;
 process.env.TOFU_STATE_BACKUP_DIR = path.join(root, 'state-backups');
 process.env.TOFU_SYNC_MAX_WAIT_MS = '1';
@@ -185,7 +185,7 @@ test('isolated VM Apply accepts only its reviewed plan and resumes automatic wor
       const deployed = fs.existsSync(path.join(workspacePath, 'apply-count'));
       const data = String(url).includes('/cluster/resources') ? (deployed ? [{vmid:46001,node:'pve001',name:'isolated-app',type:'qemu',status:'running'}] : [])
         : String(url).includes('/agent/') ? (fs.existsSync(path.join(workspacePath, 'discovered-state.json')) ? [{name:'eth0','ip-addresses':[{'ip-address':'192.0.2.41','ip-address-type':'ipv4'}]}] : [])
-        : String(url).endsWith('/config') ? {description:'Shipyard VM isolated-vm',cores:2,memory:4096,net0:'bridge=vmbr0',ciuser:'ubuntu',scsi0:'local-lvm:vm-46001-disk-0,size=40G'} : [];
+        : String(url).endsWith('/config') ? {description:'Fleet VM isolated-vm',cores:2,memory:4096,net0:'bridge=vmbr0',ciuser:'ubuntu',scsi0:'local-lvm:vm-46001-disk-0,size=40G'} : [];
       response.emit('data', JSON.stringify({data})); response.emit('end');
     });
     return stream;
@@ -208,7 +208,7 @@ test('isolated VM Apply accepts only its reviewed plan and resumes automatic wor
   assert.deepEqual(playbookCalls, [{playbook:'prepare.yml',target:'pre-deploy-host'}]);
   const reusePlan = await request(app).post('/api/opentofu/vms/isolated-vm/apply').set(auth).send({ plan_id: safePlan.id });
   assert.equal(reusePlan.status, 409);
-  fs.writeFileSync(path.join(workspacePath, 'discovered-state.json'), JSON.stringify({ values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.isolated-app', type: 'proxmox_virtual_environment_vm', values: { name: 'isolated-app', vm_id: 46001, node_name: 'pve001', description: 'Shipyard VM isolated-vm', ipv4_addresses: [['192.0.2.41']] } }] } } }));
+  fs.writeFileSync(path.join(workspacePath, 'discovered-state.json'), JSON.stringify({ values: { root_module: { resources: [{ address: 'proxmox_virtual_environment_vm.isolated-app', type: 'proxmox_virtual_environment_vm', values: { name: 'isolated-app', vm_id: 46001, node_name: 'pve001', description: 'Fleet VM isolated-vm', ipv4_addresses: [['192.0.2.41']] } }] } } }));
   const ssh = require('../services/ssh-manager');
   const originalTest = ssh.testConnection;
   ssh.testConnection = async () => true;
@@ -286,7 +286,7 @@ test('a partial apply registers its identified VM and consumes the plan without 
   const auth = { Authorization: `Bearer ${login.body.token}` };
   const workspacePath = path.join(workspaceRoot, 'partial-app');
   fs.mkdirSync(workspacePath);
-  const values = {vm_id:47001,node_name:'pve001',name:'partial-app',description:'Shipyard VM partial-vm'};
+  const values = {vm_id:47001,node_name:'pve001',name:'partial-app',description:'Fleet VM partial-vm'};
   fs.writeFileSync(path.join(workspacePath,'custom-plan.json'),JSON.stringify({resource_changes:[{address:'proxmox_virtual_environment_vm.partial-app',change:{actions:['create'],after:values}}]}));
   fs.writeFileSync(path.join(workspacePath,'custom-state.json'),JSON.stringify({values:{root_module:{resources:[{address:'proxmox_virtual_environment_vm.partial-app',type:'proxmox_virtual_environment_vm',values}]}}}));
   fs.writeFileSync(path.join(workspacePath,'fail-apply'),'fail after creation');

@@ -56,7 +56,7 @@ const germanUiTerms = [
 ];
 
 const legacyObjectTerms = [
-  "Shipyard host",
+  "Fleet host",
   "Manage hosts",
   "Manage platforms",
   "Networks & IPAM",

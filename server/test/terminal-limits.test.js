@@ -2,8 +2,8 @@ const {test}=require('node:test');const assert=require('node:assert/strict');
 const {terminalLimits,createTerminalTimers}=require('../utils/terminal-limits');
 test('limits use defaults, allow explicit disabling and reject invalid values',()=>{
  assert.deepEqual(terminalLimits({}),{idleSeconds:1800,maxSeconds:28800});
- assert.deepEqual(terminalLimits({SHIPYARD_TERMINAL_IDLE_MINUTES:'0',SHIPYARD_TERMINAL_MAX_MINUTES:'10'}),{idleSeconds:0,maxSeconds:600});
- assert.deepEqual(terminalLimits({SHIPYARD_TERMINAL_IDLE_MINUTES:'-1',SHIPYARD_TERMINAL_MAX_MINUTES:'NaN'}),{idleSeconds:1800,maxSeconds:28800});
+ assert.deepEqual(terminalLimits({FLEET_TERMINAL_IDLE_MINUTES:'0',FLEET_TERMINAL_MAX_MINUTES:'10'}),{idleSeconds:0,maxSeconds:600});
+ assert.deepEqual(terminalLimits({FLEET_TERMINAL_IDLE_MINUTES:'-1',FLEET_TERMINAL_MAX_MINUTES:'NaN'}),{idleSeconds:1800,maxSeconds:28800});
 });
 test('input resets idle only, expiry fires once and all timers are cleaned up',()=>{
  let next=0;const pending=new Map();const expired=[];const timers={set:(fn,ms)=>{pending.set(++next,{fn,ms});return next;},clear:id=>pending.delete(id)};

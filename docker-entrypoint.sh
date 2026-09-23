@@ -4,50 +4,50 @@ set -eu
 
 fail() { echo "[INIT] $*" >&2; exit 1; }
 
-[ "$(id -u)" = 0 ] || fail "Start the container as root; the entrypoint drops to shipyard after initialization."
+[ "$(id -u)" = 0 ] || fail "Start the container as root; the entrypoint drops to fleet after initialization."
 
 # Secrets from the environment (.env) take precedence. Otherwise use the values
 # generated on first start. They live in their own root-only volume so that
 # application backups of the data volume never contain the key that decrypts them.
-SECRETS_FILE=${SHIPYARD_SECRETS_FILE:-/app/secrets/shipyard.env}
+SECRETS_FILE=${FLEET_SECRETS_FILE:-/app/secrets/fleet.env}
 stored_secret() {
   [ ! -f "$SECRETS_FILE" ] || sed -n "s/^$1=//p" "$SECRETS_FILE" | tail -n 1
 }
-if [ -z "${JWT_SECRET:-}" ] || [ -z "${SHIPYARD_KEY_SECRET:-}" ]; then
+if [ -z "${JWT_SECRET:-}" ] || [ -z "${FLEET_KEY_SECRET:-}" ]; then
   mkdir -p "$(dirname "$SECRETS_FILE")"
   chmod 700 "$(dirname "$SECRETS_FILE")"
   stored_jwt=$(stored_secret JWT_SECRET)
-  stored_key=$(stored_secret SHIPYARD_KEY_SECRET)
-  if [ -z "${SHIPYARD_KEY_SECRET:-}" ] && [ -z "$stored_key" ]; then
+  stored_key=$(stored_secret FLEET_KEY_SECRET)
+  if [ -z "${FLEET_KEY_SECRET:-}" ] && [ -z "$stored_key" ]; then
     # A new key cannot decrypt existing credentials. Never replace a lost one silently.
-    [ ! -e "${DB_PATH:-/app/server/data/shipyard.db}" ] ||
-      fail "Existing data found, but SHIPYARD_KEY_SECRET is missing. Restore the original key in .env or $SECRETS_FILE."
+    [ ! -e "${DB_PATH:-/app/server/data/fleet.db}" ] ||
+      fail "Existing data found, but FLEET_KEY_SECRET is missing. Restore the original key in .env or $SECRETS_FILE."
     stored_key=$(openssl rand -hex 32)
-    echo "[INIT] Generated SHIPYARD_KEY_SECRET in $SECRETS_FILE. Back it up separately from your data."
+    echo "[INIT] Generated FLEET_KEY_SECRET in $SECRETS_FILE. Back it up separately from your data."
   fi
   if [ -z "${JWT_SECRET:-}" ] && [ -z "$stored_jwt" ]; then
     stored_jwt=$(openssl rand -hex 32)
     echo "[INIT] Generated JWT_SECRET in $SECRETS_FILE."
   fi
-  secrets=$(printf 'JWT_SECRET=%s\nSHIPYARD_KEY_SECRET=%s' "$stored_jwt" "$stored_key")
+  secrets=$(printf 'JWT_SECRET=%s\nFLEET_KEY_SECRET=%s' "$stored_jwt" "$stored_key")
   if [ ! -f "$SECRETS_FILE" ] || [ "$(cat "$SECRETS_FILE")" != "$secrets" ]; then
     (umask 077 && printf '%s\n' "$secrets" > "$SECRETS_FILE.tmp" && mv "$SECRETS_FILE.tmp" "$SECRETS_FILE")
   fi
-  : "${JWT_SECRET:=$stored_jwt}" "${SHIPYARD_KEY_SECRET:=$stored_key}"
-  export JWT_SECRET SHIPYARD_KEY_SECRET
+  : "${JWT_SECRET:=$stored_jwt}" "${FLEET_KEY_SECRET:=$stored_key}"
+  export JWT_SECRET FLEET_KEY_SECRET
 fi
 
 [ -n "${JWT_SECRET:-}" ] || fail "JWT_SECRET must be set."
-[ -n "${SHIPYARD_KEY_SECRET:-}" ] || fail "SHIPYARD_KEY_SECRET must be set."
-[ "$JWT_SECRET" != "$SHIPYARD_KEY_SECRET" ] || fail "JWT_SECRET and SHIPYARD_KEY_SECRET must be different."
+[ -n "${FLEET_KEY_SECRET:-}" ] || fail "FLEET_KEY_SECRET must be set."
+[ "$JWT_SECRET" != "$FLEET_KEY_SECRET" ] || fail "JWT_SECRET and FLEET_KEY_SECRET must be different."
 
-case "${SHIPYARD_RENEW_CERT:-0}" in 0|1) ;; *) fail "SHIPYARD_RENEW_CERT must be 0 or 1." ;; esac
+case "${FLEET_RENEW_CERT:-0}" in 0|1) ;; *) fail "FLEET_RENEW_CERT must be 0 or 1." ;; esac
 if { [ -n "${SSL_KEY:-}" ] && [ -z "${SSL_CERT:-}" ]; } ||
    { [ -z "${SSL_KEY:-}" ] && [ -n "${SSL_CERT:-}" ]; }; then
   fail "Set SSL_KEY and SSL_CERT together, or leave both unset."
 fi
-if [ -n "${SSL_KEY:-}" ] && [ "${SHIPYARD_RENEW_CERT:-0}" = 1 ]; then
-  fail "SHIPYARD_RENEW_CERT only renews generated certificates; manage custom certificates externally."
+if [ -n "${SSL_KEY:-}" ] && [ "${FLEET_RENEW_CERT:-0}" = 1 ]; then
+  fail "FLEET_RENEW_CERT only renews generated certificates; manage custom certificates externally."
 fi
 
 # Only explicitly configured workspace roots need ownership repair. Never use
@@ -69,7 +69,7 @@ repair_workspaces() {
     esac
     mkdir -p -- "$workspace_root"
     # Do not follow symlinks inside a workspace into unrelated mounted paths.
-    chown -hR shipyard:shipyard -- "$workspace_root"
+    chown -hR fleet:fleet -- "$workspace_root"
     root_count=$((root_count + 1))
   done
   set +f
@@ -79,8 +79,8 @@ repair_workspaces() {
 repair_workspaces
 
 CERT_DIR=/app/server/data/certs
-DEFAULT_KEY="$CERT_DIR/shipyard.key"
-DEFAULT_CERT="$CERT_DIR/shipyard.crt"
+DEFAULT_KEY="$CERT_DIR/fleet.key"
+DEFAULT_CERT="$CERT_DIR/fleet.crt"
 cert_temp=
 cleanup() {
   if [ -n "$cert_temp" ]; then rm -rf -- "$cert_temp"; fi
@@ -98,31 +98,31 @@ validate_certificate() {
 mkdir -p "$CERT_DIR"
 cert_temp=$(mktemp -d "$CERT_DIR/.prepare.XXXXXX")
 if [ -z "${SSL_KEY:-}" ]; then
-  renew=${SHIPYARD_RENEW_CERT:-0}
+  renew=${FLEET_RENEW_CERT:-0}
   if [ "$renew" = 1 ] || { [ ! -e "$DEFAULT_KEY" ] && [ ! -e "$DEFAULT_CERT" ]; }; then
-    SANS="DNS:shipyard,DNS:localhost,IP:127.0.0.1"
+    SANS="DNS:fleet,DNS:localhost,IP:127.0.0.1"
     # Keep generated names stable across container recreation. Add all addresses
     # used by agents explicitly through CERT_SANS instead of container IPs.
     [ -z "${CERT_SANS:-}" ] || SANS="$SANS,$CERT_SANS"
     echo "[HTTPS] Generating self-signed certificate"
     openssl req -x509 -nodes -days 3650 -newkey rsa:4096 \
-      -keyout "$cert_temp/shipyard.key" -out "$cert_temp/shipyard.crt" \
-      -subj /CN=shipyard -addext "subjectAltName=$SANS"
-    chmod 600 "$cert_temp/shipyard.key"
-    validate_certificate "$cert_temp/shipyard.crt" "$cert_temp/shipyard.key"
+      -keyout "$cert_temp/fleet.key" -out "$cert_temp/fleet.crt" \
+      -subj /CN=fleet -addext "subjectAltName=$SANS"
+    chmod 600 "$cert_temp/fleet.key"
+    validate_certificate "$cert_temp/fleet.crt" "$cert_temp/fleet.key"
     if [ -e "$DEFAULT_KEY" ] || [ -e "$DEFAULT_CERT" ]; then
       previous_cert=$(mktemp -d "$CERT_DIR/previous.XXXXXX")
-      [ ! -e "$DEFAULT_KEY" ] || cp -p "$DEFAULT_KEY" "$previous_cert/shipyard.key"
-      [ ! -e "$DEFAULT_CERT" ] || cp -p "$DEFAULT_CERT" "$previous_cert/shipyard.crt"
+      [ ! -e "$DEFAULT_KEY" ] || cp -p "$DEFAULT_KEY" "$previous_cert/fleet.key"
+      [ ! -e "$DEFAULT_CERT" ] || cp -p "$DEFAULT_CERT" "$previous_cert/fleet.crt"
       echo "[HTTPS] Previous TLS files preserved in $previous_cert"
     fi
-    mv "$cert_temp/shipyard.key" "$DEFAULT_KEY"
-    mv "$cert_temp/shipyard.crt" "$DEFAULT_CERT"
+    mv "$cert_temp/fleet.key" "$DEFAULT_KEY"
+    mv "$cert_temp/fleet.crt" "$DEFAULT_CERT"
   fi
-  [ -f "$DEFAULT_KEY" ] && [ -f "$DEFAULT_CERT" ] || fail "Incomplete generated TLS pair. Restore it or explicitly set SHIPYARD_RENEW_CERT=1."
+  [ -f "$DEFAULT_KEY" ] && [ -f "$DEFAULT_CERT" ] || fail "Incomplete generated TLS pair. Restore it or explicitly set FLEET_RENEW_CERT=1."
   validate_certificate "$DEFAULT_CERT" "$DEFAULT_KEY"
   openssl x509 -in "$DEFAULT_CERT" -noout -ext subjectAltName > "$cert_temp/sans"
-  grep -Eq 'DNS:|IP Address:' "$cert_temp/sans" || fail "Generated certificate lacks SANs. Set SHIPYARD_RENEW_CERT=1 to renew it."
+  grep -Eq 'DNS:|IP Address:' "$cert_temp/sans" || fail "Generated certificate lacks SANs. Set FLEET_RENEW_CERT=1 to renew it."
   chmod 600 "$DEFAULT_KEY"
   export SSL_KEY="$DEFAULT_KEY" SSL_CERT="$DEFAULT_CERT"
 else
@@ -132,7 +132,7 @@ cleanup
 cert_temp=
 
 mkdir -p /app/server/data/bin /app/server/playbooks /app/plugins
-chown -hR shipyard:shipyard /app/server/data /app/server/playbooks /app/plugins
+chown -hR fleet:fleet /app/server/data /app/server/playbooks /app/plugins
 
 # Retire old installations without deleting operator files. Archival is a
 # one-time move; subsequent starts find no legacy source to move again.
@@ -142,7 +142,7 @@ archive_legacy() {
     mkdir -p /app/server/data/legacy-migrations
     legacy_archive=$(mktemp -d /app/server/data/legacy-migrations/startup.XXXXXX)
     mv -- "$legacy_source" "$legacy_archive/"
-    chown -hR shipyard:shipyard "$legacy_archive"
+    chown -hR fleet:fleet "$legacy_archive"
     echo "[migration] Preserved $legacy_source in $legacy_archive"
   fi
 }
@@ -164,9 +164,9 @@ if [ -d /app/bundled-playbooks ]; then
   if [ ! -e /app/server/playbooks/update.yml ] && [ ! -L /app/server/playbooks/update.yml ] && [ -f /app/bundled-playbooks/update.yml ]; then
     cp /app/bundled-playbooks/update.yml /app/server/playbooks/update.yml
   fi
-  chown -hR shipyard:shipyard /app/server/playbooks
+  chown -hR fleet:fleet /app/server/playbooks
 fi
 
-gosu shipyard test -r "$SSL_KEY" || fail "TLS key must be readable by UID 1001."
-gosu shipyard test -r "$SSL_CERT" || fail "TLS certificate must be readable by UID 1001."
-exec gosu shipyard node server/index.js
+gosu fleet test -r "$SSL_KEY" || fail "TLS key must be readable by UID 1001."
+gosu fleet test -r "$SSL_CERT" || fail "TLS certificate must be readable by UID 1001."
+exec gosu fleet node server/index.js

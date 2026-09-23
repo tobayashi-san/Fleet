@@ -85,7 +85,7 @@ export function AppearanceTab() {
             disabled={busy}
             value={appName}
             onChange={(e) => setAppName(e.target.value)}
-            placeholder="Shipyard"
+            placeholder="Fleet"
             className="max-w-xs"
           />
         </SettingsRow>

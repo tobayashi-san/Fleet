@@ -10,7 +10,7 @@ const router = express.Router();
 const DEFAULT_MAX_TRANSFER_BYTES = 1024 * 1024 * 1024;
 
 function maxTransferBytes() {
-  const configured = Number(process.env.SHIPYARD_MAX_FILE_TRANSFER_BYTES);
+  const configured = Number(process.env.FLEET_MAX_FILE_TRANSFER_BYTES);
   return Number.isSafeInteger(configured) && configured > 0 ? configured : DEFAULT_MAX_TRANSFER_BYTES;
 }
 

@@ -5,9 +5,9 @@ const fs = require('fs');
 const path = require('path');
 const { escapeRegExp } = require('./core-utils');
 
-const SHIPYARD_OUTPUT_BLOCK_START = '# BEGIN SHIPYARD MANAGED OUTPUT';
-const SHIPYARD_OUTPUT_BLOCK_END = '# END SHIPYARD MANAGED OUTPUT';
-const SHIPYARD_OUTPUT_GENERATORS = {
+const FLEET_OUTPUT_BLOCK_START = '# BEGIN FLEET MANAGED OUTPUT';
+const FLEET_OUTPUT_BLOCK_END = '# END FLEET MANAGED OUTPUT';
+const FLEET_OUTPUT_GENERATORS = {
   proxmox_virtual_environment_vm: {
     providerTag: 'proxmox',
     sshUser: 'root',
@@ -76,25 +76,25 @@ function detectTerraformResources(files) {
 }
 
 function supportedTerraformResources(resources) {
-  return resources.filter(resource => !!SHIPYARD_OUTPUT_GENERATORS[resource.type]);
+  return resources.filter(resource => !!FLEET_OUTPUT_GENERATORS[resource.type]);
 }
 
-function generateShipyardOutputsBlock(resources) {
+function generateFleetOutputsBlock(resources) {
   const supported = supportedTerraformResources(resources);
   if (supported.length === 0) {
-    throw new Error(`No supported VM resources found. Supported types: ${Object.keys(SHIPYARD_OUTPUT_GENERATORS).join(', ')}`);
+    throw new Error(`No supported VM resources found. Supported types: ${Object.keys(FLEET_OUTPUT_GENERATORS).join(', ')}`);
   }
 
   const lines = [
-    SHIPYARD_OUTPUT_BLOCK_START,
-    '# Managed by Shipyard / OpenTofu',
+    FLEET_OUTPUT_BLOCK_START,
+    '# Managed by Fleet / OpenTofu',
     '# Adjust ssh_user or ssh_port below if your image uses different defaults.',
-    'output "shipyard_servers" {',
+    'output "fleet_servers" {',
     '  value = {',
   ];
 
   for (const resource of supported) {
-    const config = SHIPYARD_OUTPUT_GENERATORS[resource.type];
+    const config = FLEET_OUTPUT_GENERATORS[resource.type];
     lines.push(`    ${JSON.stringify(resource.name)} = {`);
     lines.push(`      name       = ${config.nameExpr(resource.address, resource.name)}`);
     lines.push(`      hostname   = ${config.nameExpr(resource.address, resource.name)}`);
@@ -107,15 +107,15 @@ function generateShipyardOutputsBlock(resources) {
 
   lines.push('  }');
   lines.push('}');
-  lines.push(SHIPYARD_OUTPUT_BLOCK_END);
+  lines.push(FLEET_OUTPUT_BLOCK_END);
   lines.push('');
 
   return lines.join('\n');
 }
 
-function upsertManagedShipyardOutputs(existingContent, generatedBlock) {
+function upsertManagedFleetOutputs(existingContent, generatedBlock) {
   const markerRe = new RegExp(
-    `${escapeRegExp(SHIPYARD_OUTPUT_BLOCK_START)}[\\s\\S]*?${escapeRegExp(SHIPYARD_OUTPUT_BLOCK_END)}\\n?`,
+    `${escapeRegExp(FLEET_OUTPUT_BLOCK_START)}[\\s\\S]*?${escapeRegExp(FLEET_OUTPUT_BLOCK_END)}\\n?`,
     'm'
   );
 
@@ -130,8 +130,8 @@ function upsertManagedShipyardOutputs(existingContent, generatedBlock) {
 
 module.exports = {
   detectTerraformResources,
-  generateShipyardOutputsBlock,
+  generateFleetOutputsBlock,
   readTerraformFiles,
   supportedTerraformResources,
-  upsertManagedShipyardOutputs,
+  upsertManagedFleetOutputs,
 };

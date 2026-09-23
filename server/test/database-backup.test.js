@@ -7,7 +7,7 @@ const os = require('node:os');
 const {execFileSync} = require('node:child_process');
 const Database = require('better-sqlite3');
 const {createEncryptedDatabaseBackup,verifyEncryptedDatabaseBackup,withVerifiedDatabaseBackup,restoreEncryptedDatabaseBackup} = require('../services/database-backup');
-const root = fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-backup-test-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(),'fleet-backup-test-'));
 const filename = path.join(root,'source.db');
 const database = new Database(filename);
 database.pragma('journal_mode = WAL');
@@ -50,11 +50,11 @@ test('existing backups are never replaced and weak passphrases produce no output
  const weak=path.join(root,'weak');
  await assert.rejects(createEncryptedDatabaseBackup(database,weak,'short'),/passphrase/);
  assert.equal(fs.existsSync(weak),false);
- assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.shipyard-backup-')),false);
+ assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.fleet-backup-')),false);
 });
 
 test('CLI verifies without exposing database values or modifying the source',()=>{
- const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'verify',path.join(root,'complete.backup')],{encoding:'utf8',env:{...process.env,SHIPYARD_BACKUP_PASSPHRASE:passphrase}});
+ const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'verify',path.join(root,'complete.backup')],{encoding:'utf8',env:{...process.env,FLEET_BACKUP_PASSPHRASE:passphrase}});
  assert.equal(JSON.parse(output).integrity,'ok');
  assert.equal(output.includes('never-print-backup-secret'),false);
  assert.equal(output.includes(passphrase),false);
@@ -62,7 +62,7 @@ test('CLI verifies without exposing database values or modifying the source',()=
 
 test('CLI can create from a read-only database connection',()=>{
  const target=path.join(root,'cli-created.backup');
- const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'create',target],{encoding:'utf8',env:{...process.env,DB_PATH:filename,SHIPYARD_BACKUP_PASSPHRASE:passphrase}});
+ const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'create',target],{encoding:'utf8',env:{...process.env,DB_PATH:filename,FLEET_BACKUP_PASSPHRASE:passphrase}});
  assert.equal(JSON.parse(output).scope,'database-only');
  assert.equal(fs.statSync(target).mode & 0o777,0o600);
 });
@@ -70,9 +70,9 @@ test('CLI can create from a read-only database connection',()=>{
 test('unsupported database structure is rejected without publishing a backup',async()=>{
  const foreign=new Database(':memory:');foreign.exec('CREATE TABLE unrelated(id INTEGER)');
  const target=path.join(root,'foreign.backup');
- try {await assert.rejects(createEncryptedDatabaseBackup(foreign,target,passphrase),/supported Shipyard/);} finally {foreign.close();}
+ try {await assert.rejects(createEncryptedDatabaseBackup(foreign,target,passphrase),/supported Fleet/);} finally {foreign.close();}
  assert.equal(fs.existsSync(target),false);
- assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.shipyard-backup-')),false);
+ assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.fleet-backup-')),false);
 });
 
 test('restore authenticates into a new database and invalidates copied versioned sessions',async()=>{
@@ -89,7 +89,7 @@ test('restore authenticates into a new database and invalidates copied versioned
  } finally {restored.close();}
  assert.equal(database.prepare('SELECT token_version FROM users').get().token_version,4);
  assert.equal(fs.existsSync(target+'-wal'),false);
- assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.shipyard-restore-')),false);
+ assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.fleet-restore-')),false);
 });
 
 test('failed restore never replaces an existing destination or leaves a new one',async()=>{
@@ -99,12 +99,12 @@ test('failed restore never replaces an existing destination or leaves a new one'
  const missing=path.join(root,'must-not-exist.db');
  await assert.rejects(restoreEncryptedDatabaseBackup(path.join(root,'complete.backup'),missing,'Wrong passphrase 12345'),/authentication failed/);
  assert.equal(fs.existsSync(missing),false);
- assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.shipyard-restore-')),false);
+ assert.equal(fs.readdirSync(root).some(name=>name.startsWith('.fleet-restore-')),false);
 });
 
 test('CLI restores to a new path without touching the configured running database',()=>{
  const target=path.join(root,'cli-restored.db');
- const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'restore',path.join(root,'complete.backup'),target],{encoding:'utf8',env:{...process.env,DB_PATH:filename,SHIPYARD_BACKUP_PASSPHRASE:passphrase}});
+ const output=execFileSync(process.execPath,[path.join(__dirname,'../cli/database-backup.js'),'restore',path.join(root,'complete.backup'),target],{encoding:'utf8',env:{...process.env,DB_PATH:filename,FLEET_BACKUP_PASSPHRASE:passphrase}});
  assert.equal(JSON.parse(output).restored,true);
  assert.equal(database.prepare('SELECT value FROM app_settings').get().value,'changed after backup');
 });

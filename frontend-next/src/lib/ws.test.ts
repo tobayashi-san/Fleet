@@ -35,7 +35,7 @@ describe('WsClient environment switching', () => {
   it('ignores a delayed close event from the superseded environment socket', async () => {
     let environment = 'production';
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn((key: string) => key === 'shipyard_environment' ? environment : 'token'),
+      getItem: vi.fn((key: string) => key === 'fleet_environment' ? environment : 'token'),
     });
     vi.stubGlobal('window', {
       location: { protocol: 'https:', host: 'fleet.example' },

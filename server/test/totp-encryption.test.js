@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 process.env.DB_PATH = path.join(os.tmpdir(), `lab_test_totp_enc_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-totp';
-process.env.SHIPYARD_KEY_SECRET = 'test-master-key-totp';
+process.env.FLEET_KEY_SECRET = 'test-master-key-totp';
 process.env.NODE_ENV = 'test';
 
 const { test } = require('node:test');

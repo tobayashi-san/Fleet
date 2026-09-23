@@ -65,7 +65,7 @@ module.exports = function registerSourceRoutes(router, { guard, guardEnvironment
       const encryptedToken = encrypt(token);
       if (encryptedToken === token)
         throw new Error(
-          "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
+          "FLEET_KEY_SECRET is required to store source tokens securely.",
         );
       const source = db.db.transaction(() => {
         db.db
@@ -138,7 +138,7 @@ module.exports = function registerSourceRoutes(router, { guard, guardEnvironment
         nextToken === body.api_token.trim()
       )
         throw new Error(
-          "SHIPYARD_KEY_SECRET is required to store source tokens securely.",
+          "FLEET_KEY_SECRET is required to store source tokens securely.",
         );
       const updated = db.db.transaction(() => {
         db.db
@@ -224,7 +224,7 @@ module.exports = function registerSourceRoutes(router, { guard, guardEnvironment
 
   // Validate a controller without changing IPAM state.  This is deliberately
   // separate from sync: operators can verify endpoint, TLS, token and payload
-  // mapping before Shipyard creates, updates or releases any lease records.
+  // mapping before Fleet creates, updates or releases any lease records.
   router.post("/sources/:id/test", guard("canEditNetworks"), async (req, res) => {
     const source = db.db
       .prepare("SELECT * FROM ipam_sync_sources WHERE id = ?")

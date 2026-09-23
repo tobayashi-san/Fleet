@@ -1,8 +1,8 @@
 # SSH key replacement
 
-Shipyard uses one central SSH key for new connections. Importing a key replaces that key locally; it does not distribute the new public key to hosts or remove the old key from their authorized_keys files. Intended-use assignments are not a scan of remote trust.
+Fleet uses one central SSH key for new connections. Importing a key replaces that key locally; it does not distribute the new public key to hosts or remove the old key from their authorized_keys files. Intended-use assignments are not a scan of remote trust.
 
-Before replacing the key, prepare access using the new public key and retain a protected recovery copy of the old key. Hosts that do not trust the new key can become unreachable from Shipyard. Existing connections may remain open with their previously negotiated session; they do not demonstrate that a new connection will succeed.
+Before replacing the key, prepare access using the new public key and retain a protected recovery copy of the old key. Hosts that do not trust the new key can become unreachable from Fleet. Existing connections may remain open with their previously negotiated session; they do not demonstrate that a new connection will succeed.
 
 The import dialog first validates the selected file and displays the current and candidate fingerprints. Its preparation section exposes the derived public key for copying to remote accounts before activation. The activation request is bound to both identities. A changed active key or candidate requires a new preview. The file limit is 64 KiB.
 

@@ -20,10 +20,10 @@ const db = require('../db');
 const { getSecret, setSecret } = require('../utils/crypto');
 
 // Runtime playbooks (read/written by the server at runtime)
-const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
+const PLAYBOOKS_DIR = path.resolve(process.env.FLEET_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 
-// Dedicated git workspace – inside the persistent data volume so the shipyard user can write to it
-const GIT_WORKSPACE_DIR = path.resolve(process.env.SHIPYARD_GIT_WORKSPACE_DIR || path.join(__dirname, '..', 'data', 'git-workspace'));
+// Dedicated git workspace – inside the persistent data volume so the fleet user can write to it
+const GIT_WORKSPACE_DIR = path.resolve(process.env.FLEET_GIT_WORKSPACE_DIR || path.join(__dirname, '..', 'data', 'git-workspace'));
 
 // Subdirectory inside the workspace that contains the playbooks
 const PLAYBOOKS_SUBDIR = 'playbooks';
@@ -53,8 +53,8 @@ function getConfig() {
     autoPull:  db.settings.get('git_auto_pull') !== '0',
     autoPush:  db.settings.get('git_auto_push') === '1' && db.settings.get('git_read_only') !== '1',
     readOnly:  db.settings.get('git_read_only') === '1',
-    userName:  g('git_user_name')  || 'Shipyard',
-    userEmail: g('git_user_email') || 'shipyard@localhost',
+    userName:  g('git_user_name')  || 'Fleet',
+    userEmail: g('git_user_email') || 'fleet@localhost',
     branch:    g('git_branch')     || 'main',
   };
 }
@@ -186,7 +186,7 @@ async function getTmpKeyPath() {
     const crypto = require('crypto');
     const configuredKey = getConfig().sshKey;
     const keyContent = configuredKey || require('./ssh-manager').getPrivateKey();
-    const tmpPath = path.join(os.tmpdir(), `.shipyard_git_key_${crypto.randomUUID()}`);
+    const tmpPath = path.join(os.tmpdir(), `.fleet_git_key_${crypto.randomUUID()}`);
     fs.writeFileSync(tmpPath, keyContent, { mode: 0o600 });
     _tmpKeyPath = tmpPath;
     return tmpPath;
@@ -639,8 +639,8 @@ async function setup({ repoUrl, authToken, sshKey, autoPull: ap, autoPush: ap2, 
   db.settings.set('git_auto_pull',  ap  !== false ? '1' : '0');
   db.settings.set('git_auto_push',  ap2 === true && !readOnly ? '1' : '0');
   db.settings.set('git_read_only', readOnly ? '1' : '0');
-  db.settings.set('git_user_name',  userName  || 'Shipyard');
-  db.settings.set('git_user_email', userEmail || 'shipyard@localhost');
+  db.settings.set('git_user_name',  userName  || 'Fleet');
+  db.settings.set('git_user_email', userEmail || 'fleet@localhost');
   db.settings.set('git_branch',     targetBranch);
 
   ensureWorkspaceDirs();

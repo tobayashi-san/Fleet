@@ -48,10 +48,10 @@ test('invalid Git identities reject setup and config before settings or remote w
    }
   }
   assert.equal(setupCalls,0);
-  const valid = await request(app).put('/git/config').send({userName:'  Jörg Example  ',userEmail:' shipyard@localhost '});
+  const valid = await request(app).put('/git/config').send({userName:'  Jörg Example  ',userEmail:' fleet@localhost '});
   assert.equal(valid.status,200);
   assert.equal(db.settings.get('git_user_name'),'Jörg Example');
-  assert.equal(db.settings.get('git_user_email'),'shipyard@localhost');
+  assert.equal(db.settings.get('git_user_email'),'fleet@localhost');
   assert.equal((await request(app).post('/git/setup').send({repoUrl:'https://example.test/repo.git',userName:'',userEmail:''})).status,200);
   assert.equal(setupCalls,1);
  } finally { gitSync.setup = originalSetup; }

@@ -7,7 +7,7 @@ import { defineConfig } from '@playwright/test';
 const runtimeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-e2e-'));
 process.env.FLEET_E2E_ARTIFACT_DIR ||= path.join(runtimeDir, 'artifacts');
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Keep browser tests isolated from a developer's locally running Shipyard stack.
+// Keep browser tests isolated from a developer's locally running Fleet stack.
 // Ports can be overridden for parallel local test sessions or CI workers.
 const apiPort = process.env.FLEET_E2E_API_PORT || '3011';
 const webPort = process.env.FLEET_E2E_WEB_PORT || '5175';
@@ -45,7 +45,7 @@ export default defineConfig({
       cwd: '../server',
       url: `http://127.0.0.1:${apiPort}/api/health`,
       reuseExistingServer: false,
-      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', SHIPYARD_KEY_SECRET: 'fleet-browser-e2e-key-secret', SHIPYARD_PLAYBOOKS_DIR: playbooksRoot, SHIPYARD_SSH_DIR: path.join(runtimeDir, 'ssh'), SHIPYARD_GIT_WORKSPACE_DIR: path.join(runtimeDir, 'git'), PLUGINS_DIR: path.join(runtimeDir, 'plugins'), OPENTOFU_WORKSPACE_ROOTS: workspaceRoot, OPENTOFU_INTERNAL_VM_ROOT: path.join(workspaceRoot, 'internal', 'vms') },
+      env: { ...process.env, NODE_ENV: 'test', PORT: apiPort, DB_PATH: path.join(runtimeDir, 'fleet.sqlite'), JWT_SECRET: 'fleet-browser-e2e-secret', FLEET_KEY_SECRET: 'fleet-browser-e2e-key-secret', FLEET_PLAYBOOKS_DIR: playbooksRoot, FLEET_SSH_DIR: path.join(runtimeDir, 'ssh'), FLEET_GIT_WORKSPACE_DIR: path.join(runtimeDir, 'git'), PLUGINS_DIR: path.join(runtimeDir, 'plugins'), OPENTOFU_WORKSPACE_ROOTS: workspaceRoot, OPENTOFU_INTERNAL_VM_ROOT: path.join(workspaceRoot, 'internal', 'vms') },
     },
     {
       command: `VITE_API_TARGET=http://127.0.0.1:${apiPort} vite --host 127.0.0.1 --port ${webPort}`,

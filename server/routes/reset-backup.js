@@ -18,7 +18,7 @@ const router = express.Router();
 const uploads = createResetBackupTickets();
 const approvals = createResetBackupTickets();
 const maxBytes = 1024 * 1024 * 1024;
-const playbooksDirectory = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
+const playbooksDirectory = path.resolve(process.env.FLEET_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 const actions = new Set(['servers', 'schedules', 'playbooks', 'auth', 'all']);
 const scopeFor = req => ['servers', 'schedules'].includes(req.params.action) ? req.environmentId || 'default' : 'all-environments';
 const ownerFor = req => createHash('sha256').update(JSON.stringify([req.user?.id, req.headers.authorization || ''])).digest('hex');
@@ -55,7 +55,7 @@ router.put('/:action/backup/:id', adminOnly, async (req, res) => {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120000);
   try {
-    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'shipyard-reset-check-'));
+    directory = await fs.mkdtemp(path.join(os.tmpdir(), 'fleet-reset-check-'));
     const filename = path.join(directory, 'archive');
     let bytes = 0;
     const limit = new Transform({transform(chunk, _encoding, callback) {

@@ -7,7 +7,7 @@ const database=new Database(databasePath);
 database.exec('CREATE TABLE IF NOT EXISTS app_settings (key TEXT PRIMARY KEY,value TEXT); CREATE TABLE IF NOT EXISTS records (id INTEGER); INSERT INTO records VALUES (1)');
 const rename=fs.renameSync,unlink=fs.unlinkSync;
 if(point==='before-commit')fs.renameSync=(...args)=>{rename(...args);process.exit(91);};
-if(point==='after-commit')fs.unlinkSync=(...args)=>{if(String(args[0]).includes('.shipyard-reset-'))process.exit(92);return unlink(...args);};
+if(point==='after-commit')fs.unlinkSync=(...args)=>{if(String(args[0]).includes('.fleet-reset-'))process.exit(92);return unlink(...args);};
 if(point==='after-journal-cleanup')fs.unlinkSync=(...args)=>{unlink(...args);if(path.basename(args[0])==='journal.json')process.exit(93);};
 withRemovedPlaybooks(directory,()=>database.prepare('DELETE FROM records').run(),database);
 database.close();

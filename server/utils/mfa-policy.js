@@ -1,7 +1,7 @@
 'use strict';
 // Deployment-level policy. Unknown configured values fail closed.
 function mfaPolicy() {
-  const mode=String(process.env.SHIPYARD_MFA_POLICY || 'optional').trim().toLowerCase();
+  const mode=String(process.env.FLEET_MFA_POLICY || 'optional').trim().toLowerCase();
   return ['optional','admins','all'].includes(mode) ? mode : 'all';
 }
 function requiresMfa(user) {
@@ -18,7 +18,7 @@ function enrollmentRoute(req) {
 }
 function policyOverview(users) {
   const mode=mfaPolicy();
-  const configured=String(process.env.SHIPYARD_MFA_POLICY || 'optional').trim().toLowerCase();
+  const configured=String(process.env.FLEET_MFA_POLICY || 'optional').trim().toLowerCase();
   const active=users.filter(user=>!user.disabled);
   const required=active.filter(user=>requiresMfa(user));
   const missing=required.filter(user=>!user.totp_enabled);

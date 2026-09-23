@@ -7,10 +7,10 @@ const fs = require('fs');
 const os = require('os');
 
 // Isolated DB per test file
-const tmpDb = path.join(os.tmpdir(), `shipyard-git-validate-${process.pid}.db`);
+const tmpDb = path.join(os.tmpdir(), `fleet-git-validate-${process.pid}.db`);
 try { fs.unlinkSync(tmpDb); } catch {}
 process.env.DB_PATH = tmpDb;
-process.env.SHIPYARD_KEY_SECRET = 'test-secret-for-git-validation';
+process.env.FLEET_KEY_SECRET = 'test-secret-for-git-validation';
 
 const { getConfig, updateCredentials, validateGitUrl, validateBranchName } = require('../services/git-sync');
 

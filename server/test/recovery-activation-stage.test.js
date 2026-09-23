@@ -15,7 +15,7 @@ before(async () => {
   const source = path.join(root, 'source'); await fs.mkdir(source);
   await fs.writeFile(path.join(source, 'run.yml'), 'recovered-playbook');
   const cert = path.join(root, 'cert'); await fs.writeFile(cert, 'recovered-certificate');
-  database = new Database(path.join(source, 'shipyard.db'));
+  database = new Database(path.join(source, 'fleet.db'));
   database.exec('CREATE TABLE users(id TEXT,token_version INTEGER); CREATE TABLE app_settings(key TEXT,value TEXT); CREATE TABLE environments(id TEXT); INSERT INTO users VALUES (\'admin\',4)');
   const crypto = require('node:crypto');
   const iv = crypto.randomBytes(16);
@@ -29,7 +29,7 @@ before(async () => {
   const destination = path.join(root, 'live-data'); await fs.mkdir(destination);
   await fs.writeFile(path.join(destination, 'keep'), 'original-live-data');
   const certTarget = path.join(root, 'live-cert'); await fs.writeFile(certTarget, 'original-live-certificate');
-  options = {archive, prepared, passphrase, applicationKey, offline: true, targets: {database: path.join(destination, 'shipyard.db'), roots: {data: destination, cert: certTarget}}};
+  options = {archive, prepared, passphrase, applicationKey, offline: true, targets: {database: path.join(destination, 'fleet.db'), roots: {data: destination, cert: certTarget}}};
 });
 after(async () => { database?.close(); if (root) await fs.rm(root, {recursive: true, force: true}); });
 async function originals() {
@@ -50,7 +50,7 @@ test('staging prepares synchronized sibling copies and database overlay without 
     assert.ok(operation.originalIdentity.ino);
     assert.equal((await fs.stat(operation.staging)).mode & 0o777, 0o700);
     if (operation.id === 'data') {
-      const restored = new Database(path.join(operation.staging, 'payload', 'shipyard.db'), {readonly: true});
+      const restored = new Database(path.join(operation.staging, 'payload', 'fleet.db'), {readonly: true});
       try { assert.equal(restored.prepare('SELECT token_version FROM users').get().token_version, 5); }
       finally { restored.close(); }
       assert.equal(await fs.readFile(path.join(operation.staging, 'payload', 'run.yml'), 'utf8'), 'recovered-playbook');
@@ -136,7 +136,7 @@ test('a separate process can roll back after the activator exits between rename 
 test('missing or incorrect original encryption key prevents switching any target', async () => {
   const recovery = {...options, journalDirectory: path.join(root, 'wrong-key-journal')};
   await stageApplicationActivation(recovery);
-  await assert.rejects(activateApplicationRecovery({...recovery, applicationKey: undefined}), /SHIPYARD_KEY_SECRET is required/);
+  await assert.rejects(activateApplicationRecovery({...recovery, applicationKey: undefined}), /FLEET_KEY_SECRET is required/);
   await assert.rejects(activateApplicationRecovery({...recovery, applicationKey: 'wrong synthetic key'}), /does not authenticate/);
   await originals();
   const journal = JSON.parse(await fs.readFile(path.join(recovery.journalDirectory, 'journal.json'), 'utf8'));
@@ -151,7 +151,7 @@ test('operator CLI stages, activates and rolls back with the original key kept o
   const {spawnLockedRecovery} = require('../services/recovery-cli-lock');
   // Isolated lock inode avoids competing with other tests' host-wide CLI lock.
   const run = action => new Promise((resolve, reject) => {
-    const child = spawnLockedRecovery([action, options.archive, options.prepared, mapping, journalDirectory, '--offline'], {lockPath: root, env: {...process.env, SHIPYARD_BACKUP_PASSPHRASE: options.passphrase, SHIPYARD_KEY_SECRET: applicationKey}, stdio: 'pipe'});
+    const child = spawnLockedRecovery([action, options.archive, options.prepared, mapping, journalDirectory, '--offline'], {lockPath: root, env: {...process.env, FLEET_BACKUP_PASSPHRASE: options.passphrase, FLEET_KEY_SECRET: applicationKey}, stdio: 'pipe'});
     let stdout = '', stderr = '';
     child.stdout.on('data', chunk => {stdout += chunk;}); child.stderr.on('data', chunk => {stderr += chunk;});
     child.on('error', reject);

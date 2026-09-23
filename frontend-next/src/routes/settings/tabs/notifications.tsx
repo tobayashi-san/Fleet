@@ -203,7 +203,7 @@ function SmtpForm({ wl }: { wl: WhiteLabel }) {
         <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpPass')} name="smtpPassword" type="password" value={pass ?? ''} onChange={(e) => setPass(e.target.value)} placeholder={wl.hasSmtpPassword ? 'Saved password · leave unchanged to keep' : 'No saved password'} autoComplete="new-password" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpFrom')}>
-        <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpFrom')} name="smtpFrom" type="email" value={from} onChange={(e) => update('from',e.target.value)} placeholder="shipyard@example.com" className="max-w-md" />
+        <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpFrom')} name="smtpFrom" type="email" value={from} onChange={(e) => update('from',e.target.value)} placeholder="fleet@example.com" className="max-w-md" />
       </SettingsRow>
       <SettingsRow label={t('set.smtpTo')} hint={t('set.smtpToHint')}>
         <Input disabled={save.isPending || test.isPending} aria-label={t('set.smtpTo')} name="smtpTo" type="email" multiple value={to} onChange={(e) => update('to',e.target.value)} placeholder="admin@example.com" className="max-w-md" />

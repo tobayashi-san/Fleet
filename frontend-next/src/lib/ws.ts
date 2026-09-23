@@ -12,7 +12,7 @@ class WsClient {
 
   connect(): void {
     let environmentId = 'default';
-    try { environmentId = localStorage.getItem('shipyard_environment') || 'default'; } catch { /* use default */ }
+    try { environmentId = localStorage.getItem('fleet_environment') || 'default'; } catch { /* use default */ }
     if (this.socket && this.environmentId === environmentId && (this.socket.readyState === WebSocket.OPEN || this.socket.readyState === WebSocket.CONNECTING)) return;
     if (this.socket) { try { this.socket.close(); } catch { /* ignore */ } this.socket = null; }
     this.environmentId = environmentId;

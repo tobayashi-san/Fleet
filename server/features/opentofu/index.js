@@ -31,9 +31,9 @@ const {
 } = require('./run-safety');
 const {
   detectTerraformResources,
-  generateShipyardOutputsBlock,
+  generateFleetOutputsBlock,
   readTerraformFiles,
-  upsertManagedShipyardOutputs,
+  upsertManagedFleetOutputs,
 } = require('./terraform-outputs');
 const {
   PROXMOX_IDENTIFIER_RE,
@@ -97,7 +97,7 @@ const _running = new Map();
 
 const TOFU_RUN_PAGE_SIZE_DEFAULT = Math.max(1, parseInt(process.env.TOFU_RUN_PAGE_SIZE_DEFAULT || '5', 10) || 5);
 const TOFU_RUN_PAGE_SIZE_MAX = Math.max(TOFU_RUN_PAGE_SIZE_DEFAULT, parseInt(process.env.TOFU_RUN_PAGE_SIZE_MAX || '100', 10) || 100);
-const TOFU_PLAN_DIR = '.shipyard/plans';
+const TOFU_PLAN_DIR = '.fleet/plans';
 const TOFU_STATE_BACKUP_ROOT = path.resolve(process.env.TOFU_STATE_BACKUP_DIR || path.join(__dirname, '..', '..', 'data', 'tofu-state-backups'));
 const TOFU_STATE_BACKUP_KEEP = Math.max(3, parseInt(process.env.TOFU_STATE_BACKUP_KEEP || '20', 10) || 20);
 const TOFU_PLAN_MAX_AGE_MS = Math.max(60_000, (parseInt(process.env.TOFU_PLAN_MAX_AGE_MINUTES || '30', 10) || 30) * 60_000);
@@ -367,7 +367,7 @@ variable "proxmox_insecure" {
     const providerCfg = PROVIDER_CONFIGS[provider];
 
     const mainTf = `# ${provider ? `${provider.toUpperCase()} ` : ''}Infrastructure
-# Managed by Shipyard / OpenTofu
+# Managed by Fleet / OpenTofu
 
 # Add your resources here
 `;
@@ -431,7 +431,7 @@ override.tf.json
   function serializeWorkspaceEnvVars(value) {
     const clean = sanitizeEnvVars(value);
     if (Object.keys(clean).length && !cryptoUtil.isEncryptionAvailable()) {
-      const error = new Error('SHIPYARD_KEY_SECRET is required before deployment secrets can be stored.');
+      const error = new Error('FLEET_KEY_SECRET is required before deployment secrets can be stored.');
       error.status = 503;
       throw error;
     }
@@ -495,7 +495,7 @@ override.tf.json
     const backend = workspaceBackendType(workspace);
     if (backend !== 'local') return { backend, mode: 'remote', locking: true };
     if (!cryptoUtil.isEncryptionAvailable()) {
-      const error = new Error('SHIPYARD_KEY_SECRET is required for encrypted local state backups. Alternatively, configure a remote backend.');
+      const error = new Error('FLEET_KEY_SECRET is required for encrypted local state backups. Alternatively, configure a remote backend.');
       error.status = 503;
       throw error;
     }
@@ -594,7 +594,7 @@ override.tf.json
     const jobs = pendingPostDeployJobs(workspace, syncedServers, { onlyVmId, onlyPlaybook, force });
     if (!jobs.length) return { started: 0, succeeded: 0, failed: 0 };
 
-    // Ensure that the selected Shipyard playbooks reflect the configured Git
+    // Ensure that the selected Fleet playbooks reflect the configured Git
     // source immediately before provisioning starts.
     await getGitSync()?.autoPull?.();
     const available = new Set(ansibleRunner.getAvailablePlaybooks().map(playbook => playbook.filename));
@@ -614,7 +614,7 @@ override.tf.json
     for (const job of jobs) {
       const target = serverById.get(mappingByResource.get(job.server.resource_key));
       if (!target) {
-        const output = `[Shipyard] The target server for post-deploy playbook "${job.playbook}" is not available yet.`;
+        const output = `[Fleet] The target server for post-deploy playbook "${job.playbook}" is not available yet.`;
         saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
         emitMeta(`${output}\n`);
         result.failed++;
@@ -627,7 +627,7 @@ override.tf.json
         triggeredBy: logMeta.user || null,
       });
       if (!available.has(job.playbook)) {
-        const output = `[Shipyard] Playbook not found: ${job.playbook}`;
+        const output = `[Fleet] Playbook not found: ${job.playbook}`;
         db.updateHistory.updateStatus(historyId, 'failed', output);
         db.scheduleHistory.complete(scheduleHistoryId, 'failed', output);
         saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
@@ -636,7 +636,7 @@ override.tf.json
         return result;
       }
 
-      emitMeta(`[Shipyard] Starte Post-Deploy-Playbook "${job.playbook}" auf ${target.name}.\n`);
+      emitMeta(`[Fleet] Starte Post-Deploy-Playbook "${job.playbook}" auf ${target.name}.\n`);
       try {
         const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
           fleet_workspace: workspace.name,
@@ -653,10 +653,10 @@ override.tf.json
         db.auditLog.write('tofu.post_deploy_playbook', `workspace=${workspace.name} vm=${job.vm.name} playbook=${job.playbook} status=${status}`, logMeta.ip || null, run.success, logMeta.user || null);
         if (run.success) {
           result.succeeded++;
-          emitMeta(`[Shipyard] Post-deploy playbook "${job.playbook}" completed successfully.\n`);
+          emitMeta(`[Fleet] Post-deploy playbook "${job.playbook}" completed successfully.\n`);
         } else {
           result.failed++;
-          emitMeta(`[Shipyard] Post-deploy playbook "${job.playbook}" failed and will be retried during a later apply.\n`);
+          emitMeta(`[Fleet] Post-deploy playbook "${job.playbook}" failed and will be retried during a later apply.\n`);
         }
       } catch (error) {
         const output = error.message || String(error);
@@ -665,7 +665,7 @@ override.tf.json
         saveResult.run(workspace.id, job.vm.id, job.playbook, 'failed', output, 'failed');
         db.auditLog.write('tofu.post_deploy_playbook', `workspace=${workspace.name} vm=${job.vm.name} playbook=${job.playbook} error=${output}`, logMeta.ip || null, false, logMeta.user || null);
         result.failed++;
-        emitMeta(`[Shipyard] Post-deploy playbook "${job.playbook}" could not be started: ${output}\n`);
+        emitMeta(`[Fleet] Post-deploy playbook "${job.playbook}" could not be started: ${output}\n`);
       }
       if (result.failed) return result;
     }
@@ -696,12 +696,12 @@ override.tf.json
         environmentId: workspace.environment_id || 'default',
         triggeredBy: logMeta.user || null,
       });
-      emitMeta(`[Shipyard] Running pre-deploy playbook "${job.playbook}" on ${target.name}.`);
+      emitMeta(`[Fleet] Running pre-deploy playbook "${job.playbook}" on ${target.name}.`);
       try {
         const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
           fleet_workspace: workspace.name,
           fleet_vm: job.vm.name,
-          shipyard_phase: 'pre_deploy',
+          fleet_phase: 'pre_deploy',
         }, (stream, data) => emitMeta(`[pre-deploy/${job.playbook}/${stream}] ${data}`), {
           environmentId: workspace.environment_id || 'default',
           runId: scheduleHistoryId,
@@ -767,11 +767,11 @@ override.tf.json
     const variablesPath = path.join(workspace.path, 'fleet-proxmox-variables.tf');
     const vmPath = path.join(workspace.path, 'fleet-proxmox-vms.tf');
     fs.writeFileSync(providerPath, hasProvider
-      ? '# Shipyard uses the existing Proxmox provider configuration in this workspace.\n'
+      ? '# Fleet uses the existing Proxmox provider configuration in this workspace.\n'
       : files.provider, 'utf8');
     fs.writeFileSync(variablesPath, missingVariables.length
-      ? `# Generated by Shipyard. Secret values are never written to this file.\n${missingVariables.map(([name, body]) => `\nvariable "${name}" {\n  ${body.replace(/\n/g, '\n  ')}\n}\n`).join('')}`
-      : '# This workspace already declares the variables required by Shipyard Proxmox VMs.\n', 'utf8');
+      ? `# Generated by Fleet. Secret values are never written to this file.\n${missingVariables.map(([name, body]) => `\nvariable "${name}" {\n  ${body.replace(/\n/g, '\n  ')}\n}\n`).join('')}`
+      : '# This workspace already declares the variables required by Fleet Proxmox VMs.\n', 'utf8');
     fs.writeFileSync(vmPath, files.vms, 'utf8');
     return { files: ['fleet-proxmox-provider.tf', 'fleet-proxmox-variables.tf', 'fleet-proxmox-vms.tf'], vms };
   }
@@ -861,8 +861,8 @@ override.tf.json
       connection = readProxmoxConnection(workspace.env_vars);
     } catch (error) {
       // OpenTofu state remains a useful fallback for old workspaces that do
-      // not have API credentials configured in the Shipyard form yet.
-      log.warn({ err: error, workspace: workspace.name }, 'Could not enrich Shipyard Proxmox server details');
+      // not have API credentials configured in the Fleet form yet.
+      log.warn({ err: error, workspace: workspace.name }, 'Could not enrich Fleet Proxmox server details');
       return { ...applyFleetProxmoxBlueprintMetadata({ servers, state, vms }), pending: false };
     }
 
@@ -914,7 +914,7 @@ override.tf.json
           resource_key: resourceKey, name: vm.name, hostname: vm.name,
           ip_address: existing?.ip_address || '', ssh_user: vm.username, ssh_port: vm.ssh_port || 22,
         }] });
-        emitMeta('[Shipyard] Host registered. Waiting for its address and SSH connection.');
+        emitMeta('[Fleet] Host registered. Waiting for its address and SSH connection.');
       }
     }
   }
@@ -925,7 +925,7 @@ override.tf.json
     return completeDeployment({
       allowEmpty: getProxmoxVms(workspace.id).length === 0,
       phase: value => db.db.prepare('UPDATE tofu_runs SET deployment_phase = ? WHERE id = ?').run(value, dbRunId),
-      log: message => emitMeta(`[Shipyard] ${message}`),
+      log: message => emitMeta(`[Fleet] ${message}`),
       discover: () => waitForManagedServers({
         loadState: () => loadWorkspaceState({ binary, workspace, env }),
         workspaceName: workspace.name,
@@ -1184,7 +1184,7 @@ override.tf.json
             fleet_server_id: adopted?.serverId || null,
             // A cluster can combine equivalent platform connections. Keep the
             // exact source that adopted this VM so its detail view resolves
-            // the correct Shipyard-host mapping instead of guessing the first
+            // the correct Fleet-host mapping instead of guessing the first
             // connection in the group.
             fleet_connection_id: adopted?.connectionId || null,
           };
@@ -1226,7 +1226,7 @@ override.tf.json
 
   function permissionError(e, wsPath) {
     return e.code === 'EACCES'
-      ? `Workspace is not writable: ${wsPath}. Restart Shipyard so the container can repair mounted workspace ownership. If the error remains, verify that the mount is not read-only and does not use root-squash.`
+      ? `Workspace is not writable: ${wsPath}. Restart Fleet so the container can repair mounted workspace ownership. If the error remains, verify that the mount is not read-only and does not use root-squash.`
       : e.message;
   }
 
@@ -1248,7 +1248,7 @@ override.tf.json
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return []; }
     const result = [];
     for (const e of entries) {
-      if (e.name === '.terraform' || e.name === '.git' || e.name === '.shipyard') continue;
+      if (e.name === '.terraform' || e.name === '.git' || e.name === '.fleet') continue;
       const childRel = rel ? `${rel}/${e.name}` : e.name;
       if (e.isDirectory()) {
         const children = walkDir(path.join(dir, e.name), childRel, depth + 1);
@@ -1512,9 +1512,9 @@ override.tf.json
         const accessibleServerIds = new Set(filterServers(db.servers.getAll(), getPermissions(req.user)).map(server => String(server.id)));
         for (const vm of deploymentVms) {
           if (workspace.workspace_kind === 'isolated_vm') {
-            if (!vm.started) return res.status(400).json({ error: 'Start the VM in its configuration before deploying so Shipyard can connect.' });
+            if (!vm.started) return res.status(400).json({ error: 'Start the VM in its configuration before deploying so Fleet can connect.' });
             if (vm.ipv4_address === 'dhcp' && !vm.agent_enabled) return res.status(400).json({ error: 'Enable the guest agent to discover the DHCP address before deploying.' });
-            if (vm.ssh_public_key_variable && !workspace.env_vars[`TF_VAR_${vm.ssh_public_key_variable}`]) return res.status(400).json({ error: 'No SSH public key is configured. Save the Shipyard public key under Settings → Connections before deploying.' });
+            if (vm.ssh_public_key_variable && !workspace.env_vars[`TF_VAR_${vm.ssh_public_key_variable}`]) return res.status(400).json({ error: 'No SSH public key is configured. Save the Fleet public key under Settings → Connections before deploying.' });
           }
           if ((vm.pre_deploy_playbooks || []).length && !accessibleServerIds.has(String(vm.pre_deploy_target_server_id || ''))) {
             return res.status(403).json({ error: `The pre-deploy target for ${vm.name} is not accessible.` });
@@ -1571,14 +1571,14 @@ override.tf.json
         } catch {}
       }
 
-      // Generate Shipyard-owned files only after Git has been pulled, otherwise
+      // Generate Fleet-owned files only after Git has been pulled, otherwise
       // the pull could overwrite the just-generated desired state.
       try {
         ensureProviderLockIsTracked(workspace.path);
         if (getProxmoxVms(workspace.id).length > 0) writeFleetProxmoxFiles(workspace);
         if (planPath) fs.mkdirSync(path.dirname(planPath), { recursive: true });
       } catch (error) {
-        const message = `Shipyard Proxmox files could not be generated: ${permissionError(error, workspace.path)}`;
+        const message = `Fleet Proxmox files could not be generated: ${permissionError(error, workspace.path)}`;
         db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?").run(message, dbRunId);
         broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
         return;
@@ -1655,12 +1655,12 @@ override.tf.json
           await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }), plan: actualPlan });
           db.db.prepare("UPDATE tofu_runs SET deployment_phase = 'pre_deploy' WHERE id = ?").run(dbRunId);
           const preDeploy = await runPreDeployPlaybooks({ workspace, logMeta, emitMeta });
-          if (preDeploy.started) emitMeta(`[Shipyard] Pre-deploy complete: ${preDeploy.succeeded} succeeded.`);
+          if (preDeploy.started) emitMeta(`[Fleet] Pre-deploy complete: ${preDeploy.succeeded} succeeded.`);
           await verifyVmIdentity({ workspace, vms: getProxmoxVms(workspace.id), state: await loadWorkspaceState({ binary, workspace, env }), plan: actualPlan });
           if (!planBytes.equals(fs.readFileSync(approvedPlan.plan_path)) || terraformConfigurationHash(workspace.path, workspace.env_vars) !== configHash) throw new Error('The plan or configuration changed during pre-deploy. Create and review a new plan.');
         } catch (error) {
           const message = error.message || String(error);
-          emitMeta(`[Shipyard] ${message}`);
+          emitMeta(`[Fleet] ${message}`);
           db.db.prepare("UPDATE tofu_runs SET status='failed', completed_at=datetime('now') WHERE id=?").run(dbRunId);
           broadcastTofu({ type: 'tofu_done', runId, success: false, error: message, dbRunId });
           return;
@@ -1701,14 +1701,14 @@ override.tf.json
                 maxBuffer: 32 * 1024 * 1024,
               }));
               planSummary = summarizePlanJson(planJson);
-              emitMeta(`[Shipyard] Plan: ${planSummary.create} create, ${planSummary.update} update, ${planSummary.delete} delete, ${planSummary.replace} replace.`);
+              emitMeta(`[Fleet] Plan: ${planSummary.create} create, ${planSummary.update} update, ${planSummary.delete} delete, ${planSummary.replace} replace.`);
               if (workspace.workspace_kind === 'isolated_vm') {
                 const isolatedVm = getProxmoxVms(workspace.id)[0];
                 if (!isolatedVm) throw new Error('The internal VM workspace does not contain exactly one VM definition.');
                 planValidation = validateIsolatedVmPlan(planJson, isolatedVm);
                 emitMeta(planValidation.safe
-                  ? `[Shipyard] Isolation check passed for ${planValidation.expected_address}.`
-                  : `[Shipyard] Isolation check blocked Apply: ${planValidation.error}`);
+                  ? `[Fleet] Isolation check passed for ${planValidation.expected_address}.`
+                  : `[Fleet] Isolation check blocked Apply: ${planValidation.error}`);
               }
               if (action === 'drift') {
                 try { fs.unlinkSync(planPath); } catch {}
@@ -1722,8 +1722,8 @@ override.tf.json
             try {
               await registerIdentifiedHost({ workspace, binary, env, dbRunId, logMeta, emitMeta });
               db.db.prepare('UPDATE tofu_runs SET vm_provisioned = 1 WHERE id = ?').run(dbRunId);
-              emitMeta('[Shipyard] Apply failed after creating the VM. Its host is registered; retry will verify the actual configuration before continuing.');
-            } catch (error) { emitMeta(`[Shipyard] Host registration withheld: ${error.message}`); }
+              emitMeta('[Fleet] Apply failed after creating the VM. Its host is registered; retry will verify the actual configuration before continuing.');
+            } catch (error) { emitMeta(`[Fleet] Host registration withheld: ${error.message}`); }
           }
           if (success && action === 'apply') {
             db.db.prepare('UPDATE tofu_runs SET vm_provisioned = 1 WHERE id = ?').run(dbRunId);
@@ -1733,7 +1733,7 @@ override.tf.json
               db.db.prepare('UPDATE tofu_runs SET plan_path = NULL WHERE id = ?').run(approvedPlan.id);
             }
             const backup = backupLocalState(workspace, 'after-apply');
-            if (backup) emitMeta(`[Shipyard] Encrypted state backup saved: ${backup}`);
+            if (backup) emitMeta(`[Fleet] Encrypted state backup saved: ${backup}`);
             await finishHostDeployment({ workspace, binary, env, dbRunId, logMeta, emitMeta });
           }
 
@@ -1749,7 +1749,7 @@ override.tf.json
         finish().catch(err => {
           log.error({ err, workspace: workspace.name }, 'OpenTofu run finalization failed');
           db.db.prepare("UPDATE tofu_runs SET status='failed', output=?, completed_at=datetime('now') WHERE id=?")
-            .run(`${output}\n[Shipyard] Finalization failed: ${err.message}\n`, dbRunId);
+            .run(`${output}\n[Fleet] Finalization failed: ${err.message}\n`, dbRunId);
           broadcastTofu({ type: 'tofu_done', runId, success: false, exitCode: code, error: err.message, dbRunId });
         });
       });
@@ -1764,7 +1764,7 @@ override.tf.json
     pullAndRun().catch(error => {
       log.error({ err: error, workspace: workspace.name }, 'OpenTofu preflight failed');
       db.db.prepare("UPDATE tofu_runs SET status='failed', output=output || ?, completed_at=datetime('now') WHERE id=? AND status='running'")
-        .run(`\n[Shipyard] Preparation failed: ${error.message}\n`, dbRunId);
+        .run(`\n[Fleet] Preparation failed: ${error.message}\n`, dbRunId);
       broadcastTofu({ type: 'tofu_done', runId, success: false, error: error.message, dbRunId });
     });
   });
@@ -1777,7 +1777,7 @@ override.tf.json
     const [internalRunId, entry] = runningPair;
     entry.cancelled = true;
     db.db.prepare("UPDATE tofu_runs SET status='cancelling', output=output || ? WHERE id=?")
-      .run('\n[Shipyard] Cancellation requested.\n', entry.dbRunId);
+      .run('\n[Fleet] Cancellation requested.\n', entry.dbRunId);
     try {
       if (process.platform !== 'win32' && entry.proc.pid) process.kill(-entry.proc.pid, 'SIGTERM');
       else entry.proc.kill('SIGTERM');
@@ -1891,8 +1891,8 @@ module.exports = {
     normalizeServerCandidate,
     waitForManagedServers,
     detectTerraformResources,
-    generateShipyardOutputsBlock,
-    upsertManagedShipyardOutputs,
+    generateFleetOutputsBlock,
+    upsertManagedFleetOutputs,
     normalizeProxmoxVm,
     normalizeProxmoxVmTemplate,
     normalizePostDeployPlaybooks,

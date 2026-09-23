@@ -17,14 +17,14 @@ test('docker inventory ignores unrelated debug messages before the container res
 });
 
 test('docker inventory reads marker-prefixed lines from an ad-hoc Ansible response', () => {
-  const lines = extractMarkedContainerLines('host | CHANGED | rc=0 >>\n__SHIPYARD_CONTAINER__web|nginx:latest|running|Up 2 hours|today|site|/srv/site');
+  const lines = extractMarkedContainerLines('host | CHANGED | rc=0 >>\n__FLEET_CONTAINER__web|nginx:latest|running|Up 2 hours|today|site|/srv/site');
   assert.deepEqual(lines, ['web|nginx:latest|running|Up 2 hours|today|site|/srv/site']);
 });
 
 test('docker inventory parses per-container CPU and memory statistics', () => {
   const stats = extractMarkedStats([
-    '__SHIPYARD_STATS__web|1.25%|128MiB / 1GiB|12.50%',
-    '__SHIPYARD_STATS__db|0.00%|2GiB / 4GiB|50.00%',
+    '__FLEET_STATS__web|1.25%|128MiB / 1GiB|12.50%',
+    '__FLEET_STATS__db|0.00%|2GiB / 4GiB|50.00%',
   ].join('\n'));
   assert.deepEqual(stats.get('web'), {
     cpuPercent: 1.25,

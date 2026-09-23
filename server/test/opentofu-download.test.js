@@ -20,7 +20,7 @@ function fakeRequest(responseFactory) {
 
 test('OpenTofu downloads complete through HTTPS and write the requested file', async () => {
   const originalGet = https.get;
-  const destination = path.join(os.tmpdir(), `shipyard-tofu-download-${Date.now()}`);
+  const destination = path.join(os.tmpdir(), `fleet-tofu-download-${Date.now()}`);
   https.get = (_url, _options, callback) => fakeRequest(() => {
     const response = new PassThrough();
     response.statusCode = 200;
@@ -40,7 +40,7 @@ test('OpenTofu downloads complete through HTTPS and write the requested file', a
 
 test('OpenTofu downloads reject insecure redirects without leaving a partial file', async () => {
   const originalGet = https.get;
-  const destination = path.join(os.tmpdir(), `shipyard-tofu-redirect-${Date.now()}`);
+  const destination = path.join(os.tmpdir(), `fleet-tofu-redirect-${Date.now()}`);
   https.get = (_url, _options, callback) => fakeRequest(() => {
     const response = new PassThrough();
     response.statusCode = 302;

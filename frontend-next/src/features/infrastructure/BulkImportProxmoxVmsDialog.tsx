@@ -47,7 +47,7 @@ function BatchForm(props: Props) {
     }
   };
   return <Dialog open onOpenChange={next=>{if(!next)close();}}><DialogContent className="max-h-[calc(100dvh-2rem)] max-w-2xl overflow-y-auto">
-    <DialogHeader><DialogTitle>Adopt {target.guests.length} guests as hosts</DialogTitle><DialogDescription>Shipyard creates host records for the selected VMs and containers and reads their IPv4 addresses. Proxmox resources remain unchanged. No SSH keys are installed by this batch.</DialogDescription></DialogHeader>
+    <DialogHeader><DialogTitle>Adopt {target.guests.length} guests as hosts</DialogTitle><DialogDescription>Fleet creates host records for the selected VMs and containers and reads their IPv4 addresses. Proxmox resources remain unchanged. No SSH keys are installed by this batch.</DialogDescription></DialogHeader>
     <p className="text-sm">Environment: <strong>{target.environmentId}</strong> · Selection captured when opened</p>
     {contextChanged&&<p role="alert" className="text-sm text-amber-600">The environment or platform changed. Return to the original context before continuing.</p>}
     <div role="status" className="text-sm">{succeeded} adopted · {rows.filter(r=>r.status==='failed').length} rejected · {unknown} uncertain{busy?' · Processing…':''}</div>

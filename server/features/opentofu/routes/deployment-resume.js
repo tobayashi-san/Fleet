@@ -20,7 +20,7 @@ function registerDeploymentResumeRoutes({router, db, getWorkspace, getProxmoxVms
       db.db.prepare("UPDATE tofu_runs SET status = 'running', completed_at = NULL WHERE id = ?").run(run.id);
     } catch { return res.status(409).json({ error: 'Another deployment operation is active.' }); }
     const emitMeta = message => db.db.prepare('UPDATE tofu_runs SET output = output || ? WHERE id = ?').run(`\n${redactTofuOutput(message, workspace.env_vars)}\n`, run.id);
-    emitMeta('[Shipyard] Resuming host connection and post-deploy. The VM plan will not run again.');
+    emitMeta('[Fleet] Resuming host connection and post-deploy. The VM plan will not run again.');
     res.json({ dbRunId: run.id, status: 'started' });
     finishHostDeployment({ workspace, binary, env: { ...process.env, ...workspace.env_vars }, dbRunId: run.id, logMeta: { ip: req.ip, user: req.user?.username }, emitMeta })
       .then(() => {
@@ -28,7 +28,7 @@ function registerDeploymentResumeRoutes({router, db, getWorkspace, getProxmoxVms
         db.auditLog.write('tofu.resume', `workspace=${workspace.name} run=${run.id} status=success`, req.ip, true, req.user?.username || null);
       })
       .catch(error => {
-        emitMeta(`[Shipyard] Completion failed: ${error.message}`);
+        emitMeta(`[Fleet] Completion failed: ${error.message}`);
         db.db.prepare("UPDATE tofu_runs SET status='failed', completed_at=datetime('now') WHERE id=?").run(run.id);
       });
   });

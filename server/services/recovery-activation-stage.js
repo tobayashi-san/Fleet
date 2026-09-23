@@ -48,7 +48,7 @@ async function stageApplicationActivation({archive, prepared, passphrase, target
       if (!stat.isDirectory() && !stat.isFile()) throw Error('Activation target must be a regular file or directory');
       current = {dev: stat.dev, ino: stat.ino, type: stat.isDirectory() ? 'directory' : 'file'};
     } catch (error) { if (error.code !== 'ENOENT') throw error; }
-    operations.push({...item, staging: path.join(parent, `.shipyard-activation-${id}-${index}`), originalIdentity: current, state: 'pending'});
+    operations.push({...item, staging: path.join(parent, `.fleet-activation-${id}-${index}`), originalIdentity: current, state: 'pending'});
   }
   await fs.mkdir(directory, {mode: 0o700});
   const created = [];

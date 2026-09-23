@@ -16,8 +16,8 @@ test('default dev origins include the current Vite frontend port', () => {
 
 test('configured origins are normalized and deduplicated', () => {
   assert.deepEqual(
-    parseAllowedOrigins('https://shipyard.example, https://shipyard.example/, http://localhost:5174'),
-    ['https://shipyard.example', 'http://localhost:5174']
+    parseAllowedOrigins('https://fleet.example, https://fleet.example/, http://localhost:5174'),
+    ['https://fleet.example', 'http://localhost:5174']
   );
 });
 
@@ -29,15 +29,15 @@ test('invalid configured origins are ignored without broadening CORS', () => {
 });
 
 test('request origin validation rejects invalid and lookalike origins', () => {
-  const allowed = parseAllowedOrigins('https://shipyard.example');
-  assert.equal(isAllowedRequestOrigin(allowed, 'https://shipyard.example'), true);
-  assert.equal(isAllowedRequestOrigin(allowed, 'https://shipyard.example.evil.test'), false);
+  const allowed = parseAllowedOrigins('https://fleet.example');
+  assert.equal(isAllowedRequestOrigin(allowed, 'https://fleet.example'), true);
+  assert.equal(isAllowedRequestOrigin(allowed, 'https://fleet.example.evil.test'), false);
   assert.equal(isAllowedRequestOrigin(allowed, 'null'), false);
   assert.equal(isAllowedRequestOrigin(allowed, 'file:///tmp/x'), false);
 });
 
 test('CORS origin validator allows missing and exact allowed origins only', async () => {
-  const validate = createCorsOriginValidator(parseAllowedOrigins('https://shipyard.example'));
+  const validate = createCorsOriginValidator(parseAllowedOrigins('https://fleet.example'));
   const call = (origin) => new Promise((resolve, reject) => {
     validate(origin, (err, value) => {
       if (err) reject(err);
@@ -46,9 +46,9 @@ test('CORS origin validator allows missing and exact allowed origins only', asyn
   });
 
   assert.equal(await call(undefined), true);
-  assert.equal(await call('https://shipyard.example'), 'https://shipyard.example');
-  assert.equal(await call('https://shipyard.example/'), 'https://shipyard.example');
-  assert.equal(await call('https://shipyard.example.evil.test'), false);
+  assert.equal(await call('https://fleet.example'), 'https://fleet.example');
+  assert.equal(await call('https://fleet.example/'), 'https://fleet.example');
+  assert.equal(await call('https://fleet.example.evil.test'), false);
   assert.equal(await call('null'), false);
   assert.equal(await call('*'), false);
 });

@@ -276,7 +276,7 @@ return <>
         title={`Delete ${confirmBulkDelete?.targets.length || 0} hosts?`}
         description={
           <>
-            The selected hosts will be removed from Shipyard. External
+            The selected hosts will be removed from Fleet. External
             virtual machines or platforms are <strong>not</strong> deleted.
             <ul className="mt-3 max-h-48 overflow-auto space-y-1">{confirmBulkDelete?.targets.map(host=><li key={host.id}>{host.name} · <span className="font-mono text-xs">{host.ip_address}</span></li>)}</ul>
           </>

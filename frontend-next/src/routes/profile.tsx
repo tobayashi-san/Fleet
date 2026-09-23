@@ -435,7 +435,7 @@ export function ProfilePage() {
 
       <SessionsCard />
       <Section icon={Paintbrush} title="Personal appearance">
-        <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Shipyard branding remains in Administration.</p>
+        <p className="mb-3 text-sm text-muted-foreground">This preference applies only to your browser. Global Fleet branding remains in Administration.</p>
         <div className="space-y-5">
 <div className="mb-4 flex items-center justify-between gap-4 rounded-md border p-3"><div><p className="text-sm font-medium">Show VM IDs</p><p className="text-xs text-muted-foreground">This browser · applies immediately to host and deployment lists.</p></div><Switch aria-label="Show VM IDs" checked={showVmIds} onCheckedChange={setShowVmIds} /></div>
           {(showAllThemes ? (['light', 'dark'] as const) : (['recommended'] as const)).map((mode) => {

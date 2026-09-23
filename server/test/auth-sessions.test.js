@@ -2,7 +2,7 @@
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-process.env.DB_PATH = path.join(os.tmpdir(), `shipyard_sessions_${process.pid}.db`);
+process.env.DB_PATH = path.join(os.tmpdir(), `fleet_sessions_${process.pid}.db`);
 process.env.JWT_SECRET = 'session-test-secret';
 process.env.NODE_ENV = 'test';
 const { test, after } = require('node:test');

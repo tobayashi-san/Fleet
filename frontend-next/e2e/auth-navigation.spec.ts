@@ -37,7 +37,7 @@ async function loginForIsolatedTest(page: Page) {
 
 async function openPlatformInventory(page: Page, name: string) {
   const endpoint = await page.evaluate(async name => {
-    const response = await fetch('/api/opentofu/proxmox-connections?environment_id=default', {headers:{Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`}});
+    const response = await fetch('/api/opentofu/proxmox-connections?environment_id=default', {headers:{Authorization:`Bearer ${localStorage.getItem('fleet_token')}`}});
     const connections = await response.json();
     return connections.find((item: {name:string}) => item.name === name)?.endpoint;
   }, name);
@@ -59,15 +59,15 @@ test('onboarding is public only until the first admin exists', async ({ page }) 
       return (await response.json()).token as string;
     });
 
-    await page.evaluate(() => localStorage.removeItem('shipyard_token'));
+    await page.evaluate(() => localStorage.removeItem('fleet_token'));
     await page.goto('/onboarding');
     await expect(page).toHaveURL(/\/login$/);
     await expect(page.getByRole('button', { name: /sign in|anmelden/i })).toBeVisible();
 
-    await page.evaluate((validToken) => localStorage.setItem('shipyard_token', validToken), token);
+    await page.evaluate((validToken) => localStorage.setItem('fleet_token', validToken), token);
     await page.goto('/onboarding');
     await expect(page).toHaveURL(/\/$/);
-    await page.evaluate(() => localStorage.removeItem('shipyard_token'));
+    await page.evaluate(() => localStorage.removeItem('fleet_token'));
   });
 });
 
@@ -150,7 +150,7 @@ test('the host start page waits for hosts before showing an empty state', async 
 test('host details keep the fixed navigation and desktop activity opens inline', async ({ page }) => {
   await loginForIsolatedTest(page);
   const host = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const response = await fetch('/api/servers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -199,7 +199,7 @@ test('host details keep the fixed navigation and desktop activity opens inline',
     await expect(page.getByText('Execution environment:', { exact: false })).toBeVisible();
   } finally {
     await page.evaluate(async (id) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       await fetch(`/api/servers/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     }, host.id);
   }
@@ -212,7 +212,7 @@ test('mobile profile menu and activity filters remain inside the viewport', asyn
   await loginForIsolatedTest(page);
 
   const mobileEnvironment = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const response = await fetch('/api/environments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -228,7 +228,7 @@ test('mobile profile menu and activity filters remain inside the viewport', asyn
   await expect(environmentSelect).toHaveValue(mobileEnvironment.id);
   await environmentSelect.selectOption('default');
   await page.evaluate(async (id) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     await fetch(`/api/environments/${encodeURIComponent(id)}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
@@ -323,7 +323,7 @@ test('shadcn looks round panels and controls without changing console themes', a
 test('host management works without agent controls', async ({ page }) => {
   await loginForIsolatedTest(page);
   const serverId = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const response = await fetch('/api/servers', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -346,7 +346,7 @@ test('host management works without agent controls', async ({ page }) => {
   await expect(page.getByRole('switch', { name: /enable agent feature/i })).toHaveCount(0);
   await expect(page.getByText(/agent manifest/i, {exact:true})).toHaveCount(0);
   await page.evaluate(async (id) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     await fetch(`/api/servers/${encodeURIComponent(id)}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
   }, serverId);
 });
@@ -465,7 +465,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
   const groupName = `Playbook Group ${suffix}`;
 
   const groupId = await page.evaluate(async ({ hostName, filename, groupName }) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const host = await fetch('/api/servers', {
       method: 'POST', headers,
@@ -512,7 +512,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await expect(page.getByText(secretValue, { exact: true })).toHaveCount(0);
 
     const returnedSecret = await page.evaluate(async (variableKey) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       const response = await fetch('/api/ansible-vars?environment_id=default', { headers: { Authorization: `Bearer ${token}` } });
       const rows = await response.json();
       return rows.find((row: { key: string }) => row.key === variableKey);
@@ -558,7 +558,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await expect(page.getByText(/playbook started|run started/i).first()).toBeVisible();
   } finally {
     await page.evaluate(async ({ hostName, filename, variableKey, scheduleName, groupId }) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       const auth = { Authorization: `Bearer ${token}` };
       const jsonHeaders = { ...auth, 'Content-Type': 'application/json' };
       const [hostsResponse, variablesResponse, schedulesResponse] = await Promise.all([
@@ -585,7 +585,7 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
   await page.setViewportSize({ width: 390, height: 844 });
   await loginForIsolatedTest(page);
   const host = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const created = await fetch('/api/servers', {
       method: 'POST', headers,
@@ -628,7 +628,7 @@ test('a failed host task exposes its cause, duration, and full log', async ({ pa
     await expect(page.getByText('There are no entries for this view.', { exact: true })).toBeVisible();
   } finally {
     await page.evaluate(async (id) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       await fetch(`/api/servers/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     }, host.id);
   }
@@ -672,13 +672,13 @@ test('IPAM dialogs remain usable inside a mobile viewport', async ({ page }) => 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
 });
 
-test('a Shipyard host can be assigned to a folder through the resource list', async ({ page }) => {
+test('a Fleet host can be assigned to a folder through the resource list', async ({ page }) => {
   // Keep the test usable on its own as well as in the full serial suite.
   await loginForIsolatedTest(page);
   await page.goto('/servers');
 
   const folder = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const response = await fetch('/api/servers/groups', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -717,7 +717,7 @@ test('a Shipyard host can be assigned to a folder through the resource list', as
   // Create the second host through the API only as deterministic fixture; the
   // selection and the multi-move below are exercised through the real UI.
   await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const response = await fetch('/api/servers', {
       method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
       body: JSON.stringify({ name: 'e2e-bulk-host', hostname: 'e2e-bulk-host', ip_address: '10.99.0.12', ssh_port: 22, ssh_user: 'root', tags: [], services: [] }),
@@ -748,7 +748,7 @@ test('a Shipyard host can be assigned to a folder through the resource list', as
   await expect(page.getByText('2 hosts removed from folders.', { exact: true })).toBeVisible();
 
   await page.evaluate(async ({ groupId }) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     await fetch(`/api/servers/groups/${groupId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
   }, { groupId: folder.id });
 });
@@ -756,7 +756,7 @@ test('a Shipyard host can be assigned to a folder through the resource list', as
 test('infrastructure opens host groups and moves a host without drag and drop', async ({ page }) => {
   await loginForIsolatedTest(page);
   const fixture = await page.evaluate(async () => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const folderResponse = await fetch('/api/servers/groups', { method: 'POST', headers, body: JSON.stringify({ name: 'E2E-Tree-Ordner', color: '#2563eb' }) });
     if (!folderResponse.ok) throw new Error(`Folder fixture failed (${folderResponse.status})`);
@@ -781,7 +781,7 @@ test('infrastructure opens host groups and moves a host without drag and drop', 
   await expect(page.getByRole('row', { name: /e2e-tree-host/ }).getByText('E2E-Tree-Ordner', { exact: true })).toBeVisible();
   await expect(page.getByRole('row', { name: /e2e-tree-host/ })).toBeVisible();
   await page.evaluate(async ({ folderId, hostId }) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     await fetch(`/api/servers/${hostId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     await fetch(`/api/servers/groups/${folderId}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
   }, { folderId: fixture.folder.id, hostId: fixture.host.id });
@@ -943,7 +943,7 @@ test('Proxmox import creates a host with a dedicated snapshot tab', async ({ pag
   try {
     await loginForIsolatedTest(page);
     connectionId = await page.evaluate(async (port) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
       const response = await fetch('/api/opentofu/proxmox-connections', {
         method: 'POST',
@@ -988,7 +988,7 @@ test('Proxmox import creates a host with a dedicated snapshot tab', async ({ pag
   } finally {
     if (connectionId) {
       await page.evaluate(async (id) => {
-        const token = localStorage.getItem('shipyard_token');
+        const token = localStorage.getItem('fleet_token');
         await fetch(`/api/opentofu/proxmox-connections/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
       }, connectionId).catch(() => {});
     }
@@ -1017,7 +1017,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
   try {
     await loginForIsolatedTest(page);
     connectionId = await page.evaluate(async (port) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
       const response = await fetch('/api/opentofu/proxmox-connections', { method: 'POST', headers, body: JSON.stringify({ environment_id: 'default', name: 'E2E Object Platform', endpoint: `https://127.0.0.1:${port}`, api_token: 'root@pam!fleet=e2e-object-token', insecure: true }) });
       if (!response.ok) throw new Error(`Platform setup failed (${response.status})`);
@@ -1036,7 +1036,7 @@ test('a Proxmox VM keeps configuration and tasks in distinct object tabs', async
     await expect(page.getByText('No direct Proxmox actions have been recorded for this VM yet.')).toBeVisible();
   } finally {
     if (connectionId) await page.evaluate(async (id) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       await fetch(`/api/opentofu/proxmox-connections/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${token}` } });
     }, connectionId).catch(() => {});
     await new Promise<void>(resolve => proxmox.close(() => resolve()));
@@ -1051,7 +1051,7 @@ test('an isolated VM uses a platform source and never exposes VM destruction', a
   const vmName = `e2e-isolated-${suffix}`;
 
   const connection = await page.evaluate(async (uniqueSuffix) => {
-    const token = localStorage.getItem('shipyard_token');
+    const token = localStorage.getItem('fleet_token');
     const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` };
     const response = await fetch('/api/opentofu/proxmox-connections', {
       method: 'POST', headers,
@@ -1064,7 +1064,7 @@ test('an isolated VM uses a platform source and never exposes VM destruction', a
   let vmId = '';
   try {
     vmId = await page.evaluate(async ({ connectionId, name }) => {
-      const token = localStorage.getItem('shipyard_token');
+      const token = localStorage.getItem('fleet_token');
       const response = await fetch('/api/opentofu/vms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -1088,7 +1088,7 @@ test('an isolated VM uses a platform source and never exposes VM destruction', a
     await expect(page.getByRole('button', { name: 'Delete definition', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Destroy VM' })).toHaveCount(0);
     const rejected = await page.evaluate(async id => {
-      const response = await fetch(`/api/opentofu/vms/${id}/destroy`, {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('shipyard_token')}`},body:JSON.stringify({confirmation:'DESTROY anything'})});
+      const response = await fetch(`/api/opentofu/vms/${id}/destroy`, {method:'POST',headers:{'Content-Type':'application/json',Authorization:`Bearer ${localStorage.getItem('fleet_token')}`},body:JSON.stringify({confirmation:'DESTROY anything'})});
       return {status:response.status,body:await response.json()};
     }, vmId);
     expect(rejected.status).toBe(403);

@@ -12,9 +12,9 @@ const login=name=>request(app).post('/auth/login').send({username:name,password}
 const get=(url,token)=>request(app).get(url).set('Authorization',`Bearer ${token}`);
 const post=(url,token,body={})=>request(app).post(url).set('Authorization',`Bearer ${token}`).send(body);
 const socketAllowed=token=>verifyWsAuth({close(){}},new URL(`http://localhost/?token=${token}`));
-after(()=>{delete process.env.SHIPYARD_MFA_POLICY;db.db.close();fs.rmSync(root,{recursive:true,force:true});});
+after(()=>{delete process.env.FLEET_MFA_POLICY;db.db.close();fs.rmSync(root,{recursive:true,force:true});});
 test('admin policy restricts enrollment, rejects WebSockets and grants full access only after a real TOTP',async()=>{
- process.env.SHIPYARD_MFA_POLICY='admins';
+ process.env.FLEET_MFA_POLICY='admins';
  const response=await login('policy-admin');assert.equal(response.status,200);assert.equal(response.body.requiresMfaEnrollment,true);
  const token=response.body.token;const payload=jwt.verify(token,process.env.JWT_SECRET);assert.equal(payload.mfa_enrollment,true);assert.equal(payload.exp-payload.iat,600);
  assert.equal((await get('/protected',token)).body.field,'mfa_enrollment_required');assert.equal(socketAllowed(token),false);
@@ -30,16 +30,16 @@ test('admin policy restricts enrollment, rejects WebSockets and grants full acce
  const ordinary=await login('policy-viewer');assert.equal(ordinary.body.requiresMfaEnrollment,undefined);assert.equal((await get('/protected',ordinary.body.token)).status,200);
 });
 test('policy changes restrict old password sessions and malformed configuration does not disable enforcement',async()=>{
- process.env.SHIPYARD_MFA_POLICY='optional';const old=(await login('policy-viewer')).body.token;
- process.env.SHIPYARD_MFA_POLICY='all';assert.equal((await get('/protected',old)).status,403);assert.equal(socketAllowed(old),false);
+ process.env.FLEET_MFA_POLICY='optional';const old=(await login('policy-viewer')).body.token;
+ process.env.FLEET_MFA_POLICY='all';assert.equal((await get('/protected',old)).status,403);assert.equal(socketAllowed(old),false);
  assert.equal((await post('/auth/totp/setup',old)).status,200);
  const enrollment=(await login('policy-viewer')).body.token;
- process.env.SHIPYARD_MFA_POLICY='optional';assert.equal((await get('/protected',enrollment)).status,403);assert.equal(socketAllowed(enrollment),false);
- process.env.SHIPYARD_MFA_POLICY='typo';assert.equal((await login('policy-viewer')).body.requiresMfaEnrollment,true);
+ process.env.FLEET_MFA_POLICY='optional';assert.equal((await get('/protected',enrollment)).status,403);assert.equal(socketAllowed(enrollment),false);
+ process.env.FLEET_MFA_POLICY='typo';assert.equal((await login('policy-viewer')).body.requiresMfaEnrollment,true);
  assert.equal((await post('/auth/logout',enrollment)).status,200);
 });
 test('mandatory MFA rejects legacy sessions without proof of second-factor verification',async()=>{
- process.env.SHIPYARD_MFA_POLICY='admins';const current=db.users.getById(admin.id);
+ process.env.FLEET_MFA_POLICY='admins';const current=db.users.getById(admin.id);
  const legacy=jwt.sign({userId:admin.id,tv:current.token_version,sid:createSession(current,{})},process.env.JWT_SECRET);
  assert.equal((await get('/protected',legacy)).status,401);assert.equal(socketAllowed(legacy),false);
  const passwordStep=await login('policy-admin');assert.equal(passwordStep.body.requires2FA,true);
@@ -53,14 +53,14 @@ test('policy overview is administrator-only and separates disabled, optional and
  db.db.prepare('UPDATE users SET disabled=1 WHERE id=?').run(disabled.id);
  const current=db.users.getById(admin.id);
  const token=jwt.sign({userId:admin.id,tv:current.token_version,sid:createSession(current,{}),mfa:true},process.env.JWT_SECRET);
- process.env.SHIPYARD_MFA_POLICY='admins';
+ process.env.FLEET_MFA_POLICY='admins';
  let response=await get('/users/mfa-policy',token);assert.equal(response.status,200);assert.equal(response.headers['cache-control'],'no-store');
  assert.equal(response.body.requiredAccounts,1);assert.equal(response.body.enrolledRequiredAccounts,1);assert.equal(response.body.optionalAccounts,1);assert.equal(response.body.disabledAccounts,1);assert.deepEqual(response.body.needsEnrollment,[]);
- process.env.SHIPYARD_MFA_POLICY='all';response=await get('/users/mfa-policy',token);
+ process.env.FLEET_MFA_POLICY='all';response=await get('/users/mfa-policy',token);
  assert.equal(response.body.requiredAccounts,2);assert.deepEqual(response.body.needsEnrollment.map(user=>user.username),['policy-viewer']);
  assert.deepEqual(Object.keys(response.body.needsEnrollment[0]).sort(),['displayName','id','role','username']);
- process.env.SHIPYARD_MFA_POLICY='unknown';response=await get('/users/mfa-policy',token);assert.equal(response.body.configurationValid,false);assert.equal(response.body.mode,'all');
- process.env.SHIPYARD_MFA_POLICY='optional';
+ process.env.FLEET_MFA_POLICY='unknown';response=await get('/users/mfa-policy',token);assert.equal(response.body.configurationValid,false);assert.equal(response.body.mode,'all');
+ process.env.FLEET_MFA_POLICY='optional';
  const viewerToken=(await login('policy-viewer')).body.token;
  assert.equal((await get('/users/mfa-policy',viewerToken)).status,403);
 });

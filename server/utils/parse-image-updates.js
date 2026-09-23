@@ -61,7 +61,7 @@ function parseImageUpdateReport(stdout) {
   const text = String(stdout || '');
   const results = [];
   const seen = new Set();
-  const marker = /__SHIPYARD_IMAGE_UPDATE__([^|\\"'\s]+)\|([^|\\"'\s]+)\|(up_to_date|update_available|not_checkable|unknown|updated)/g;
+  const marker = /__FLEET_IMAGE_UPDATE__([^|\\"'\s]+)\|([^|\\"'\s]+)\|(up_to_date|update_available|not_checkable|unknown|updated)/g;
   let match;
 
   while ((match = marker.exec(text))) {
@@ -77,8 +77,8 @@ function parseImageUpdateReport(stdout) {
     }
   }
 
-  if (results.length > 0 || text.includes('__SHIPYARD_IMAGE_UPDATE_DONE__')) {
-    return { results, complete: text.includes('__SHIPYARD_IMAGE_UPDATE_DONE__') };
+  if (results.length > 0 || text.includes('__FLEET_IMAGE_UPDATE_DONE__')) {
+    return { results, complete: text.includes('__FLEET_IMAGE_UPDATE_DONE__') };
   }
 
   // Keep supporting the previous playbook during a rolling application

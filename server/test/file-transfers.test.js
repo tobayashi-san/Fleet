@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { PassThrough, Readable, Writable } = require('stream');
 const jwt = require('jsonwebtoken');
-process.env.DB_PATH = path.join(os.tmpdir(), `shipyard_file_transfers_${Date.now()}.db`);
+process.env.DB_PATH = path.join(os.tmpdir(), `fleet_file_transfers_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-for-file-transfer-tests';
 process.env.NODE_ENV = 'test';
 
@@ -288,7 +288,7 @@ test('SSH uploads use an isolated connection and atomically publish the staged f
     await sshManager.uploadStream(source, '/tmp/release.bin', Readable.from([Buffer.from('release data')]));
     assert.equal(received.toString(), 'release data');
     assert.equal(calls[0][0], 'createWriteStream');
-    assert.match(calls[0][1], /^\/tmp\/\.release\.bin\.shipyard-upload-[a-f0-9]{16}$/);
+    assert.match(calls[0][1], /^\/tmp\/\.release\.bin\.fleet-upload-[a-f0-9]{16}$/);
     assert.deepEqual(calls[0][2], { flags: 'wx', mode: 0o600 });
     assert.deepEqual(calls[1], ['rename', calls[0][1], '/tmp/release.bin']);
     assert.equal(disposed, true);

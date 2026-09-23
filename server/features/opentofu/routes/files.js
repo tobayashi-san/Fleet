@@ -4,10 +4,10 @@ const fs = require('fs');
 const path = require('path');
 const {
   detectTerraformResources,
-  generateShipyardOutputsBlock,
+  generateFleetOutputsBlock,
   readTerraformFiles,
   supportedTerraformResources,
-  upsertManagedShipyardOutputs,
+  upsertManagedFleetOutputs,
 } = require('../terraform-outputs');
 const { syncOneToGit } = require('../workspace-files');
 
@@ -103,7 +103,7 @@ function registerFileRoutes({ router, ensureWorkspacePath, getWorkspace, isEdita
     }
   });
   
-  router.post('/workspaces/:id/generate-shipyard-output', (req, res) => {
+  router.post('/workspaces/:id/generate-fleet-output', (req, res) => {
     const workspace = getWorkspace(req.params.id);
     if (!workspace) return res.status(404).json({ error: 'Workspace not found' });
   
@@ -116,9 +116,9 @@ function registerFileRoutes({ router, ensureWorkspacePath, getWorkspace, isEdita
       const resources = detectTerraformResources(files);
       const supported = supportedTerraformResources(resources);
       const outputPath = path.join(workspace.path, 'outputs.tf');
-      const generatedBlock = generateShipyardOutputsBlock(resources);
+      const generatedBlock = generateFleetOutputsBlock(resources);
       const existingContent = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, 'utf8') : '';
-      const nextContent = upsertManagedShipyardOutputs(existingContent, generatedBlock);
+      const nextContent = upsertManagedFleetOutputs(existingContent, generatedBlock);
       fs.writeFileSync(outputPath, nextContent, 'utf8');
   
       res.json({
@@ -131,7 +131,7 @@ function registerFileRoutes({ router, ensureWorkspacePath, getWorkspace, isEdita
       const gs = getGitSync();
       if (gs && gs.isConfigured()) {
         syncOneToGit(workspace.name, workspace.path);
-        gs.autoPush(`Generate tofu/${workspace.name}/outputs.tf shipyard output`).catch(() => {});
+        gs.autoPush(`Generate tofu/${workspace.name}/outputs.tf fleet output`).catch(() => {});
       }
     } catch (e) {
       res.status(400).json({ error: permissionError(e, workspace.path), code: e.code });

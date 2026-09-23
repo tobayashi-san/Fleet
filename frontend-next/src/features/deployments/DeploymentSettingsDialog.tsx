@@ -40,7 +40,7 @@ export function DeploymentSettingsDialog({ workspace, open, onOpenChange }: { wo
     <DialogContent className="max-w-lg">
       <DialogHeader>
         <DialogTitle className="flex items-center gap-2"><Pencil className="h-5 w-5" />Edit deployment</DialogTitle>
-        <DialogDescription>Change how this deployment is identified in Shipyard. Infrastructure configuration and credentials are not changed.</DialogDescription>
+        <DialogDescription>Change how this deployment is identified in Fleet. Infrastructure configuration and credentials are not changed.</DialogDescription>
       </DialogHeader>
       <form className="space-y-4" onSubmit={event => { event.preventDefault(); saveMutation.mutate(); }}>
         <div className="space-y-1.5"><Label htmlFor="deployment-name">Name</Label><Input id="deployment-name" required maxLength={120} value={name} onChange={event => setName(event.target.value)} /></div>

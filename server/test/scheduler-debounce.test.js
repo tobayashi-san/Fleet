@@ -5,7 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 
 // Isolate DB per test file
-const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-sched-debounce-'));
+const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-sched-debounce-'));
 process.env.DB_PATH = path.join(tmpDir, 'test.db');
 
 const scheduler = require('../services/scheduler');

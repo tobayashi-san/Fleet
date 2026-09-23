@@ -34,7 +34,7 @@ coverage/
 .local/
 .agents/
 .codex/
-Shipyard.wiki/
+Fleet.wiki/
 
 # Agent instruction files (local)
 AGENTS.md

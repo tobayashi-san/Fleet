@@ -8,7 +8,7 @@ const path = require('node:path');
 const {once} = require('node:events');
 
 test('real SMTP transport delivers a notification and records receiver rejection', {timeout:15000}, async () => {
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-smtp-'));
+  const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-smtp-'));
   process.env.NODE_ENV='test'; process.env.DB_PATH=path.join(root,'test.db');
   const db=require('../../db');
   let received='', rejectRecipient=false;
@@ -35,7 +35,7 @@ test('real SMTP transport delivers a notification and records receiver rejection
   });
   try {
     server.listen(0,'127.0.0.1');await once(server,'listening');
-    for(const [key,value] of Object.entries({smtp_host:'127.0.0.1',smtp_port:String(server.address().port),smtp_from:'shipyard@example.invalid',smtp_to:'receiver@example.invalid'})) db.settings.set(key,value);
+    for(const [key,value] of Object.entries({smtp_host:'127.0.0.1',smtp_port:String(server.address().port),smtp_from:'fleet@example.invalid',smtp_to:'receiver@example.invalid'})) db.settings.set(key,value);
     const {sendEmail}=require('../../services/notifier');
     assert.deepEqual(await sendEmail('Review notification','Local SMTP delivery verified',true),{ok:true,partial:false});
     assert.match(received,/Local SMTP delivery verified/);

@@ -5,7 +5,7 @@ import en from '../locales/en.json';
 // Earlier releases stored a per-browser language preference. English is now
 // the product language, so a legacy German preference must not leak into API
 // messages or reappear in a later session.
-try { localStorage.removeItem('shipyard_lang'); } catch { /* storage unavailable */ }
+try { localStorage.removeItem('fleet_lang'); } catch { /* storage unavailable */ }
 
 void i18n
   .use(initReactI18next)

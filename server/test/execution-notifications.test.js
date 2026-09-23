@@ -1,7 +1,7 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('fs'),os=require('os'),path=require('path');
-const dir=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-execution-notifications-'));process.env.DB_PATH=path.join(dir,'test.db');process.env.NODE_ENV='test';
+const dir=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-execution-notifications-'));process.env.DB_PATH=path.join(dir,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');
 const notifications=[];require('../services/notifier').notify=async(...args)=>{notifications.push(args);};
 let outcome={success:false,stdout:'PRIVATE OUTPUT',stderr:''};
@@ -19,9 +19,9 @@ const scheduler=require('../services/scheduler');
 const id=db.schedules.create('Nightly update','update.yml',host.name,'0 3 * * *',{environmentId:env});scheduler.register(db.schedules.getById(id));
 after(()=>{scheduler.shutdown();cron.createTask=originalCreateTask;db.db.close();fs.rmSync(dir,{recursive:true,force:true});});
 const actions=[
- ['manual playbook',()=>request(app).post('/ansible/run').set('X-Shipyard-Environment',env).send({playbook:'update.yml',targets:host.name})],
- ['host update',()=>request(app).post(`/servers/${host.id}/update`).set('X-Shipyard-Environment',env).send({})],
- ['bulk update',()=>request(app).post('/servers/update-all').set('X-Shipyard-Environment',env).send({server_ids:[host.id]})],
+ ['manual playbook',()=>request(app).post('/ansible/run').set('X-Fleet-Environment',env).send({playbook:'update.yml',targets:host.name})],
+ ['host update',()=>request(app).post(`/servers/${host.id}/update`).set('X-Fleet-Environment',env).send({})],
+ ['bulk update',()=>request(app).post('/servers/update-all').set('X-Fleet-Environment',env).send({server_ids:[host.id]})],
  ['scheduled playbook',()=>scheduled()],
 ];
 for(const [name,run] of actions) test(`${name} reports failed results/exceptions in its exact environment but not success, cancellation or disabled events`,async()=>{

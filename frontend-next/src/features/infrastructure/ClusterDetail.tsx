@@ -701,7 +701,7 @@ export function PlatformUpdatesCard({
           </CardTitle>
           <p className="mt-0.5 text-xs text-muted-foreground">
             Packages reported by each Proxmox node. Installation uses the
-            audited Shipyard update workflow.
+            audited Fleet update workflow.
           </p>
         </div>
         <StatusBadge tone={total ? "warning" : unavailable ? "muted" : "success"} dot>
@@ -752,13 +752,13 @@ export function PlatformUpdatesCard({
                   <td className="font-mono tabular-nums">{node.update_status === "unavailable" ? "—" : node.update_count || 0}</td>
                   <td className="text-muted-foreground">
                     {node.fleet_server_id
-                      ? canRunUpdates ? "Ready through Shipyard" : "Permission required"
+                      ? canRunUpdates ? "Ready through Fleet" : "Permission required"
                       : canAddFleetHost ? (
                         <Button type="button" size="sm" variant="outline" onClick={() => setFleetNode(node)}>
                           <Server />
-                          Add to Shipyard
+                          Add to Fleet
                         </Button>
-                      ) : "Shipyard edit permission required"}
+                      ) : "Fleet edit permission required"}
                   </td>
                   <td className="text-right">
                     <Button asChild size="sm" variant="outline">
@@ -861,11 +861,11 @@ export function NodeUpdatesCard({
         </CardHeader>
         {!node.fleet_server_id && packages.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-3 border-b bg-warning/5 px-4 py-3 text-sm text-warning">
-            <span>Add this Proxmox node to Shipyard to install updates securely through SSH.</span>
+            <span>Add this Proxmox node to Fleet to install updates securely through SSH.</span>
             {canAddFleetHost && (
               <Button type="button" size="sm" variant="outline" onClick={() => setAddToFleet(true)}>
                 <Server />
-                Add to Shipyard
+                Add to Fleet
               </Button>
             )}
           </div>
@@ -910,7 +910,7 @@ export function NodeUpdatesCard({
         open={confirmUpdate}
         onOpenChange={setConfirmUpdate}
         title={`Install updates on ${node.name}?`}
-        description={`Shipyard will run a full system upgrade for ${packages.length} available package${packages.length === 1 ? "" : "s"}. Services may restart and a reboot may be required.`}
+        description={`Fleet will run a full system upgrade for ${packages.length} available package${packages.length === 1 ? "" : "s"}. Services may restart and a reboot may be required.`}
         confirmLabel="Start update"
         cancelLabel="Cancel"
         variant="warning"

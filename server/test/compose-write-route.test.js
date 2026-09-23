@@ -1,9 +1,9 @@
 const {test,after}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-compose-route-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-compose-route-'));
 process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
-process.env.SHIPYARD_KEY_SECRET='compose-test-only';
+process.env.FLEET_KEY_SECRET='compose-test-only';
 const db=require('../db');
 const runner=require('../services/ansible-runner');
 const original=runner.runAdHoc;

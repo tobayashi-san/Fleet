@@ -35,7 +35,7 @@ let ipamSourcesPolling = false;
 
 const STALE_THRESHOLD_MS = 4 * 60 * 1000;
 const DEFAULT_TIMEZONE =
-  process.env.SHIPYARD_TIMEZONE || process.env.TZ || "Europe/Zurich";
+  process.env.FLEET_TIMEZONE || process.env.TZ || "Europe/Zurich";
 
 function getSchedulerTimezone() {
   return db.settings.get("scheduler_timezone") || DEFAULT_TIMEZONE;
@@ -539,7 +539,7 @@ async function performCustomTaskCheck(server, task) {
     try {
       const headers = {
         Accept: "application/vnd.github+json",
-        "User-Agent": "Shipyard/1.0",
+        "User-Agent": "Fleet/1.0",
       };
       if (process.env.GITHUB_TOKEN)
         headers["Authorization"] = `Bearer ${process.env.GITHUB_TOKEN}`;

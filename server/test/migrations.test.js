@@ -76,11 +76,27 @@ test('database migrations rename the untouched legacy product name', () => {
   const db = new Database(':memory:');
   try {
     applySchema(db);
-    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('wl_app_name', 'Fleet')").run();
+    db.prepare("INSERT OR REPLACE INTO app_settings (key, value) VALUES ('wl_app_name', 'Shipyard')").run();
 
     applyMigrations(db);
 
-    assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'wl_app_name'").get().value, 'Shipyard');
+    assert.equal(db.prepare("SELECT value FROM app_settings WHERE key = 'wl_app_name'").get().value, 'Fleet');
+  } finally {
+    db.close();
+  }
+});
+
+test('database migrations keep agent URLs stored under the previous product name', () => {
+  const db = new Database(':memory:');
+  try {
+    applySchema(db);
+    db.exec('ALTER TABLE agent_config ADD COLUMN shipyard_url TEXT');
+    db.prepare("INSERT INTO servers (id, name, hostname, ip_address) VALUES ('agent-host', 'agent-host', 'agent-host', '10.0.0.9')").run();
+    db.prepare("INSERT INTO agent_config (server_id, token, shipyard_url) VALUES ('agent-host', 'token', 'https://manager.example')").run();
+
+    applyMigrations(db);
+
+    assert.equal(db.prepare("SELECT fleet_url FROM agent_config WHERE server_id = 'agent-host'").get().fleet_url, 'https://manager.example');
   } finally {
     db.close();
   }

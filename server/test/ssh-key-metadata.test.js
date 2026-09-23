@@ -6,7 +6,7 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 const { sshKeyMetadata } = require('../utils/ssh-key-metadata');
 test('public key metadata matches OpenSSH SHA256 fingerprints for imported key algorithms', () => {
-  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-key-metadata-'));
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-key-metadata-'));
   try {
     for (const type of ['ed25519', 'rsa']) {
       const file = path.join(directory, type);

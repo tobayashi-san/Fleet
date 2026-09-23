@@ -7,13 +7,13 @@ import { setTimeout as delay } from 'node:timers/promises';
 const engine = process.env.CONTAINER_ENGINE || 'docker';
 const image = process.argv[2];
 if (!image) throw new Error('Usage: CONTAINER_ENGINE=docker node tools/test-container.mjs <image>');
-const prefix = `shipyard-config-${process.pid}-${Date.now()}`;
+const prefix = `fleet-config-${process.pid}-${Date.now()}`;
 const containers = [];
 // Recovery checks share anonymous volumes between disposable containers. Podman
 // otherwise assigns different SELinux MCS labels to the seeded fixture files.
 // This applies only to this test harness, never to the production Compose stack.
 const fixtureSecurity = /(?:^|\/)podman$/.test(engine) ? ['--security-opt', 'label=disable'] : [];
-const credentials = ['-e', 'JWT_SECRET=container-test-jwt-secret', '-e', 'SHIPYARD_KEY_SECRET=container-test-encryption-secret'];
+const credentials = ['-e', 'JWT_SECRET=container-test-jwt-secret', '-e', 'FLEET_KEY_SECRET=container-test-encryption-secret'];
 function run(args, { timeout = 30000, allowFailure = false } = {}) {
   const result = spawnSync(engine, args, { encoding: 'utf8', timeout });
   if (!allowFailure && (result.error || result.status !== 0)) {
@@ -48,13 +48,13 @@ function rejected(label, options, expected, command = []) {
   assert.match(logs.stdout + logs.stderr, expected);
   console.log(`PASS: ${label}`);
 }
-const fingerprint = name => exec(name, 'openssl', 'x509', '-in', '/app/server/data/certs/shipyard.crt', '-noout', '-fingerprint', '-sha256');
+const fingerprint = name => exec(name, 'openssl', 'x509', '-in', '/app/server/data/certs/fleet.crt', '-noout', '-fingerprint', '-sha256');
 
 try {
-  rejected('lost-key', ['-e', 'SHIPYARD_KEY_SECRET=', '--entrypoint', '/bin/sh'], /SHIPYARD_KEY_SECRET is missing/, ['-ec', 'mkdir -p /app/server/data && touch /app/server/data/shipyard.db && exec /app/docker-entrypoint.sh']);
+  rejected('lost-key', ['-e', 'FLEET_KEY_SECRET=', '--entrypoint', '/bin/sh'], /FLEET_KEY_SECRET is missing/, ['-ec', 'mkdir -p /app/server/data && touch /app/server/data/fleet.db && exec /app/docker-entrypoint.sh']);
   rejected('equal-secrets', ['-e', 'JWT_SECRET=container-test-encryption-secret'], /must be different/);
   rejected('partial-tls', ['-e', 'SSL_KEY=/missing.key'], /Set SSL_KEY and SSL_CERT together/);
-  rejected('custom-renewal', ['-e', 'SSL_KEY=/custom.key', '-e', 'SSL_CERT=/custom.crt', '-e', 'SHIPYARD_RENEW_CERT=1'], /only renews generated certificates/);
+  rejected('custom-renewal', ['-e', 'SSL_KEY=/custom.key', '-e', 'SSL_CERT=/custom.crt', '-e', 'FLEET_RENEW_CERT=1'], /only renews generated certificates/);
   rejected('protected-root', ['-e', 'OPENTOFU_WORKSPACE_ROOTS=/'], /protected workspace root/);
 
   const primary = start('primary', ['--entrypoint', '/bin/sh'], ['-ec', `
@@ -85,7 +85,7 @@ try {
   assert.equal(exec(primary, 'sh', '-c', 'cat /app/server/data/legacy-migrations/startup.*/system/custom.yml'), 'playbook-original');
   assert.equal(exec(primary, 'stat', '-c', '%u', '/tmp/ownership-target/marker'), '0');
   assert.equal(exec(primary, 'stat', '-c', '%u', '/workspaces/existing'), '1001');
-  assert.equal(exec(primary, 'stat', '-c', '%a', '/app/server/data/certs/shipyard.key'), '600');
+  assert.equal(exec(primary, 'stat', '-c', '%a', '/app/server/data/certs/fleet.key'), '600');
   assert.equal(exec(primary, 'sh', '-c', 'test ! -e /app/plugins/opentofu && test ! -e /app/server/playbooks/system && test ! -e /app/server/git-workspace && test -f /app/server/playbooks/update.yml && echo clean'), 'clean');
   const original = fingerprint(primary);
   run(['restart', primary]);
@@ -95,27 +95,27 @@ try {
   console.log('PASS: Node 24, SQLite/API startup, non-root process, archival, scoped ownership, restart stability');
 
   run(['stop', primary]);
-  rejected('failed-renewal', ['--volumes-from', primary, '-e', 'SHIPYARD_RENEW_CERT=1', '-e', 'CERT_SANS=INVALID:bad'], /Error|error/);
+  rejected('failed-renewal', ['--volumes-from', primary, '-e', 'FLEET_RENEW_CERT=1', '-e', 'CERT_SANS=INVALID:bad'], /Error|error/);
   run(['start', primary]);
   await healthy(primary);
   assert.equal(fingerprint(primary), original, 'Failed renewal must preserve the existing certificate');
   run(['stop', primary]);
 
-  const renewed = start('renewed', ['--volumes-from', primary, '-e', 'SHIPYARD_RENEW_CERT=1', '-e', 'CERT_SANS=DNS:renewed.example.internal']);
+  const renewed = start('renewed', ['--volumes-from', primary, '-e', 'FLEET_RENEW_CERT=1', '-e', 'CERT_SANS=DNS:renewed.example.internal']);
   await healthy(renewed);
   assert.notEqual(fingerprint(renewed), original);
-  assert.match(exec(renewed, 'openssl', 'x509', '-in', '/app/server/data/certs/shipyard.crt', '-noout', '-ext', 'subjectAltName'), /renewed.example.internal/);
-  assert.equal(exec(renewed, 'sh', '-c', 'openssl x509 -in /app/server/data/certs/previous.*/shipyard.crt -noout -fingerprint -sha256'), original);
+  assert.match(exec(renewed, 'openssl', 'x509', '-in', '/app/server/data/certs/fleet.crt', '-noout', '-ext', 'subjectAltName'), /renewed.example.internal/);
+  assert.equal(exec(renewed, 'sh', '-c', 'openssl x509 -in /app/server/data/certs/previous.*/fleet.crt -noout -fingerprint -sha256'), original);
   console.log('PASS: failed renewal preserves TLS; explicit renewal updates SANs and archives old TLS');
 
-  const generated = start('generated', ['-e', 'JWT_SECRET=', '-e', 'SHIPYARD_KEY_SECRET=']);
+  const generated = start('generated', ['-e', 'JWT_SECRET=', '-e', 'FLEET_KEY_SECRET=']);
   await healthy(generated);
-  assert.equal(exec(generated, 'stat', '-c', '%a %u', '/app/secrets', '/app/secrets/shipyard.env'), '700 0\n600 0');
-  const secrets = exec(generated, 'cat', '/app/secrets/shipyard.env');
-  assert.match(secrets, /^JWT_SECRET=[0-9a-f]{64}\nSHIPYARD_KEY_SECRET=[0-9a-f]{64}$/);
+  assert.equal(exec(generated, 'stat', '-c', '%a %u', '/app/secrets', '/app/secrets/fleet.env'), '700 0\n600 0');
+  const secrets = exec(generated, 'cat', '/app/secrets/fleet.env');
+  assert.match(secrets, /^JWT_SECRET=[0-9a-f]{64}\nFLEET_KEY_SECRET=[0-9a-f]{64}$/);
   run(['restart', generated]);
   await healthy(generated);
-  assert.equal(exec(generated, 'cat', '/app/secrets/shipyard.env'), secrets, 'Restart must reuse generated secrets');
+  assert.equal(exec(generated, 'cat', '/app/secrets/fleet.env'), secrets, 'Restart must reuse generated secrets');
   console.log('PASS: first start generates private secrets and restarts reuse them; a lost key blocks startup');
 } finally {
   for (const name of containers.reverse()) run(['rm', '-f', '-v', name], { allowFailure: true });

@@ -4,7 +4,7 @@ const {createEncryptedSnapshot,withDecryptedArchive,withVerifiedDatabaseBackup,c
 const {recoveryRoots,stageRecoveryFiles}=require('./recovery-files');
 const {packRecoveryBundle,unpackRecoveryBundle,safePath}=require('./recovery-bundle');
 const {verifyRecoveryRootConsistency}=require('./recovery-root-consistency');
-const MAGIC=Buffer.from('SHIPYARD-APPLICATION-1\n');
+const MAGIC=Buffer.from('FLEET-APPLICATION-1\n');
 function version(database){return `${database.pragma('data_version',{simple:true})}:${database.prepare('SELECT total_changes() AS n').get().n}`;}
 async function createApplicationBackup({database,destination,passphrase,roots=recoveryRoots(database),offline=false}){
  if(!offline)throw Error('Application backup requires stopped application and filesystem writers');
@@ -25,7 +25,7 @@ async function createApplicationBackup({database,destination,passphrase,roots=re
    const files=await stageRecoveryFiles(roots,path.join(dir,'files'),excluded);
    await verifyRecoveryRootConsistency(path.join(dir,'files'),files.roots);
    if(before!==version(database))throw Error('Database changed during application backup; stop all writers and retry');
-   const manifest={format:'shipyard-application',version:1,applicationVersion:require('../package.json').version,createdAt:new Date().toISOString(),database:'database.backup',files:'files/manifest.json',consistency:'requires-stopped-writers',externalRequirements:['original SHIPYARD_KEY_SECRET','deployment configuration and external JWT_SECRET','remote workload backups'],roots:files.roots};
+   const manifest={format:'fleet-application',version:1,applicationVersion:require('../package.json').version,createdAt:new Date().toISOString(),database:'database.backup',files:'files/manifest.json',consistency:'requires-stopped-writers',externalRequirements:['original FLEET_KEY_SECRET','deployment configuration and external JWT_SECRET','remote workload backups'],roots:files.roots};
    await fs.writeFile(path.join(dir,'manifest.json'),JSON.stringify(manifest,null,2),{mode:0o600,flag:'wx'});
    const result=await packRecoveryBundle(dir,bundle);
    return {...result,scope:'application-database-and-files',roots:files.roots.length};
@@ -64,13 +64,13 @@ function validateFileManifest(manifest,files,members) {
 }
 async function withVerifiedApplicationBackup(filename,passphrase,callback,parent=os.tmpdir()){
  return withDecryptedArchive(filename,passphrase,async bundle=>{
-  const dir=await fs.mkdtemp(path.join(parent,'.shipyard-application-verify-'));
+  const dir=await fs.mkdtemp(path.join(parent,'.fleet-application-verify-'));
   try {
    const target=path.join(dir,'contents');
    const result=await unpackRecoveryBundle(bundle,target);
    for(const filename of ['manifest.json','database.backup','files/manifest.json'])if(result.members.get(filename)?.type!=='file')throw Error('Recovery package manifest members must be regular files');
    const manifest=await readManifest(path.join(target,'manifest.json'));
-   if(manifest.format!=='shipyard-application' || manifest.version!==1 || manifest.database!=='database.backup' || manifest.files!=='files/manifest.json' || typeof manifest.applicationVersion!=='string' || manifest.applicationVersion.length>100)throw Error('Invalid application recovery manifest');
+   if(manifest.format!=='fleet-application' || manifest.version!==1 || manifest.database!=='database.backup' || manifest.files!=='files/manifest.json' || typeof manifest.applicationVersion!=='string' || manifest.applicationVersion.length>100)throw Error('Invalid application recovery manifest');
    const files=await readManifest(path.join(target,'files','manifest.json'));
    validateFileManifest(manifest,files,result.members);
    await verifyRecoveryRootConsistency(path.join(target,'files'),files.roots);
@@ -97,7 +97,7 @@ async function restoreApplicationBackup(filename,destination,passphrase){
  },path.dirname(target));
 }
 async function verifyPreparedApplicationRecovery(filename,destination,passphrase) {
- const dir=await fs.mkdtemp(path.join(os.tmpdir(),'shipyard-recovery-comparison-'));
+ const dir=await fs.mkdtemp(path.join(os.tmpdir(),'fleet-recovery-comparison-'));
  try {
   const expected=path.join(dir,'expected');
   const info=await restoreApplicationBackup(filename,expected,passphrase);

@@ -58,7 +58,7 @@ export function OnboardingPage() {
   const navigate = useNavigate();
   const [step, setStep] = useState(0);
   const [branding, setBranding] = useState<Branding>({
-    appName: 'Shipyard',
+    appName: 'Fleet',
     appTagline: 'Infrastructure',
     accentColor: '#17704f',
     showIcon: true,
@@ -239,7 +239,7 @@ function AppearanceStep({
   NavRow: NavRowComponent;
 }) {
   const { t } = useTranslation();
-  const [name, setName] = useState(branding.appName === 'Shipyard' ? '' : branding.appName);
+  const [name, setName] = useState(branding.appName === 'Fleet' ? '' : branding.appName);
   const [tagline, setTagline] = useState(branding.appTagline === 'Infrastructure' ? '' : branding.appTagline);
   const [accent, setAccent] = useState(branding.accentColor);
   const [theme, setTheme] = useState<Theme>('auto');
@@ -256,7 +256,7 @@ function AppearanceStep({
         showIcon: branding.showIcon,
         theme,
       });
-      setBranding({ ...branding, appName: name || 'Shipyard', appTagline: tagline || 'Infrastructure', accentColor: accent });
+      setBranding({ ...branding, appName: name || 'Fleet', appTagline: tagline || 'Infrastructure', accentColor: accent });
     } catch { /* non-critical */ }
     setBusy(false);
     onNext();
@@ -269,7 +269,7 @@ function AppearanceStep({
       <div className="mt-5 grid gap-4 rounded-panel border border-border-strong/80 bg-muted/10 p-4 sm:grid-cols-2">
         <div className="space-y-1.5">
           <Label htmlFor="ob-name">{t('set.appName')}</Label>
-          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Shipyard" />
+          <Input id="ob-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Fleet" />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="ob-tag">{t('set.tagline')}</Label>
@@ -341,7 +341,7 @@ function SshStep({ onNext, onPrev, onSkip, NavRow }: { onNext: () => void; onPre
   const generate = async () => {
     setGenerating(true);
     try {
-      await api.generateSSHKey('shipyard');
+      await api.generateSSHKey('fleet');
       await check();
     } catch { /* keep state */ }
     setGenerating(false);

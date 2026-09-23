@@ -23,7 +23,7 @@ function requireGitIdentity(userName, userEmail) {
     }
   }
   if (userEmail?.trim() && !/^[^\s@]+@[^\s@]+$/.test(userEmail.trim())) {
-    throw new Error('userEmail must contain an email address, for example shipyard@localhost');
+    throw new Error('userEmail must contain an email address, for example fleet@localhost');
   }
 }
 

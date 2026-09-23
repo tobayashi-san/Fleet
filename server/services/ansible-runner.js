@@ -9,7 +9,7 @@ const log = require('../utils/logger').child('ansible');
 const db = require('../db');
 const sshManager = require('./ssh-manager');
 
-const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
+const PLAYBOOKS_DIR = path.resolve(process.env.FLEET_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const DATA_DIR = path.join(__dirname, '..', 'data');
 
@@ -32,7 +32,7 @@ class AnsibleRunner {
     if (fs.existsSync(encPath)) {
       // Key is encrypted — write decrypted content to a secure temp directory
       const plaintext = sshManager.getPrivateKey();
-      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-key-'));
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-key-'));
       const tmpPath = path.join(tmpDir, 'key');
       fs.writeFileSync(tmpPath, plaintext, { mode: 0o600 });
       return { keyPath: tmpPath, cleanup: () => { try { fs.rmSync(tmpDir, { recursive: true, force: true }); } catch {} } };
@@ -151,7 +151,7 @@ class AnsibleRunner {
     return {
       ...process.env,
       ANSIBLE_CALLBACK_PLUGINS: [path.join(__dirname, '..', 'ansible', 'callback_plugins'), process.env.ANSIBLE_CALLBACK_PLUGINS].filter(Boolean).join(path.delimiter),
-      ANSIBLE_CALLBACKS_ENABLED: [...new Set([...(process.env.ANSIBLE_CALLBACKS_ENABLED || '').split(',').filter(Boolean), 'shipyard_timing'])].join(','),
+      ANSIBLE_CALLBACKS_ENABLED: [...new Set([...(process.env.ANSIBLE_CALLBACKS_ENABLED || '').split(',').filter(Boolean), 'fleet_timing'])].join(','),
       ANSIBLE_FORCE_COLOR: '0',
       ANSIBLE_NOCOLOR: '1',
       ANSIBLE_PYTHON_INTERPRETER: 'auto_silent',
@@ -275,7 +275,7 @@ class AnsibleRunner {
       const storedVars = db.ansibleVars.toExtraVars(environmentId);
       const mergedVars = { ...storedVars, ...extraVars };
       if (Object.keys(mergedVars).length > 0) {
-        variablesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-run-vars-'));
+        variablesDirectory = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-run-vars-'));
         fs.chmodSync(variablesDirectory, 0o700);
         const variablesPath = path.join(variablesDirectory, 'extra-vars.json');
         fs.writeFileSync(variablesPath, JSON.stringify(mergedVars), {mode:0o600,flag:'wx'});

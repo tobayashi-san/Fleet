@@ -7,7 +7,7 @@ const { EventEmitter } = require('events');
 
 process.env.DB_PATH = path.join(os.tmpdir(), `fleet_test_opentofu_platform_actions_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-opentofu-platform-actions';
-process.env.SHIPYARD_KEY_SECRET = 'test-key-secret-opentofu-platform-actions';
+process.env.FLEET_KEY_SECRET = 'test-key-secret-opentofu-platform-actions';
 process.env.NODE_ENV = 'test';
 
 const { test, before, after } = require('node:test');
@@ -507,13 +507,13 @@ test('connection test checks authentication, inventory and reported permissions 
   calls.length = 0;
   const before = db.db.prepare('SELECT COUNT(*) AS n FROM tofu_proxmox_connections').get().n;
   const response = await request(app).post('/api/opentofu/proxmox-connections/test').set('Authorization', `Bearer ${token}`).send({
-    environment_id: 'default', endpoint: 'https://verify.example.test:8006', api_token: 'shipyard@pve!automation=fixture', insecure: false,
+    environment_id: 'default', endpoint: 'https://verify.example.test:8006', api_token: 'fleet@pve!automation=fixture', insecure: false,
     ca_certificate: '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----',
   });
   assert.equal(response.status, 200, JSON.stringify(response.body));
   assert.equal(response.body.authenticated, true);
   assert.equal(response.body.inventory_access, true);
-  assert.equal(response.body.identity, 'shipyard@pve!automation');
+  assert.equal(response.body.identity, 'fleet@pve!automation');
   assert.equal(response.body.version, '8.4.2');
   assert.equal(response.body.node_count, 1);
   assert.deepEqual(response.body.recommended_missing, []);
@@ -526,7 +526,7 @@ test('connection test checks authentication, inventory and reported permissions 
 test('connection create/update preserves secrets and interval defaults with explicit valid boundaries', async () => {
   const route = '/api/opentofu/proxmox-connections';
   const caCertificate = '-----BEGIN CERTIFICATE-----\nZmFrZQ==\n-----END CERTIFICATE-----';
-  const body = { environment_id: 'default', name: 'Validation fixture', endpoint: 'https://validation.example.test:8006', api_token: 'shipyard@pve!automation=fixture', ca_certificate: caCertificate };
+  const body = { environment_id: 'default', name: 'Validation fixture', endpoint: 'https://validation.example.test:8006', api_token: 'fleet@pve!automation=fixture', ca_certificate: caCertificate };
   const missingToken = await request(app).post(route).set('Authorization', `Bearer ${token}`).send({ ...body, api_token: '' });
   assert.equal(missingToken.status, 400);
   assert.equal(missingToken.body.field, 'api_token');

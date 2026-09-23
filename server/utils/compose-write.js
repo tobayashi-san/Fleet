@@ -3,7 +3,7 @@ const os = require('os');
 const path = require('path');
 
 function createComposeTempFile(content) {
-  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-compose-'));
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-compose-'));
   const tmpFile = path.join(tmpDir, 'docker-compose.yml');
   fs.writeFileSync(tmpFile, content, { encoding: 'utf8', mode: 0o600 });
   return {

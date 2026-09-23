@@ -4,7 +4,7 @@ const Database = require('better-sqlite3');
 const COLUMNS = {app_settings:['value'],ansible_vars:['value'],schedules:['extra_vars'],users:['totp_secret','totp_secret_pending']};
 /** Authenticate core database ciphertext without returning or logging plaintext. */
 function verifyRecoveryDatabaseKey(filename, secret) {
-  if (typeof secret !== 'string' || !secret) throw Error('Original SHIPYARD_KEY_SECRET is required for database key verification');
+  if (typeof secret !== 'string' || !secret) throw Error('Original FLEET_KEY_SECRET is required for database key verification');
   let database;
   let checked = 0;
   try {

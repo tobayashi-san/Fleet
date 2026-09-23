@@ -1062,7 +1062,7 @@ export function VmDetailContent({ clusterId, nodeName, vmId, embedded = false, s
                       </div>
                       <p className="mt-1 text-xs text-muted-foreground">
                         {adoptedServer
-                          ? "SSH, updates, and playbooks are available through Shipyard."
+                          ? "SSH, updates, and playbooks are available through Fleet."
                           : `The ${kind} remains in platform inventory until it is explicitly adopted.`}
                       </p>
                       {adoptedServer && !embedded && (

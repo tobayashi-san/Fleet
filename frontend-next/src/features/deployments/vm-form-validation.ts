@@ -30,7 +30,7 @@ export function validateVmForm(form: Values, preDeploy: string[], target: string
   }
   if (!String(form.username).trim()) errors['VM user'] = 'Enter the login account to configure in this VM.';
   if (form.ssh_port !== undefined) integer('ssh_port', 'SSH port', 1, 65535);
-  if (form.started === false) errors['Start VM'] = 'Start the VM so Shipyard can connect and run post-deploy playbooks.';
+  if (form.started === false) errors['Start VM'] = 'Start the VM so Fleet can connect and run post-deploy playbooks.';
   if (form.ipv4_mode === 'dhcp' && form.agent_enabled === false) errors['Guest agent'] = 'Enable the guest agent to discover the DHCP address.';
   if (preDeploy.length && !target) errors['Execution host'] = 'Select the host that runs the pre-deploy workflows.';
   const groups = [

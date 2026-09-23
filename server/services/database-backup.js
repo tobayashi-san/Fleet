@@ -8,7 +8,7 @@ const { promisify } = require('node:util');
 const { pipeline } = require('node:stream/promises');
 const Database = require('better-sqlite3');
 const scrypt = promisify(crypto.scrypt);
-const MAGIC = Buffer.from('SHIPYARD-DB-1\n');
+const MAGIC = Buffer.from('FLEET-DB-1\n');
 
 async function deriveKey(passphrase, salt) {
   if (typeof passphrase !== 'string' || passphrase.length < 12 || Buffer.byteLength(passphrase) > 1024) {
@@ -23,7 +23,7 @@ function inspectDatabase(filename) {
     const result = database.pragma('integrity_check');
     if (result.length !== 1 || result[0].integrity_check !== 'ok') throw new Error('Database integrity check failed');
     for (const name of ['users','app_settings','environments']) {
-      if (!database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)) throw new Error('Backup is not a supported Shipyard database');
+      if (!database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(name)) throw new Error('Backup is not a supported Fleet database');
     }
     return {integrity:'ok',scope:'database-only',environments:database.prepare('SELECT COUNT(*) AS n FROM environments').get().n};
   } finally { database.close(); }
@@ -33,7 +33,7 @@ async function createEncryptedSnapshot(destination, passphrase, prepare, magic =
   const salt = crypto.randomBytes(32), iv = crypto.randomBytes(12);
   const key = await deriveKey(passphrase, salt);
   // The temporary directory is adjacent to the destination for atomic publication.
-  const dir = await fsp.mkdtemp(path.join(path.dirname(path.resolve(destination)), '.shipyard-backup-'));
+  const dir = await fsp.mkdtemp(path.join(path.dirname(path.resolve(destination)), '.fleet-backup-'));
   const snapshot = path.join(dir, 'snapshot.db'), encrypted = path.join(dir, 'encrypted');
   try {
     const info = await prepare(snapshot);
@@ -68,7 +68,7 @@ async function withDecryptedArchive(filename, passphrase, callback, magic = MAGI
     if (!header.subarray(0,magic.length).equals(magic)) throw new Error('Unsupported database backup format');
     await input.read(tag,0,16,stat.size-16);
     key = await deriveKey(passphrase,header.subarray(magic.length,magic.length+32));
-    dir = await fsp.mkdtemp(path.join(os.tmpdir(),'shipyard-backup-verify-'));
+    dir = await fsp.mkdtemp(path.join(os.tmpdir(),'fleet-backup-verify-'));
     const snapshot = path.join(dir,'snapshot.db');
     const decipher = crypto.createDecipheriv('aes-256-gcm',key,header.subarray(magic.length+32));
     decipher.setAAD(header); decipher.setAuthTag(tag);
@@ -98,7 +98,7 @@ function verifyEncryptedDatabaseBackup(filename,passphrase) {
 }
 async function restoreEncryptedDatabaseBackup(filename, destination, passphrase) {
   return withVerifiedDatabaseBackup(filename,passphrase,async (snapshot,info) => {
-    const dir = await fsp.mkdtemp(path.join(path.dirname(path.resolve(destination)),'.shipyard-restore-'));
+    const dir = await fsp.mkdtemp(path.join(path.dirname(path.resolve(destination)),'.fleet-restore-'));
     const staged = path.join(dir,'restored.db');
     try {
       await fsp.copyFile(snapshot,staged,fs.constants.COPYFILE_EXCL);
@@ -106,7 +106,7 @@ async function restoreEncryptedDatabaseBackup(filename, destination, passphrase)
       const restored = new Database(staged,{fileMustExist:true});
       try {
         if (!restored.pragma('table_info(users)').some(column => column.name === 'token_version')) {
-          throw new Error('Restore requires a Shipyard database with versioned user sessions');
+          throw new Error('Restore requires a Fleet database with versioned user sessions');
         }
         restored.transaction(() => {
           // Do not reactivate credentials copied from an older point in time.

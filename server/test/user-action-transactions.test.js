@@ -1,6 +1,6 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-account-actions-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.SHIPYARD_KEY_SECRET='synthetic-key';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-account-actions-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';process.env.FLEET_KEY_SECRET='synthetic-key';
 const db=require('../db');const bcrypt=require('bcryptjs');const express=require('express');const request=require('supertest');const {createSession}=require('../utils/auth-sessions');const {roleRevision}=require('../utils/role-revision');
 const actor=db.users.create('administrator',null,'synthetic-admin-hash','admin');
 const app=express();app.use(express.json());app.use((req,_res,next)=>{req.user=db.users.getById(actor.id);next();});app.use('/users',require('../routes/users'));

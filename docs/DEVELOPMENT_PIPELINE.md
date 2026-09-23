@@ -1,7 +1,7 @@
-# Shipyard Development Pipeline
+# Fleet Development Pipeline
 
 This document defines how changes move from local development to a published
-Shipyard release.
+Fleet release.
 
 ## Runtime and local setup
 
@@ -17,8 +17,8 @@ the frontend build, and container startup/restart checks before publication.
 After building a candidate image, run the disposable-container checks:
 
 ```bash
-docker build -t shipyard:config-check .
-node tools/test-container.mjs shipyard:config-check
+docker build -t fleet:config-check .
+node tools/test-container.mjs fleet:config-check
 # With Podman: CONTAINER_ENGINE=podman node tools/test-container.mjs <image>
 ```
 
@@ -116,7 +116,7 @@ There is no repo-wide formatter gate. Frontend ESLint is a required gate.
 
 ## Release Flow
 
-Shipyard uses release candidates first.
+Fleet uses release candidates first.
 
 1. Merge the release content into `main`.
 2. Start the `Release` workflow manually.
@@ -146,9 +146,9 @@ manual approval. RC releases do not require this stable approval.
 - The release workflow updates those files with `tools/set-version.mjs`.
 - Tags always use a leading `v`, for example `v1.1.2-rc.1`.
 - Stable Docker tags publish:
-  - `ghcr.io/tobayashi-san/shipyard:<version>`
-  - `ghcr.io/tobayashi-san/shipyard:<major>.<minor>`
-  - `ghcr.io/tobayashi-san/shipyard:latest`
+  - `ghcr.io/tobayashi-san/fleet:<version>`
+  - `ghcr.io/tobayashi-san/fleet:<major>.<minor>`
+  - `ghcr.io/tobayashi-san/fleet:latest`
 - RC Docker tags publish only the explicit RC version tag and must not move
   `latest`.
 

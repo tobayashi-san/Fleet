@@ -34,7 +34,7 @@ function publicSource(row) {
 // A source is an operational inventory, not merely a saved URL. Expose a
 // small, credential-free health summary so the console can answer the three
 // questions an operator actually has: did it run, how much did it contribute,
-// and does it currently disagree with Shipyard's source of truth?
+// and does it currently disagree with Fleet's source of truth?
 function sourceSummary(row) {
   const source = publicSource(row);
   const inventory = db.db

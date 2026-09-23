@@ -12,7 +12,7 @@ describe('apiFetch', () => {
     vi.stubGlobal('fetch', fetchMock);
     const archive = new Blob([new Uint8Array([0, 255, 17, 42])]);
     await apiFetch('/reset/servers/backup/upload-id', {method: 'PUT', body: archive, environmentId: 'selected', headers: {'Content-Type': 'application/octet-stream'}});
-    expect(fetchMock).toHaveBeenCalledWith('/api/reset/servers/backup/upload-id', expect.objectContaining({body: archive, headers: expect.objectContaining({'Content-Type': 'application/octet-stream', 'X-Shipyard-Environment': 'selected'})}));
+    expect(fetchMock).toHaveBeenCalledWith('/api/reset/servers/backup/upload-id', expect.objectContaining({body: archive, headers: expect.objectContaining({'Content-Type': 'application/octet-stream', 'X-Fleet-Environment': 'selected'})}));
   });
 
   it('serializes JSON bodies and returns JSON responses', async () => {
@@ -33,7 +33,7 @@ describe('apiFetch', () => {
 
   it('attaches the selected environment to every request', async () => {
     vi.stubGlobal('localStorage', {
-      getItem: vi.fn((key: string) => key === 'shipyard_environment' ? 'production' : 'test-token'),
+      getItem: vi.fn((key: string) => key === 'fleet_environment' ? 'production' : 'test-token'),
     });
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ ok: true }), {
       headers: { 'content-type': 'application/json' },
@@ -43,12 +43,12 @@ describe('apiFetch', () => {
     await apiFetch('/servers');
 
     expect(fetchMock).toHaveBeenCalledWith('/api/servers', expect.objectContaining({
-      headers: expect.objectContaining({ 'X-Shipyard-Environment': 'production' }),
+      headers: expect.objectContaining({ 'X-Fleet-Environment': 'production' }),
     }));
   });
 
   it('keeps create, connection test and key installation in their explicit target environment', async () => {
-    vi.stubGlobal('localStorage', { getItem: vi.fn((key: string) => key === 'shipyard_environment' ? 'production' : 'test-token') });
+    vi.stubGlobal('localStorage', { getItem: vi.fn((key: string) => key === 'fleet_environment' ? 'production' : 'test-token') });
     const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(new Response('{}', { headers: { 'content-type': 'application/json' } })));
     vi.stubGlobal('fetch', fetchMock);
     const data = { environment_id: 'staging', name: 'new-host' };
@@ -56,12 +56,12 @@ describe('apiFetch', () => {
     await api.testNewServerConnection(data);
     await api.deploySSHKey(data);
     for (const [, init] of fetchMock.mock.calls) {
-      expect(init.headers['X-Shipyard-Environment']).toBe('staging');
+      expect(init.headers['X-Fleet-Environment']).toBe('staging');
       expect(JSON.parse(init.body).environment_id).toBe('staging');
       expect(init).not.toHaveProperty('environmentId');
     }
     await apiFetch('/servers');
-    expect(fetchMock.mock.calls[3][1].headers['X-Shipyard-Environment']).toBe('production');
+    expect(fetchMock.mock.calls[3][1].headers['X-Fleet-Environment']).toBe('production');
   });
 
   it('binds the package preview to the environment captured when it was opened', async () => {
@@ -70,18 +70,18 @@ describe('apiFetch', () => {
     vi.stubGlobal('fetch', fetchMock);
     await api.previewServerUpdates('host-a', 'stage');
     expect(fetchMock.mock.calls[0][0]).toBe('/api/servers/host-a/updates/preview');
-    expect(fetchMock.mock.calls[0][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[0][1].headers['X-Fleet-Environment']).toBe('stage');
     expect(fetchMock.mock.calls[0][1]).not.toHaveProperty('environmentId');
     await api.deleteServer('host-a', 'stage');
     expect(fetchMock.mock.calls[1][1].method).toBe('DELETE');
-    expect(fetchMock.mock.calls[1][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[1][1].headers['X-Fleet-Environment']).toBe('stage');
     await api.runSelectedUpdates(['host-a','host-b'], 'stage');
     expect(fetchMock.mock.calls[2][0]).toBe('/api/servers/update-all');
     expect(JSON.parse(fetchMock.mock.calls[2][1].body)).toEqual({server_ids:['host-a','host-b']});
-    expect(fetchMock.mock.calls[2][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[2][1].headers['X-Fleet-Environment']).toBe('stage');
     await api.setServersGroup(['host-a','host-b'], 'folder', 'stage');
     expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({server_ids:['host-a','host-b'],group_id:'folder'});
-    expect(fetchMock.mock.calls[3][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[3][1].headers['X-Fleet-Environment']).toBe('stage');
   });
 
   it('sends folder edits as one request with explicit parent and captured environment', async () => {
@@ -92,7 +92,7 @@ describe('apiFetch', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock.mock.calls[0][0]).toBe('/api/servers/groups/folder');
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({name:'New name',color:'#123456',parent_id:null});
-    expect(fetchMock.mock.calls[0][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[0][1].headers['X-Fleet-Environment']).toBe('stage');
     await api.updateServerGroup('folder', 'Metadata only');
     expect(JSON.parse(fetchMock.mock.calls[1][1].body)).not.toHaveProperty('parent_id');
   });
@@ -102,7 +102,7 @@ describe('apiFetch', () => {
     const fetchMock=vi.fn().mockResolvedValue(new Response('{}',{headers:{'content-type':'application/json'}}));
     vi.stubGlobal('fetch',fetchMock);
     await api.cancelPlaybookRun('run-42','stage');
-    expect(fetchMock).toHaveBeenCalledWith('/api/ansible/runs/run-42/cancel',expect.objectContaining({method:'POST',headers:expect.objectContaining({'X-Shipyard-Environment':'stage'})}));
+    expect(fetchMock).toHaveBeenCalledWith('/api/ansible/runs/run-42/cancel',expect.objectContaining({method:'POST',headers:expect.objectContaining({'X-Fleet-Environment':'stage'})}));
   });
 
   it('pins playbook start and status reads to the run environment', async () => {
@@ -111,8 +111,8 @@ describe('apiFetch', () => {
     vi.stubGlobal('fetch',fetchMock);
     await api.runPlaybook('update.yml','host',{}, {environment_id:'stage'});
     await api.getPlaybookRunStatus('run-42','stage');
-    expect(fetchMock.mock.calls[0][1].headers['X-Shipyard-Environment']).toBe('stage');
-    expect(fetchMock.mock.calls[1][1].headers['X-Shipyard-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[0][1].headers['X-Fleet-Environment']).toBe('stage');
+    expect(fetchMock.mock.calls[1][1].headers['X-Fleet-Environment']).toBe('stage');
     expect(fetchMock.mock.calls[1][0]).toBe('/api/ansible/runs/run-42/status');
   });
 
@@ -268,12 +268,12 @@ it('audit download keeps the requested environment even when browser selection d
  const objectUrl=vi.spyOn(URL,'createObjectURL').mockReturnValue('blob:audit');
  const revokeUrl=vi.spyOn(URL,'revokeObjectURL').mockImplementation(()=>{});
  vi.stubGlobal('document',{createElement:()=>anchor});
- vi.stubGlobal('localStorage',{getItem:(key:string)=>key==='shipyard_environment'?'other-environment':null});
+ vi.stubGlobal('localStorage',{getItem:(key:string)=>key==='fleet_environment'?'other-environment':null});
  const fetchMock=vi.fn().mockResolvedValue(new Response('audit fixture'));
  vi.stubGlobal('fetch',fetchMock);
  try{
   await api.exportAuditLog({environment_id:'requested-environment',action:'server.update'});
-  expect(fetchMock).toHaveBeenCalledWith('/api/system/audit/export?environment_id=requested-environment&action=server.update',expect.objectContaining({headers:expect.objectContaining({'X-Shipyard-Environment':'requested-environment'})}));
+  expect(fetchMock).toHaveBeenCalledWith('/api/system/audit/export?environment_id=requested-environment&action=server.update',expect.objectContaining({headers:expect.objectContaining({'X-Fleet-Environment':'requested-environment'})}));
   expect(anchor.download).toBe('fleet-audit-log.csv');expect(anchor.click).toHaveBeenCalledOnce();vi.runAllTimers();
  }finally{objectUrl.mockRestore();revokeUrl.mockRestore();vi.unstubAllGlobals();vi.useRealTimers();}
 });

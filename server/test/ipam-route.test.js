@@ -6,7 +6,7 @@ const fs = require('fs');
 const http = require('http');
 process.env.DB_PATH = path.join(os.tmpdir(), `fleet_test_ipam_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-ipam';
-process.env.SHIPYARD_KEY_SECRET = 'test-ipam-source-encryption-key';
+process.env.FLEET_KEY_SECRET = 'test-ipam-source-encryption-key';
 process.env.NODE_ENV = 'test';
 
 const { test, before, after } = require('node:test');
@@ -809,11 +809,11 @@ test('restricted operators cannot use IPAM routes to cross an environment bounda
   assert.equal(allowed.body.length, 1);
   const blocked = await request(environmentAwareApp)
     .get(`/api/ipam/subnets/${blockedSubnet.body.id}/allocations`)
-    .set({ ...scopedAuth, 'X-Shipyard-Environment': scopedEnvironmentId });
+    .set({ ...scopedAuth, 'X-Fleet-Environment': scopedEnvironmentId });
   assert.equal(blocked.status, 404);
   const blockedCreate = await request(environmentAwareApp)
     .post('/api/ipam/subnets')
-    .set({ ...scopedAuth, 'X-Shipyard-Environment': blockedEnvironmentId })
+    .set({ ...scopedAuth, 'X-Fleet-Environment': blockedEnvironmentId })
     .send({
     environment_id: blockedEnvironmentId, name: 'Nicht erlaubt', cidr: '10.242.0.0/24',
   });
@@ -821,7 +821,7 @@ test('restricted operators cannot use IPAM routes to cross an environment bounda
 });
 
 test('review reservation flow uses next free address, persists Reserved and rejects out-of-prefix or competing writes', async () => {
-  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const scoped = call => auth(call).set('X-Fleet-Environment', environmentId);
   const created = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({
     environment_id: environmentId, name: 'Reservation acceptance', cidr: '203.0.113.0/29', gateway: '203.0.113.1',
   });
@@ -853,7 +853,7 @@ test('review reservation flow uses next free address, persists Reserved and reje
 });
 
 test('reservation creation rolls back on audit failure and can be retried', async () => {
-  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const scoped = call => auth(call).set('X-Fleet-Environment', environmentId);
   const created = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Atomic reservation',cidr:'198.51.100.0/29'});
   assert.equal(created.status,201);
   const subnetId=created.body.id;
@@ -869,7 +869,7 @@ test('reservation creation rolls back on audit failure and can be retried', asyn
 });
 
 test('core IPAM mutations roll back data and audit together and succeed on retry', async t => {
-  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const scoped = call => auth(call).set('X-Fleet-Environment', environmentId);
   const prefix = await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Atomic core mutations',cidr:'192.0.2.0/27'});
   assert.equal(prefix.status,201);
   const id=prefix.body.id;
@@ -903,7 +903,7 @@ test('core IPAM mutations roll back data and audit together and succeed on retry
 });
 
 test('source configuration and imported inventory survive audit failures', async t => {
-  const scoped = call => auth(call).set('X-Shipyard-Environment', environmentId);
+  const scoped = call => auth(call).set('X-Fleet-Environment', environmentId);
   const sourceBody={environment_id:environmentId,type:'pfsense',name:'Atomic source',endpoint:'https://controller.example.test',api_token:'synthetic-source-secret'};
   const snapshot=()=>Object.fromEntries(['ipam_sync_sources','ipam_source_observations','ipam_reservations','ipam_sync_conflicts','audit_log'].map(table=>[table,db.db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all()]));
   async function failureThenRetry(action,send,expectedFailure,expectedSuccess){
@@ -941,7 +941,7 @@ test('source sync rolls back imports on success-audit failure and records failur
   let records=[{ip_address:'192.0.2.194',hostname:'original',id:'original'}];
   const controller=http.createServer((_req,res)=>{res.setHeader('content-type','application/json');res.end(JSON.stringify({data:records}));});
   await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
-  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  const scoped=call=>auth(call).set('X-Fleet-Environment',environmentId);
   try {
     const prefix=await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Sync atomicity',cidr:'192.0.2.192/27'});
     assert.equal(prefix.status,201);
@@ -976,7 +976,7 @@ test('in-flight source results cannot overwrite changed, disabled or deleted con
   let received,respond;
   const controller=http.createServer((_req,res)=>{respond=status=>{res.statusCode=status;res.setHeader('content-type','application/json');res.end(JSON.stringify({data:[{ip_address:'192.0.2.226',id:'late-lease'}]}));};received();});
   await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
-  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  const scoped=call=>auth(call).set('X-Fleet-Environment',environmentId);
   try {
     const prefix=await scoped(request(environmentAwareApp).post('/api/ipam/subnets')).send({environment_id:environmentId,name:'Deferred source response',cidr:'192.0.2.224/27'});
     assert.equal(prefix.status,201);
@@ -1007,7 +1007,7 @@ test('source connection test records outcomes atomically and discards outdated r
     if(hold){respond=send;received();}else send();
   });
   await new Promise(resolve=>controller.listen(0,'127.0.0.1',resolve));
-  const scoped=call=>auth(call).set('X-Shipyard-Environment',environmentId);
+  const scoped=call=>auth(call).set('X-Fleet-Environment',environmentId);
   try {
     const source=await scoped(request(environmentAwareApp).post('/api/ipam/sources')).send({environment_id:environmentId,type:'pfsense',name:'Connection outcome',endpoint:`http://127.0.0.1:${controller.address().port}`,api_token:'synthetic-test-token'});
     assert.equal(source.status,201);const id=source.body.id;

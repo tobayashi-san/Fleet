@@ -17,7 +17,7 @@ export function MfaPolicyOverview() {
   return <section className="space-y-2 border-b p-4">
     <div className="flex flex-wrap items-center gap-2">
       <h3 className="text-sm font-semibold">Multi-factor authentication</h3>
-      {data && <span title="Set by SHIPYARD_MFA_POLICY on the server (optional, admins or all).">
+      {data && <span title="Set by FLEET_MFA_POLICY on the server (optional, admins or all).">
         <StatusBadge tone={data.mode === 'optional' ? 'muted' : 'info'}>{labels[data.mode]}</StatusBadge>
       </span>}
     </div>

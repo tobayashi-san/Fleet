@@ -14,7 +14,7 @@ before(async () => {
   const data = path.join(root, 'original');
   await fs.mkdir(path.join(data, 'ssh'), {recursive: true});
   await fs.writeFile(path.join(data, 'ssh', 'key.enc'), 'synthetic');
-  database = new Database(path.join(data, 'shipyard.db'));
+  database = new Database(path.join(data, 'fleet.db'));
   database.exec('CREATE TABLE users (id TEXT, token_version INTEGER); CREATE TABLE app_settings (key TEXT, value TEXT); CREATE TABLE environments (id TEXT)');
   archive = path.join(root, 'application.backup');
   prepared = path.join(root, 'prepared');
@@ -23,7 +23,7 @@ before(async () => {
   await restoreApplicationBackup(archive, prepared, passphrase);
 });
 after(async () => { database?.close(); if (root) await fs.rm(root, {recursive: true, force: true}); });
-const mappings = () => ({database: path.join(target, 'shipyard.db'), roots: {data: target, ssh: path.join(target, 'ssh'), 'ssh-alias': path.join(target, 'ssh')}});
+const mappings = () => ({database: path.join(target, 'fleet.db'), roots: {data: target, ssh: path.join(target, 'ssh'), 'ssh-alias': path.join(target, 'ssh')}});
 const plan = targets => planApplicationActivation({archive, prepared, passphrase, targets});
 
 test('verified activation plan consolidates nested roots, aliases and database without changing targets', async () => {
@@ -31,7 +31,7 @@ test('verified activation plan consolidates nested roots, aliases and database w
   assert.equal(result.state, 'planned-not-activated');
   assert.equal(result.operations.length, 1);
   assert.deepEqual(result.operations[0].coveredRoots, ['data', 'ssh', 'ssh-alias']);
-  assert.equal(result.operations[0].database.relative, 'shipyard.db');
+  assert.equal(result.operations[0].database.relative, 'fleet.db');
   assert.deepEqual(result.absentRoots, ['absent']);
   await assert.rejects(fs.stat(target), {code: 'ENOENT'});
 });
@@ -59,7 +59,7 @@ test('CLI emits the reviewed plan and leaves all destinations untouched', async 
   const mapping = path.join(root, 'targets.json');
   await fs.writeFile(mapping, JSON.stringify(mappings()));
   const execFile = require('node:util').promisify(require('node:child_process').execFile);
-  const result = await execFile(process.execPath, [path.resolve(__dirname, '../cli/recovery-activation.js'), 'plan', archive, prepared, mapping], {env: {...process.env, SHIPYARD_BACKUP_PASSPHRASE: passphrase}});
+  const result = await execFile(process.execPath, [path.resolve(__dirname, '../cli/recovery-activation.js'), 'plan', archive, prepared, mapping], {env: {...process.env, FLEET_BACKUP_PASSPHRASE: passphrase}});
   assert.equal(JSON.parse(result.stdout).state, 'planned-not-activated');
   assert.equal(result.stdout.includes(passphrase), false);
   await assert.rejects(fs.stat(target), {code: 'ENOENT'});

@@ -3,11 +3,11 @@
 const os = require('os');
 const path = require('path');
 const fs = require('fs');
-process.env.DB_PATH = path.join(os.tmpdir(), `shipyard_test_opentofu_core_${Date.now()}.db`);
+process.env.DB_PATH = path.join(os.tmpdir(), `fleet_test_opentofu_core_${Date.now()}.db`);
 process.env.JWT_SECRET = 'test-jwt-secret-opentofu-core';
-process.env.SHIPYARD_KEY_SECRET = 'test-key-secret-opentofu-core';
+process.env.FLEET_KEY_SECRET = 'test-key-secret-opentofu-core';
 process.env.NODE_ENV = 'test';
-const isolatedWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-isolated-vms-'));
+const isolatedWorkspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-isolated-vms-'));
 process.env.OPENTOFU_WORKSPACE_ROOTS = `/workspaces,${isolatedWorkspaceRoot}`;
 process.env.OPENTOFU_INTERNAL_VM_ROOT = path.join(isolatedWorkspaceRoot, 'internal', 'vms');
 
@@ -115,10 +115,10 @@ test('OpenTofu enforces granular capabilities and persisted environment scope', 
   const foreign = await request(app).get('/api/opentofu/workspaces?environment_id=tofu-env-b').set(auth);
   assert.equal(foreign.status, 404);
   const foreignById = await request(app).get('/api/opentofu/workspaces/tofu-ws-b/runs')
-    .set({ ...auth, 'X-Shipyard-Environment': 'tofu-env-a' });
+    .set({ ...auth, 'X-Fleet-Environment': 'tofu-env-a' });
   assert.equal(foreignById.status, 404);
 
-  const scopedAuth = { ...auth, 'X-Shipyard-Environment': 'tofu-env-a' };
+  const scopedAuth = { ...auth, 'X-Fleet-Environment': 'tofu-env-a' };
   const editDenied = await request(app).patch('/api/opentofu/workspaces/tofu-ws-a/metadata').set(scopedAuth).send({ name: 'safe-a', description: 'x' });
   assert.equal(editDenied.status, 403);
   assert.equal(editDenied.body.capability, 'canEditDeployments');
@@ -130,10 +130,10 @@ test('OpenTofu enforces granular capabilities and persisted environment scope', 
 test('VM API creates one hidden workspace and state boundary per VM', async () => {
   const { app } = createApp();
   const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
-  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Shipyard-Environment': 'default' };
+  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Fleet-Environment': 'default' };
   const connection = await request(app).post('/api/opentofu/proxmox-connections').set(auth).send({
     environment_id: 'default', name: `Isolated test ${Date.now()}`,
-    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!shipyard=test-secret', insecure: true,
+    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!fleet=test-secret', insecure: true,
   });
   assert.equal(connection.status, 201);
 
@@ -204,10 +204,10 @@ test('VM API creates one hidden workspace and state boundary per VM', async () =
 test('legacy migration explicitly splits draft VMs into independent internal workspaces', async () => {
   const { app } = createApp();
   const login = await request(app).post('/api/auth/login').send({ username: 'admin', password: 'testpass12345' });
-  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Shipyard-Environment': 'default' };
+  const auth = { Authorization: `Bearer ${login.body.token}`, 'X-Fleet-Environment': 'default' };
   const connection = await request(app).post('/api/opentofu/proxmox-connections').set(auth).send({
     environment_id: 'default', name: `Migration test ${Date.now()}`,
-    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!shipyard=migration-secret', insecure: true,
+    endpoint: 'https://pve.example.test:8006', api_token: 'root@pam!fleet=migration-secret', insecure: true,
   });
   assert.equal(connection.status, 201);
   const workspaceId = `legacy-${Date.now()}`;

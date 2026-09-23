@@ -1,6 +1,6 @@
 # Mandatory MFA
 
-Set `SHIPYARD_MFA_POLICY` in the server environment and restart the service:
+Set `FLEET_MFA_POLICY` in the server environment and restart the service:
 
 - `optional` (default): users may enable MFA individually.
 - `admins`: administrator accounts must use MFA.

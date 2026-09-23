@@ -12,18 +12,18 @@ const {once} = require('node:events');
 const {Readable} = require('node:stream');
 
 test('real OpenSSH lists, uploads and downloads binary files and runs a shell command', {timeout:30000}, async () => {
-  const root = fs.mkdtempSync(path.join(os.homedir(), '.shipyard-ssh-loopback-'));
+  const root = fs.mkdtempSync(path.join(os.homedir(), '.fleet-ssh-loopback-'));
   let daemon, manager, db, terminalServer, terminalClient;
   let diagnostic = '';
   try {
     process.env.NODE_ENV = 'test';
     process.env.JWT_SECRET = 'loopback-terminal-test-secret';
     process.env.DB_PATH = path.join(root, 'test.db');
-    process.env.SHIPYARD_SSH_DIR = path.join(root, 'keys');
-    process.env.SHIPYARD_KEY_SECRET = 'isolated-loopback-test-key';
-    fs.mkdirSync(process.env.SHIPYARD_SSH_DIR);
+    process.env.FLEET_SSH_DIR = path.join(root, 'keys');
+    process.env.FLEET_KEY_SECRET = 'isolated-loopback-test-key';
+    fs.mkdirSync(process.env.FLEET_SSH_DIR);
     const hostKey = path.join(root, 'host');
-    const clientKey = path.join(process.env.SHIPYARD_SSH_DIR, 'client');
+    const clientKey = path.join(process.env.FLEET_SSH_DIR, 'client');
     for (const key of [hostKey, clientKey]) execFileSync('ssh-keygen', ['-q','-t','ed25519','-N','','-f',key]);
     const listener = net.createServer();
     listener.listen(0, '127.0.0.1'); await once(listener, 'listening');
@@ -60,9 +60,9 @@ test('real OpenSSH lists, uploads and downloads binary files and runs a shell co
     for await (const chunk of await manager.createReadStream(host,file)) chunks.push(chunk);
     assert.deepEqual(Buffer.concat(chunks),payload);
     const ssh = await manager.getConnection(host);
-    const result = await ssh.execCommand("printf 'shipyard-loopback-shell-ok'");
+    const result = await ssh.execCommand("printf 'fleet-loopback-shell-ok'");
     assert.equal(result.code,0);
-    assert.equal(result.stdout,'shipyard-loopback-shell-ok');
+    assert.equal(result.stdout,'fleet-loopback-shell-ok');
     assert.ok(db.servers.getHostFingerprint(host.id));
     const {WebSocketServer,WebSocket} = require('ws');
     terminalServer = new WebSocketServer({port:0,host:'127.0.0.1'});
@@ -78,17 +78,17 @@ test('real OpenSSH lists, uploads and downloads binary files and runs a shell co
       terminalClient.on('message',data=>{
         const frame=JSON.parse(data.toString());
         if(frame.type==='error') {clearTimeout(timer);reject(new Error(frame.message));}
-        if(frame.type==='ready') terminalClient.send(JSON.stringify({type:'input',data:"printf 'shipyard-%s-ok\\n' 'interactive'\n"}));
+        if(frame.type==='ready') terminalClient.send(JSON.stringify({type:'input',data:"printf 'fleet-%s-ok\\n' 'interactive'\n"}));
         if(frame.type==='output') {
           output+=frame.data;
-          if(output.includes('shipyard-interactive-ok')) {clearTimeout(timer);resolve();}
+          if(output.includes('fleet-interactive-ok')) {clearTimeout(timer);resolve();}
         }
       });
     });
     const closed=once(terminalClient,'close');terminalClient.close();await closed;
     assert.ok(db.db.prepare("SELECT 1 FROM audit_log WHERE action='terminal.connect'").get());
     manager.closeAll();
-    const rejectedKey = path.join(process.env.SHIPYARD_SSH_DIR, 'rejected');
+    const rejectedKey = path.join(process.env.FLEET_SSH_DIR, 'rejected');
     execFileSync('ssh-keygen', ['-q','-t','ed25519','-N','','-f',rejectedKey]);
     db.sshKeys.replace('rejected',fs.readFileSync(rejectedKey+'.pub','utf8'),rejectedKey);
     await assert.rejects(manager.createTransferConnection(host), error => error.code !== 'HOST_KEY_MISMATCH' && /authentication/i.test(error.message));

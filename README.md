@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/assets/shipyard-banner.svg" alt="Shipyard — Your Linux infrastructure, in one place." width="100%">
+  <img src="docs/assets/fleet-banner.svg" alt="Fleet — Your Linux infrastructure, in one place." width="100%">
 </p>
 
 <p align="center">
@@ -8,25 +8,25 @@
 </p>
 
 <p align="center">
-  <a href="https://tobayashi-san.github.io/Shipyard/">Website</a> ·
+  <a href="https://tobayashi-san.github.io/Fleet/">Website</a> ·
   <a href="#get-started">Get started</a> ·
   <a href="#connect-your-first-host">Your first host</a> ·
-  <a href="#what-can-i-do-with-shipyard">Features</a> ·
+  <a href="#what-can-i-do-with-fleet">Features</a> ·
   <a href="docs/README.md">Documentation</a> ·
-  <a href="https://github.com/tobayashi-san/Shipyard/releases">Releases</a>
+  <a href="https://github.com/tobayashi-san/Fleet/releases">Releases</a>
 </p>
 
-## Meet Shipyard
+## Meet Fleet
 
-Shipyard brings Linux host management, Docker, Ansible, and Proxmox into one web
+Fleet brings Linux host management, Docker, Ansible, and Proxmox into one web
 interface. Use it to check your homelab, maintain a group of servers, or give
 your team a shared place to run infrastructure tasks.
 
 Start with **one Linux host and an SSH connection**. Proxmox and OpenTofu
-are optional. Host information is collected over SSH; no Shipyard agent is required.
+are optional. Host information is collected over SSH; no Fleet agent is required.
 
 > [!IMPORTANT]
-> Install Shipyard on a private network or behind a VPN. It holds SSH credentials
+> Install Fleet on a private network or behind a VPN. It holds SSH credentials
 > and can run commands on your hosts, so do not expose it directly to the internet.
 
 ## Get started
@@ -37,34 +37,34 @@ You need a Linux machine with **Docker Engine** and the **Docker Compose plugin*
 Your user must be able to run Docker commands. Everything else, including
 Node.js, Ansible, and the database, ships inside the container.
 
-### 2. Start Shipyard
+### 2. Start Fleet
 
 ```bash
-mkdir shipyard && cd shipyard
-curl -fsSLO https://raw.githubusercontent.com/tobayashi-san/Shipyard/main/docker-compose.yml
+mkdir fleet && cd fleet
+curl -fsSLO https://raw.githubusercontent.com/tobayashi-san/Fleet/main/docker-compose.yml
 docker compose up -d --wait
 ```
 
-On its first start, Shipyard generates its secrets and a self-signed TLS
+On its first start, Fleet generates its secrets and a self-signed TLS
 certificate. There is nothing to configure beforehand.
 
 > [!IMPORTANT]
-> The generated `SHIPYARD_KEY_SECRET` encrypts stored credentials and lives in
-> the `shipyard-secrets` volume. Save a copy somewhere safe, apart from your data backups:
+> The generated `FLEET_KEY_SECRET` encrypts stored credentials and lives in
+> the `fleet-secrets` volume. Save a copy somewhere safe, apart from your data backups:
 >
 > ```bash
-> docker compose exec shipyard cat /app/secrets/shipyard.env
+> docker compose exec fleet cat /app/secrets/fleet.env
 > ```
 
 When the service is **healthy**, open **[https://localhost](https://localhost)**
 in a browser on that same machine. The first visit shows a certificate warning
-because Shipyard creates a self-signed certificate. Verify that you are visiting
+because Fleet creates a self-signed certificate. Verify that you are visiting
 your own installation before accepting it.
 
 <details>
 <summary><strong>Installing on a server without a browser?</strong></summary>
 
-By default, Shipyard is only reachable from its Docker host. `localhost` on your
+By default, Fleet is only reachable from its Docker host. `localhost` on your
 laptop refers to your laptop, not that server.
 
 Open an SSH tunnel from your laptop, replacing `your-user@your-server` with your
@@ -83,7 +83,7 @@ on your laptop. For regular access over a protected LAN, follow
 ### 3. Complete the setup wizard
 
 Create your administrator account, choose the appearance, and generate the SSH
-key that Shipyard will use to connect to hosts. Select **Open App** when setup
+key that Fleet will use to connect to hosts. Select **Open App** when setup
 is complete. There is no default username or password to look up.
 
 ## Connect your first host
@@ -93,10 +93,10 @@ Have its address, SSH port, and login user ready.
 
 1. Open **Managed Hosts → Add host**.
 2. Enter a display name, the **SSH address**, user, and port. The address must
-   be reachable from Shipyard's container; the optional hostname field is only
+   be reachable from Fleet's container; the optional hostname field is only
    descriptive metadata.
 3. Set up SSH access. You can supply the host's SSH password in the form to
-   install Shipyard's public key and use **Test** to check the connection before saving.
+   install Fleet's public key and use **Test** to check the connection before saving.
    For key-only hosts, install the public key manually for the target user or
    follow the [SSH key import guide](docs/ssh-key-import.md).
 4. Save the host, open its detail page, and check its connection status and
@@ -108,7 +108,7 @@ updates or automation. Those actions also need the appropriate permissions on
 the target host.
 
 **Your first useful result:** one connected host whose status you can inspect
-and whose terminal you can open from Shipyard. No agent or Proxmox setup is
+and whose terminal you can open from Fleet. No agent or Proxmox setup is
 required for this.
 
 ## Find your way around
@@ -130,9 +130,9 @@ for the selected environment. This is also where you configure automatic IPAM
 synchronization. A Proxmox connection provides infrastructure inventory; set up
 SSH access separately when you want to manage a guest as a Linux host.
 
-## What can I do with Shipyard?
+## What can I do with Fleet?
 
-| I want to… | Shipyard provides |
+| I want to… | Fleet provides |
 | --- | --- |
 | See which servers need attention | Host health, resource usage, pending updates, tags, groups, and environments |
 | Work on a host from my browser | SSH terminals, SSH-key management, and SFTP file transfers |
@@ -147,11 +147,11 @@ Webhook and email notifications help you follow operations outside the app.
 <details>
 <summary><strong>Hosts, Proxmox guests, and managed VMs—what is the difference?</strong></summary>
 
-- A **managed host** is a Linux system Shipyard connects to over SSH for
+- A **managed host** is a Linux system Fleet connects to over SSH for
   day-to-day operations. It can be a physical server or a virtual machine.
 - A **Proxmox inventory guest** is a VM or container discovered through a
   connected Proxmox platform. Discovery alone does not set up SSH access.
-- A **managed VM** is provisioned and tracked through Shipyard's OpenTofu
+- A **managed VM** is provisioned and tracked through Fleet's OpenTofu
   workflow, with plans, apply operations, and drift checks.
 
 You can connect an existing Linux guest as a managed host without rebuilding it.
@@ -163,25 +163,29 @@ You can connect an existing Linux guest as a managed host without rebuilding it.
 | What you see | What to check |
 | --- | --- |
 | The page does not open | Run `docker compose ps`. Check whether your browser is on the Docker host; use the SSH tunnel above for a remote installation. |
-| Port 443 is already in use | Create a `.env` file next to `docker-compose.yml` containing `SHIPYARD_PORT=8443`, run `docker compose up -d --wait`, and open `https://localhost:8443` on the Docker host. Use the new server-side port in any SSH tunnel too. |
+| Port 443 is already in use | Create a `.env` file next to `docker-compose.yml` containing `FLEET_PORT=8443`, run `docker compose up -d --wait`, and open `https://localhost:8443` on the Docker host. Use the new server-side port in any SSH tunnel too. |
 | A certificate warning | Expected with the generated self-signed certificate. The [TLS guide](docs/DOCKER_DEPLOYMENT.md#network-and-tls) explains using your own certificate. |
-| The container does not become healthy | Run `docker compose logs --tail=100 shipyard` and check the reported error. If you set secrets in `.env`, both must be present and different. |
+| The container does not become healthy | Run `docker compose logs --tail=100 fleet` and check the reported error. If you set secrets in `.env`, both must be present and different. |
 | A host is saved but cannot connect | Check the SSH address, port, firewall, user, and installed public key. A successful save does not prove SSH access. |
 | You see login instead of setup | Setup only appears when no users exist. Sign in with the account created for this installation. |
 
-For a reproducible bug, [open an issue](https://github.com/tobayashi-san/Shipyard/issues)
+For a reproducible bug, [open an issue](https://github.com/tobayashi-san/Fleet/issues)
 with the image version, expected behavior, and relevant error. Remove credentials
-and private host details before sharing logs; never attach `.env`, `shipyard.env`, or SSH keys.
+and private host details before sharing logs; never attach `.env`, `fleet.env`, or SSH keys.
 
 ## Keep your installation up to date
+
+> [!NOTE]
+> Coming from **Shipyard**? Fleet is the same product under its new name. Follow the
+> one-time [migration guide](docs/MIGRATING_FROM_SHIPYARD.md) before switching images.
 
 The default image tag, `latest`, follows **stable releases**. Release candidates
 use explicit tags and do not replace `latest`. Features described on `main` may
 be newer than your installed stable release.
 
-Read the [release notes](https://github.com/tobayashi-san/Shipyard/releases) and
+Read the [release notes](https://github.com/tobayashi-san/Fleet/releases) and
 [back up your data](docs/README.md#backup-and-recovery) before updating. Then run
-these commands from your existing Shipyard directory:
+these commands from your existing Fleet directory:
 
 ```bash
 docker compose pull
@@ -189,10 +193,10 @@ docker compose up -d --wait
 ```
 
 If your installation uses a `.env` file with `JWT_SECRET` and
-`SHIPYARD_KEY_SECRET`, keep it: those values continue to take precedence.
+`FLEET_KEY_SECRET`, keep it: those values continue to take precedence.
 
-For predictable versions, set `SHIPYARD_IMAGE` in `.env` to
-`ghcr.io/tobayashi-san/shipyard:<version>`, replacing `<version>` with a published
+For predictable versions, set `FLEET_IMAGE` in `.env` to
+`ghcr.io/tobayashi-san/fleet:<version>`, replacing `<version>` with a published
 release tag without its leading `v`. Update that setting when moving to a new
 release. Do not run `docker compose down -v` during an update: it deletes named
 data volumes, including your data and generated secrets.
@@ -208,7 +212,7 @@ data volumes, including your data and generated secrets.
 
 ## Local development
 
-Want to work on Shipyard's code? Use **Node.js 24** and npm. The complete
+Want to work on Fleet's code? Use **Node.js 24** and npm. The complete
 [development guide](docs/DEVELOPMENT_PIPELINE.md#local-development) covers setup,
 checks, browser tests, and releases.
 
@@ -216,7 +220,7 @@ Read [Contributing](CONTRIBUTING.md) for code conventions, required checks, and
 browser-test failure artifacts. Follow the [security policy](SECURITY.md) to
 report vulnerabilities privately.
 
-Shipyard uses React/TypeScript in `frontend-next/` and an Express/SQLite backend
+Fleet uses React/TypeScript in `frontend-next/` and an Express/SQLite backend
 in `server/`. The Docker installation above is the path for running the app;
 the development guide is for changing it.
 

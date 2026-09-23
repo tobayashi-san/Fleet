@@ -127,7 +127,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
       style={{ width: collapsed ? undefined : `min(85vw, ${sidebarWidth}px)` }}
     >
       <div className="flex h-11 shrink-0 items-center justify-between border-b px-3 lg:hidden">
-        <span className="flex min-w-0 items-center gap-2"><BrandMark className="h-5 w-5" /><span className="min-w-0"><span className="block text-sm font-semibold tracking-tight">Shipyard</span><span className="block truncate text-xs text-muted-foreground" title={String(activeEnvironment)}>{String(activeEnvironment)}</span></span></span>
+        <span className="flex min-w-0 items-center gap-2"><BrandMark className="h-5 w-5" /><span className="min-w-0"><span className="block text-sm font-semibold tracking-tight">Fleet</span><span className="block truncate text-xs text-muted-foreground" title={String(activeEnvironment)}>{String(activeEnvironment)}</span></span></span>
           <button type="button" onClick={onMobileClose} className="rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground" aria-label={t("shell.closeNavigation")} title={t("shell.closeNavigation")}>
           <X className="h-4 w-4" />
         </button>
@@ -145,7 +145,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: { mobileOpen?: bo
 
       <div className="shrink-0 space-y-1 border-t p-2">
         {canManageConsole && <NavItem to="/settings" label="Settings" icon={Settings2} active={path === "/settings" || path.startsWith("/settings/")} collapsed={collapsed} onNavigate={onMobileClose} />}
-        <a href="https://github.com/tobayashi-san/Shipyard" target="_blank" rel="noreferrer" title={t("nav.help")} className={cn("group flex min-h-9 items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")}>
+        <a href="https://github.com/tobayashi-san/Fleet" target="_blank" rel="noreferrer" title={t("nav.help")} className={cn("group flex min-h-9 items-center gap-2.5 rounded-sm px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-accent hover:text-foreground", collapsed && "justify-center px-2")}>
           <HelpCircle className="h-4 w-4 shrink-0" />
           {!collapsed && <span>{t("nav.help")}</span>}
         </a>

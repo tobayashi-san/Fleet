@@ -21,7 +21,7 @@ test-results/
 .local/
 .agents/
 .codex/
-Shipyard.wiki/
+Fleet.wiki/
 playbooks/
 plugins/
 **/*.tsbuildinfo

@@ -69,7 +69,7 @@ describe("UI refactor contract", () => {
     expect(store).toContain("return 'comfortable'");
     expect(store).toContain("sidebarWidth: readSidebarWidth()");
     expect(sidebar).toContain("onPointerDown={startResize}");
-    expect(sidebar).not.toContain("shipyard_recent_nav");
+    expect(sidebar).not.toContain("fleet_recent_nav");
     expect(shell).toContain("setDensity(value)");
     expect(shell).toContain("lg:hidden\" onClick={openCommandPalette}");
   });
@@ -225,7 +225,7 @@ describe("UI refactor contract", () => {
     expect(shell).toContain('title="Console permissions could not be loaded"');
     expect(shell).toContain("Environments could not be loaded.");
     expect(palette).toContain("Some search results could not be loaded.");
-    expect(login).toContain('title="Shipyard could not be reached"');
+    expect(login).toContain('title="Fleet could not be reached"');
     expect(servers).toContain('title="Host folders could not be loaded"');
     expect(servers).toContain('title="Playbooks could not be loaded"');
     expect(audit).toContain('title="Audit filters could not be loaded"');
@@ -258,7 +258,7 @@ describe("UI refactor contract", () => {
     expect(networks).toContain('tr("vlanBridge")');
     expect(networks).toContain('tr("descriptionLabel")');
     expect(sidebar.match(/<NavItem to="\/operations"/g)).toHaveLength(1);
-    expect(sidebar).not.toContain("shipyard.lastInfrastructureRoute");
+    expect(sidebar).not.toContain("fleet.lastInfrastructureRoute");
     expect(sidebar).toContain('path.startsWith("/servers")');
     expect(operations).not.toContain('| "Audit"');
     expect(operations).not.toContain('<option value="Audit">');

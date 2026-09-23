@@ -190,7 +190,7 @@ function evaluateAll() {
   return evaluateServers(db.servers.getAll().map(server => server.id));
 }
 
-// Monitoring was deliberately removed from Shipyard's product scope. Keep a
+// Monitoring was deliberately removed from Fleet's product scope. Keep a
 // no-op compatibility surface for older callers while avoiding evaluations,
 // persistence changes, WebSocket events and notifications.
 module.exports = {

@@ -11,9 +11,9 @@ const {createApplicationBackup,verifyApplicationBackup,restoreApplicationBackup}
 const {createEncryptedSnapshot,withDecryptedArchive}=require('../services/database-backup');
 const {packRecoveryBundle,unpackRecoveryBundle}=require('../services/recovery-bundle');
 const passphrase='Synthetic overlapping recovery test passphrase';
-const magic=Buffer.from('SHIPYARD-APPLICATION-1\n');
+const magic=Buffer.from('FLEET-APPLICATION-1\n');
 function fixture(t){
- const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-root-consistency-'));
+ const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-root-consistency-'));
  const data=path.join(root,'data'),ssh=path.join(data,'ssh');fs.mkdirSync(ssh,{recursive:true});
  fs.writeFileSync(path.join(ssh,'key'),'original synthetic key');
  const db=new Database(path.join(data,'db.sqlite'));db.exec('CREATE TABLE users(id TEXT,token_version INTEGER); CREATE TABLE app_settings(key TEXT,value TEXT); CREATE TABLE environments(id TEXT);');

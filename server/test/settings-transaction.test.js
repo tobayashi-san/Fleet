@@ -1,6 +1,6 @@
 'use strict';
 const {test,after}=require('node:test');const assert=require('node:assert/strict');const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-settings-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-settings-'));process.env.DB_PATH=path.join(root,'test.db');process.env.NODE_ENV='test';
 const db=require('../db');const scheduler=require('../services/scheduler');let reloads=0;scheduler.reloadAllSchedules=()=>{reloads++;};
 const app=require('express')();const request=require('supertest');app.use(require('express').json());app.use((req,res,next)=>{req.user={role:'admin',username:'settings-review'};next();});app.use(require('../routes/system'));
 after(()=>{db.db.close();fs.rmSync(root,{recursive:true,force:true});});

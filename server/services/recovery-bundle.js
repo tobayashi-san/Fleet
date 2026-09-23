@@ -1,6 +1,6 @@
 'use strict';
 const fs=require('node:fs');const fsp=require('node:fs/promises');const path=require('node:path');const crypto=require('node:crypto');
-const MAGIC=Buffer.from('SHIPYARD-FILES-1\n');
+const MAGIC=Buffer.from('FLEET-FILES-1\n');
 const MAX_METADATA=65536;
 function safePath(value){return typeof value==='string' && value.length>0 && !value.includes('\\') && !value.includes('\0') && !path.posix.isAbsolute(value) && path.posix.normalize(value)===value && value!=='.' && !value.split('/').includes('..');}
 async function writeAll(handle,buffer){let offset=0;while(offset<buffer.length){const {bytesWritten}=await handle.write(buffer,offset,buffer.length-offset);if(!bytesWritten)throw Error('Bundle write failed');offset+=bytesWritten;}}

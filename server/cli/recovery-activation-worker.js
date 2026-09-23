@@ -10,10 +10,10 @@ async function main() {
   const [action, archive, prepared, mapping, journalDirectory, offline] = process.argv.slice(2);
   const validAction = action === 'plan' ? process.argv.length === 6 : ['stage', 'activate', 'rollback', 'cleanup-staging'].includes(action) && process.argv.length === 8 && path.isAbsolute(journalDirectory || '') && offline === '--offline';
   if (!validAction || ![archive, prepared, mapping].every(value => value && path.isAbsolute(value))) throw Error('Usage: recovery-activation.js plan /absolute/archive /absolute/prepared-directory /absolute/targets.json OR stage|activate|rollback|cleanup-staging /absolute/archive /absolute/prepared-directory /absolute/targets.json /absolute/journal-directory --offline');
-  const passphrase = process.env.SHIPYARD_BACKUP_PASSPHRASE;
-  delete process.env.SHIPYARD_BACKUP_PASSPHRASE;
-  const applicationKey = process.env.SHIPYARD_KEY_SECRET;
-  delete process.env.SHIPYARD_KEY_SECRET;
+  const passphrase = process.env.FLEET_BACKUP_PASSPHRASE;
+  delete process.env.FLEET_BACKUP_PASSPHRASE;
+  const applicationKey = process.env.FLEET_KEY_SECRET;
+  delete process.env.FLEET_KEY_SECRET;
   const stat = await fs.stat(mapping);
   if (!stat.isFile() || stat.size > 1024 * 1024) throw Error('Target mapping must be a JSON file smaller than 1 MiB');
   const targets = JSON.parse(await fs.readFile(mapping, 'utf8'));

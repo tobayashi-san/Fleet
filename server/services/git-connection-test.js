@@ -15,7 +15,7 @@ async function testConnection({ repoUrl, authToken = '', sshKey = '', branch = '
   if (!validateBranchName(branch)) throw Object.assign(new Error('Invalid branch name'), { status: 400 });
   const credentials = validateCredentials(repoUrl, authToken, sshKey);
   if (!credentials.ok) throw Object.assign(new Error(credentials.error), { status: 400 });
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'shipyard-git-test-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'fleet-git-test-'));
   try {
     const env = { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_CONFIG_COUNT: '1', GIT_CONFIG_KEY_0: 'credential.helper', GIT_CONFIG_VALUE_0: '' };
     if (authToken) {

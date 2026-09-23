@@ -17,7 +17,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create a dedicated non-root user for runtime
-RUN groupadd -r -g 1001 shipyard && useradd -r -u 1001 -g shipyard -d /app shipyard
+RUN groupadd -r -g 1001 fleet && useradd -r -u 1001 -g fleet -d /app fleet
 
 WORKDIR /app
 COPY server/package*.json ./server/
@@ -28,9 +28,9 @@ COPY --from=builder /app/frontend-next/dist ./frontend-next/dist
 COPY docker-entrypoint.sh ./
 RUN chmod +x docker-entrypoint.sh
 
-RUN mkdir -p /app/.ansible/tmp && chown -R shipyard:shipyard /app/.ansible
-RUN mkdir -p /app/server/playbooks && chown -R shipyard:shipyard /app/server/playbooks
-RUN mkdir -p /app/bundled-playbooks && cp -a /app/server/playbooks/. /app/bundled-playbooks/ && chown -R shipyard:shipyard /app/bundled-playbooks
+RUN mkdir -p /app/.ansible/tmp && chown -R fleet:fleet /app/.ansible
+RUN mkdir -p /app/server/playbooks && chown -R fleet:fleet /app/server/playbooks
+RUN mkdir -p /app/bundled-playbooks && cp -a /app/server/playbooks/. /app/bundled-playbooks/ && chown -R fleet:fleet /app/bundled-playbooks
 
 VOLUME ["/app/server/data"]
 EXPOSE 8443
@@ -38,5 +38,5 @@ ENV NODE_ENV=production
 ENV PORT=8443
 ENV TZ=Europe/Zurich
 
-# Entrypoint runs as root to fix data-volume ownership, then drops to shipyard
+# Entrypoint runs as root to fix data-volume ownership, then drops to fleet
 ENTRYPOINT ["./docker-entrypoint.sh"]

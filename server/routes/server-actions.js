@@ -207,7 +207,7 @@ function createServerActionsRouter({ broadcast } = {}) {
           emit({ type: 'update_output', serverId, historyId, stream: type, data });
         },
         // The reboot module must run with elevated privileges. Without become
-        // it fails for the common non-root SSH users that Shipyard supports.
+        // it fails for the common non-root SSH users that Fleet supports.
         { become: true, environmentId: server.environment_id || 'default' }
       );
 

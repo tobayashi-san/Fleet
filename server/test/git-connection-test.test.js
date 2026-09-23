@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const root = fs.mkdtempSync(path.join(os.tmpdir(), 'shipyard-probe-test-'));
+const root = fs.mkdtempSync(path.join(os.tmpdir(), 'fleet-probe-test-'));
 process.env.DB_PATH = path.join(root, 'test.db');
 let seen;
 let fail = false;

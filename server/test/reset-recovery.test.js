@@ -2,7 +2,7 @@
 const {test,after}=require('node:test');const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');const {spawnSync}=require('node:child_process');const Database=require('better-sqlite3');
 const {recoverPendingPlaybookResets}=require('../services/reset-playbooks');
-const root=fs.mkdtempSync(path.join(os.tmpdir(),'shipyard-reset-recovery-'));
+const root=fs.mkdtempSync(path.join(os.tmpdir(),'fleet-reset-recovery-'));
 after(()=>fs.rmSync(root,{recursive:true,force:true}));
 function crash(point){
  const base=fs.mkdtempSync(path.join(root,'case-'));const directory=path.join(base,'playbooks');fs.mkdirSync(directory);
@@ -16,7 +16,7 @@ for(const point of ['before-commit','after-commit','after-journal-cleanup'])test
  const {databasePath,directory}=crash(point);const database=new Database(databasePath);
  try{
   const results=recoverPendingPlaybookResets(directory,database);assert.equal(results.length,1);
-  assert.equal(fs.readdirSync(directory).some(n=>n.startsWith('.shipyard-reset-')),false);
+  assert.equal(fs.readdirSync(directory).some(n=>n.startsWith('.fleet-reset-')),false);
   assert.equal(database.prepare('SELECT COUNT(*) n FROM records').get().n,point==='before-commit'?1:0);
   if(point==='before-commit'){
    assert.equal(fs.readFileSync(path.join(directory,'a.yml'),'utf8'),'original-a');assert.equal(fs.readFileSync(path.join(directory,'b.yaml'),'utf8'),'original-b');
@@ -31,7 +31,7 @@ test('offline recovery preserves conflicting replacement files and succeeds afte
   fs.writeFileSync(path.join(directory,'a.yml'),'replacement');
   assert.throws(()=>recoverPendingPlaybookResets(directory,database),/conflicts/);
   assert.equal(fs.readFileSync(path.join(directory,'a.yml'),'utf8'),'replacement');
-  const staging=fs.readdirSync(directory).find(n=>n.startsWith('.shipyard-reset-'));
+  const staging=fs.readdirSync(directory).find(n=>n.startsWith('.fleet-reset-'));
   assert.equal(fs.readFileSync(path.join(directory,staging,'a.yml'),'utf8'),'original-a');
   fs.renameSync(path.join(directory,'a.yml'),path.join(directory,'replacement.txt'));
   recoverPendingPlaybookResets(directory,database);assert.equal(fs.readFileSync(path.join(directory,'a.yml'),'utf8'),'original-a');
@@ -39,7 +39,7 @@ test('offline recovery preserves conflicting replacement files and succeeds afte
 });
 test('changed journals fail closed and CLI requires explicit offline mode',()=>{
  const {databasePath,directory}=crash('after-commit');const database=new Database(databasePath);
- const staging=fs.readdirSync(directory).find(n=>n.startsWith('.shipyard-reset-'));const journalPath=path.join(directory,staging,'journal.json');const raw=fs.readFileSync(journalPath,'utf8');
+ const staging=fs.readdirSync(directory).find(n=>n.startsWith('.fleet-reset-'));const journalPath=path.join(directory,staging,'journal.json');const raw=fs.readFileSync(journalPath,'utf8');
  try{fs.writeFileSync(journalPath,raw+' ');assert.throws(()=>recoverPendingPlaybookResets(directory,database),/does not match/);}finally{database.close();fs.writeFileSync(journalPath,raw);}
  const cli=path.join(__dirname,'../cli/reset-recovery.js');
  assert.equal(spawnSync(process.execPath,[cli,databasePath,directory],{encoding:'utf8'}).status,1);
@@ -53,6 +53,6 @@ test('recovery refuses a different database even when it contains the same table
  try{
   assert.throws(()=>recoverPendingPlaybookResets(directory,wrong),/different database/);
   assert.equal(fs.existsSync(path.join(directory,'a.yml')),false);
-  assert.ok(fs.readdirSync(directory).some(n=>n.startsWith('.shipyard-reset-')));
+  assert.ok(fs.readdirSync(directory).some(n=>n.startsWith('.fleet-reset-')));
  }finally{wrong.close();}
 });

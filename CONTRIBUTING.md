@@ -1,4 +1,4 @@
-# Contributing to Shipyard
+# Contributing to Fleet
 
 Use Node.js 24 (see `.nvmrc`). Start with the setup and release instructions in
 [Development Pipeline](docs/DEVELOPMENT_PIPELINE.md).

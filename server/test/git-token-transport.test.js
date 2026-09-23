@@ -2,7 +2,7 @@ const {test,after}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');const os=require('node:os');const path=require('node:path');
 const root=fs.mkdtempSync(path.join(os.tmpdir(),'git-token-transport-'));
-process.env.DB_PATH=path.join(root,'test.db');process.env.SHIPYARD_GIT_WORKSPACE_DIR=path.join(root,'workspace');
+process.env.DB_PATH=path.join(root,'test.db');process.env.FLEET_GIT_WORKSPACE_DIR=path.join(root,'workspace');
 fs.mkdirSync(path.join(root,'workspace','.git'),{recursive:true});
 const calls=[];
 let rejectRemote=false;

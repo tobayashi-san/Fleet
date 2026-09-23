@@ -12,7 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { QueryErrorState } from '@/components/ui/query-error-state';
 
-const MFA_TOKEN_KEY = 'shipyard.login.mfa-token';
+const MFA_TOKEN_KEY = 'fleet.login.mfa-token';
 
 export function LoginPage() {
   const { t } = useTranslation();
@@ -25,7 +25,7 @@ export function LoginPage() {
   });
 
   const isSetup = status ? !status.configured : false;
-  const appName = status?.appName || 'Shipyard';
+  const appName = status?.appName || 'Fleet';
   const appTagline = status?.appTagline || 'Infrastructure';
 
   // Apply branding from auth status (no settings query on login)
@@ -65,7 +65,7 @@ export function LoginPage() {
             onRetry={() => {
               void refetch();
             }}
-            title="Shipyard could not be reached"
+            title="Fleet could not be reached"
           />
         </div>
       </div>

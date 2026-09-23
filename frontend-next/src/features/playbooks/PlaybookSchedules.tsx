@@ -721,7 +721,7 @@ export function ScheduleDialog({
                   checked={checked.has("localhost")}
                   onChange={() => toggleSrv("localhost")}
                 />
-                <span>localhost <span className="block text-xs text-muted-foreground">Runs inside the Shipyard runtime, not on a remote host.</span></span>
+                <span>localhost <span className="block text-xs text-muted-foreground">Runs inside the Fleet runtime, not on a remote host.</span></span>
                 {allChecked && checked.has("localhost") && (
                   <span className="text-xs font-medium text-destructive">
                     {t("run.excluded")}

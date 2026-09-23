@@ -11,11 +11,11 @@ const log = require('../utils/logger').child('routes:playbooks');
 const { fileReadLimiter } = require('../utils/rate-limiters');
 const { validatePlaybookContent } = require('../utils/playbook-validation');
 
-const PLAYBOOKS_DIR = path.resolve(process.env.SHIPYARD_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
+const PLAYBOOKS_DIR = path.resolve(process.env.FLEET_PLAYBOOKS_DIR || path.join(__dirname, '..', 'playbooks'));
 const BUNDLED_PLAYBOOKS_DIR = path.join(__dirname, '..', '..', 'bundled-playbooks');
 const MAX_BACKUPS = 5;
 const RESOLVED_PLAYBOOKS_DIR = path.resolve(PLAYBOOKS_DIR);
-const RELEASES_FILE = path.join(PLAYBOOKS_DIR, '.shipyard-playbook-releases.json');
+const RELEASES_FILE = path.join(PLAYBOOKS_DIR, '.fleet-playbook-releases.json');
 
 function readReleaseMetadata() {
   try {

@@ -10,10 +10,10 @@ function recoveryRoots(database, env = process.env) {
   const server = path.resolve(__dirname,'..');
   const roots = [
     {id:'data',path:path.join(server,'data'),required:false},
-    {id:'playbooks',path:env.SHIPYARD_PLAYBOOKS_DIR || path.join(server,'playbooks'),required:Boolean(env.SHIPYARD_PLAYBOOKS_DIR)},
+    {id:'playbooks',path:env.FLEET_PLAYBOOKS_DIR || path.join(server,'playbooks'),required:Boolean(env.FLEET_PLAYBOOKS_DIR)},
     {id:'plugins',path:env.PLUGINS_DIR || '/app/plugins',required:Boolean(env.PLUGINS_DIR)},
-    {id:'ssh',path:env.SHIPYARD_SSH_DIR || path.join(server,'data','ssh'),required:Boolean(env.SHIPYARD_SSH_DIR)},
-    {id:'git',path:env.SHIPYARD_GIT_WORKSPACE_DIR || path.join(server,'data','git-workspace'),required:Boolean(env.SHIPYARD_GIT_WORKSPACE_DIR)},
+    {id:'ssh',path:env.FLEET_SSH_DIR || path.join(server,'data','ssh'),required:Boolean(env.FLEET_SSH_DIR)},
+    {id:'git',path:env.FLEET_GIT_WORKSPACE_DIR || path.join(server,'data','git-workspace'),required:Boolean(env.FLEET_GIT_WORKSPACE_DIR)},
     {id:'state-backups',path:env.TOFU_STATE_BACKUP_DIR || path.join(server,'data','tofu-state-backups'),required:Boolean(env.TOFU_STATE_BACKUP_DIR)},
   ];
   if (database.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='tofu_workspaces'").get()) {

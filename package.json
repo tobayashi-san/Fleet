@@ -24,6 +24,6 @@
     "check:frontend": "npm --prefix frontend-next run check"
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^10.0.5"
   }
 }

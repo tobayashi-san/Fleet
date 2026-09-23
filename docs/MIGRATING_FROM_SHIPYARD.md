@@ -60,7 +60,8 @@ your project directory had a different name.
 
    ```bash
    for name in data secrets workspaces; do
-     docker volume create "fleet_fleet-$name"
+     docker volume create --label com.docker.compose.project=fleet \
+       --label com.docker.compose.volume="fleet-$name" "fleet_fleet-$name"
      docker run --rm -v "shipyard_shipyard-$name:/from:ro" -v "fleet_fleet-$name:/to" \
        alpine sh -c 'cp -a /from/. /to/'
    done

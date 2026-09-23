@@ -67,11 +67,13 @@ your project directory had a different name.
    done
    ```
 
-4. **Rename the database and the secrets file.**
+4. **Rename the database, the TLS certificate, the playbook approvals and the
+   secrets file.** Keeping the certificate avoids a new browser warning.
 
    ```bash
    docker run --rm -v fleet_fleet-data:/data alpine sh -c \
-     'cd /data && for f in shipyard.db shipyard.db-wal shipyard.db-shm; do [ -e "$f" ] && mv "$f" "fleet${f#shipyard}"; done; ls fleet.db*'
+     'cd /data && for f in shipyard.db shipyard.db-wal shipyard.db-shm certs/shipyard.crt certs/shipyard.key; do [ ! -e "$f" ] || { b=${f##*/}; mv "$f" "$(dirname "$f")/fleet${b#shipyard}"; }; done; ls fleet.db* certs'
+   [ ! -e playbooks/.shipyard-playbook-releases.json ] || mv playbooks/.shipyard-playbook-releases.json playbooks/.fleet-playbook-releases.json
    docker run --rm -v fleet_fleet-secrets:/secrets alpine sh -c \
      '[ ! -e /secrets/shipyard.env ] || { sed "s/^SHIPYARD_KEY_SECRET=/FLEET_KEY_SECRET=/" /secrets/shipyard.env > /secrets/fleet.env && chmod 600 /secrets/fleet.env && rm /secrets/shipyard.env; }'
    ```

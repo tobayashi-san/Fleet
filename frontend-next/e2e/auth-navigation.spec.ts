@@ -499,8 +499,7 @@ test('playbook workflows expose safe secrets, explicit targets and one run flow'
     await expect(page.getByRole('tab', { name: 'History', exact: true })).toHaveCount(0);
     await expect(page.getByRole('tab', { name: 'Templates', exact: true })).toHaveCount(0);
 
-    await page.getByRole('button', { name: 'Advanced automation settings' }).click();
-    await page.getByRole('menuitem', { name: 'Variables & Secrets', exact: true }).click();
+    await page.getByRole('tab', { name: 'Variables & Secrets', exact: true }).click();
     await page.getByRole('button', { name: /add variable/i }).click();
     await page.getByLabel('Key', { exact: true }).fill(variableKey);
     await page.getByLabel('Value', { exact: true }).fill(secretValue);

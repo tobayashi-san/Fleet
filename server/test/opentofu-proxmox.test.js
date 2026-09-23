@@ -149,3 +149,20 @@ test('Proxmox resource paths cannot change the configured API origin', () => {
   }
   assert.throws(() => createProxmoxConnection('https://user:pass@host.test', 'token'), /embedded credentials/);
 });
+
+test('deployment variables are stored per VM and exclude connection and Fleet names', () => {
+  const base = { name: 'vars-vm', node_name: 'pve001', disk_datastore: 'fast', bridge: 'vmbr0' };
+  const vm = _test.normalizeProxmoxVm({ ...base, playbook_variables: { pfsense_target_alias: 'fleet_web', app_port: 8080, enable_tls: true } });
+  assert.deepEqual(vm.playbook_variables, { pfsense_target_alias: 'fleet_web', app_port: 8080, enable_tls: true });
+  assert.deepEqual(_test.normalizeProxmoxVm(base).playbook_variables, {});
+  assert.doesNotMatch(_test.renderProxmoxVmHcl(vm), /fleet_web/);
+  for (const [variables, error] of [
+    [{ ansible_host: '10.0.0.1' }, /reserved/],
+    [{ fleet_vm: 'other' }, /reserved/],
+    [{ 'bad-name': 'x' }, /Invalid variable name/],
+    [{ nested: { a: 1 } }, /text, a number or true\/false/],
+    [['a'], /key-value pairs/],
+    [Object.fromEntries(Array.from({ length: 31 }, (_, index) => [`v${index}`, 1])), /At most 30/],
+    [{ large: 'x'.repeat(5000) }, /too large/],
+  ]) assert.throws(() => _test.normalizeProxmoxVm({ ...base, playbook_variables: variables }), error);
+});

@@ -6,6 +6,7 @@ const {
   flattenStateResources,
   isPlainObject,
   normalizeIp,
+  normalizeDeploymentVariables,
   normalizePostDeployPlaybooks,
 } = require('./core-utils');
 
@@ -88,6 +89,7 @@ function normalizeProxmoxVm(input = {}) {
     pre_deploy_target_server_id: preDeployTargetServerId,
     pre_deploy_playbooks: preDeployPlaybooks,
     post_deploy_playbooks: normalizePostDeployPlaybooks(input.post_deploy_playbooks),
+    playbook_variables: normalizeDeploymentVariables(input.playbook_variables),
   };
 }
 

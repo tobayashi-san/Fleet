@@ -636,9 +636,10 @@ override.tf.json
         return result;
       }
 
-      emitMeta(`[Fleet] Starte Post-Deploy-Playbook "${job.playbook}" auf ${target.name}.\n`);
+      emitMeta(`[Fleet] Running post-deploy playbook "${job.playbook}" on ${target.name}.\n`);
       try {
         const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
+          ...(job.vm.playbook_variables || {}),
           fleet_workspace: workspace.name,
           fleet_vm: job.vm.name,
         }, (stream, data) => emitMeta(`[${job.playbook}/${stream}] ${data}`), {
@@ -699,6 +700,7 @@ override.tf.json
       emitMeta(`[Fleet] Running pre-deploy playbook "${job.playbook}" on ${target.name}.`);
       try {
         const run = await ansibleRunner.runPlaybook(job.playbook, target.name, {
+          ...(job.vm.playbook_variables || {}),
           fleet_workspace: workspace.name,
           fleet_vm: job.vm.name,
           fleet_phase: 'pre_deploy',

@@ -9,6 +9,19 @@ The release workflow publishes the section that matches the released version
 as its GitHub release notes. Release candidates use the section of the version
 they lead up to.
 
+## 3.2.0
+
+### Added
+
+- Workflow variables per deployment: set values in the VM form that its pre-
+  and post-deploy workflows receive, for example the firewall alias for a new
+  host. VM templates carry them too, and the deployment view lists them.
+
+### Changed
+
+- Variables & Secrets and Git are regular tabs under Automations instead of
+  entries in a menu.
+
 ## 3.1.0
 
 ### Breaking changes

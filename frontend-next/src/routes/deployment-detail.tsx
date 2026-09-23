@@ -57,6 +57,7 @@ interface Vm {
   post_deploy?: { entries?: PostDeployEntry[]; counts?: Record<string, number> };
   pre_deploy_playbooks?: string[];
   pre_deploy_target_server_id?: string;
+  playbook_variables?: Record<string, string | number | boolean>;
   [key: string]: unknown;
 }
 interface RunsResponse { items?: Run[]; pagination?: { total?: number; page?: number; total_pages?: number; has_next?: boolean; has_prev?: boolean } }
@@ -258,6 +259,9 @@ export function DeploymentDefinition({id, embedded = false, section}: {id: strin
       <div><div className="text-sm font-medium">Before OpenTofu</div>{(vm.pre_deploy_playbooks || []).length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No pre-deploy workflows configured.</p> : <div className="mt-2 space-y-2">{vm.pre_deploy_playbooks!.map((playbook, index) => <div key={playbook} className="rounded-md border p-3 text-sm"><div className="font-medium">{index + 1}. {playbook}</div><div className="mt-0.5 text-xs text-muted-foreground">Target host: {vm.pre_deploy_target_server_id}</div></div>)}</div>}</div>
       <div className="border-t pt-4"><div className="text-sm font-medium">After deployment</div>
       {(vm.post_deploy?.entries || []).length === 0 ? <p className="text-sm text-muted-foreground">No post-deployment steps configured.</p> : <div className="space-y-2">{vm.post_deploy!.entries!.map((entry) => <div key={`${entry.position}-${entry.playbook}`} className="flex items-center justify-between rounded-md border p-3 text-sm"><div><div className="font-medium">{entry.position}. {entry.playbook}</div><div className="text-xs text-muted-foreground">{formatDate(entry.completed_at)}</div></div><StatusBadge tone={statusTone(entry.status)}>{entry.status || "pending"}</StatusBadge></div>)}</div>}
+      </div>
+      <div className="border-t pt-4"><div className="text-sm font-medium">Workflow variables</div>
+      {Object.keys(vm.playbook_variables || {}).length === 0 ? <p className="mt-1 text-sm text-muted-foreground">No variables set. The workflows use the environment variables only.</p> : <dl className="mt-2 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[max-content_1fr]">{Object.entries(vm.playbook_variables!).map(([key, value]) => <div key={key} className="contents"><dt className="font-mono text-xs text-muted-foreground">{key}</dt><dd className="break-all font-mono text-xs">{String(value)}</dd></div>)}</dl>}
       </div>
     </CardContent></Card>
 

@@ -1,5 +1,4 @@
 import { Button } from '@/components/ui/button';
-import { OverflowItem, OverflowMenu } from '@/components/ui/overflow-menu';
 import { PageHeader } from '@/components/ui/page-header';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { hasCap, useProfile } from '@/lib/queries';
@@ -45,16 +44,16 @@ export function PlaybooksPage() {
       icon: <Play className="h-4 w-4" />,
     },
     {
-      value: "vars",
-      label: "Variables & Secrets",
-      icon: <SlidersHorizontal className="h-4 w-4" />,
-      cap: "canViewVars",
-    },
-    {
       value: "schedules",
       label: t("pb.tabSchedules"),
       icon: <Clock className="h-4 w-4" />,
       cap: "canViewSchedules",
+    },
+    {
+      value: "vars",
+      label: "Variables & Secrets",
+      icon: <SlidersHorizontal className="h-4 w-4" />,
+      cap: "canViewVars",
     },
     ...(isAdmin ? [{value:"git",label:"Git",icon:<GitBranch className="h-4 w-4"/>}] : []),
   ], [t,isAdmin]);
@@ -81,17 +80,14 @@ export function PlaybooksPage() {
                 <Plus />{t("pb.new")}
               </Button>
             )}
-            {/* Variables and Git live behind the page menu; the jobs list has its own navigation entry. */}
-            {allowed.some(tb => ['vars', 'git'].includes(tb.value)) && <OverflowMenu title="Advanced automation settings">
-              {allowed.filter(tb => ['vars', 'git'].includes(tb.value)).map(tb => <OverflowItem key={tb.value} onClick={() => playbookTabs.onValueChange(tb.value)}>{tb.label}</OverflowItem>)}
-            </OverflowMenu>}
           </div>
         }
       />
 
       <Tabs value={playbookTabs.value} onValueChange={playbookTabs.onValueChange}>
         <TabsList className="console-tabs">
-          {[...allowed].sort((a, b) => Number(b.value === "runs") - Number(a.value === "runs")).filter(tb => !["vars", "git"].includes(tb.value)).map((tb) => (
+          {/* Variables and Git are regular tabs: hidden in a menu, operators could not find them. */}
+          {[...allowed].sort((a, b) => Number(b.value === "runs") - Number(a.value === "runs")).map((tb) => (
             <TabsTrigger key={tb.value} value={tb.value} className="gap-1.5">
               {tb.icon} {tb.label}
             </TabsTrigger>

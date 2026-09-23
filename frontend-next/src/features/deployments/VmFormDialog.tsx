@@ -57,6 +57,7 @@ interface VmTemplate {
     pre_deploy_target_server_id?: string;
     pre_deploy_playbooks?: string[];
     post_deploy_playbooks?: string[];
+    playbook_variables?: Record<string, string | number | boolean>;
   };
 }
 interface Playbook {
@@ -183,8 +184,24 @@ interface VmFormDialogProps {
   initialVm?: Record<string, unknown> | null;
 }
 const workflows = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+type VariableRow = { key: string; value: string };
+const variableRows = (value: unknown): VariableRow[] =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.entries(value as Record<string, unknown>).map(([key, item]) => ({ key, value: String(item ?? '') }))
+    : [];
+const variablesPayload = (rows: VariableRow[]) =>
+  Object.fromEntries(rows.filter(row => row.key.trim()).map(row => [row.key.trim(), row.value]));
+/** Mirrors the server rules so a mistake shows next to the field instead of on save. */
+function variableError(row: VariableRow, rows: VariableRow[]) {
+  const key = row.key.trim();
+  if (!key) return row.value ? 'Enter a name for this value.' : '';
+  if (!/^[A-Za-z_][A-Za-z0-9_]{0,63}$/.test(key)) return 'Use letters, digits and underscores, starting with a letter.';
+  if (/^(ansible|fleet)_/i.test(key)) return 'Names starting with ansible_ or fleet_ are reserved.';
+  if (rows.filter(item => item.key.trim() === key).length > 1) return 'This name is used twice.';
+  return '';
+}
 function baselineFor(vm?: Record<string, unknown> | null) {
-  return JSON.stringify([formFromVm(vm), workflows(vm?.post_deploy_playbooks), workflows(vm?.pre_deploy_playbooks), String(vm?.pre_deploy_target_server_id || '')]);
+  return JSON.stringify([formFromVm(vm), workflows(vm?.post_deploy_playbooks), workflows(vm?.pre_deploy_playbooks), String(vm?.pre_deploy_target_server_id || ''), variablesPayload(variableRows(vm?.playbook_variables))]);
 }
 export function VmFormDialog(props: VmFormDialogProps) {
   if (!props.open) return null;
@@ -203,6 +220,8 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const [postDeploy, setPostDeploy] = useState<string[]>(() => workflows(initialVm?.post_deploy_playbooks));
   const [preDeploy, setPreDeploy] = useState<string[]>(() => workflows(initialVm?.pre_deploy_playbooks));
   const [preDeployTarget, setPreDeployTarget] = useState(() => String(initialVm?.pre_deploy_target_server_id || ""));
+  const [variables, setVariables] = useState<VariableRow[]>(() => variableRows(initialVm?.playbook_variables));
+  const variablesInvalid = variables.some(row => variableError(row, variables));
   const [templateId, setTemplateId] = useState("");
   const [templateName, setTemplateName] = useState("");
   const [selectedZone, setSelectedZone] = useState("");
@@ -312,6 +331,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     post_deploy_playbooks: postDeploy,
     pre_deploy_playbooks: preDeploy,
     pre_deploy_target_server_id: preDeployTarget,
+    playbook_variables: variablesPayload(variables),
   });
   const saveMutation = useMutation({
     mutationFn: () =>
@@ -398,6 +418,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
     );
     setPreDeploy(Array.isArray(config.pre_deploy_playbooks) ? config.pre_deploy_playbooks : []);
     setPreDeployTarget(String(config.pre_deploy_target_server_id || ""));
+    setVariables(variableRows(config.playbook_variables));
     showToast(`Template “${template.name}” applied.`, "success");
   };
   const togglePlaybook = (filename: string, checked: boolean) =>
@@ -448,7 +469,7 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
   const idVerified = !isolated || (checkedId === form.vm_id && idCheckQuery.isSuccess && !idCheckQuery.isFetching && (idCheckQuery.data.available || existingId));
   if (!idVerified) { validation.errors['Target VM ID'] = idCheckQuery.isError ? 'VM ID check failed. Check the Proxmox connection and retry.' : idCheckQuery.data?.available === false ? 'This VM ID is occupied. Choose a free ID.' : 'Checking VM ID availability…'; validation.steps[0].push('Target VM ID'); }
   const requiredValuesValid = Object.keys(validation.errors).length === 0;
-  const formValid = !changedOnServer && catalogQuery.isSuccess && !catalogQuery.isFetching && validNode && validVmId && requiredValuesValid;
+  const formValid = !changedOnServer && catalogQuery.isSuccess && !catalogQuery.isFetching && validNode && validVmId && requiredValuesValid && !variablesInvalid;
   const nextStep = () => {
     setShowErrors(true);
     if (step === 0 && (!validNode || !catalogQuery.isSuccess || catalogQuery.isFetching)) return;
@@ -1017,6 +1038,46 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
             </div>
           </details>
 
+          <details className="group border-t pt-5" open={variables.length > 0 || undefined}>
+            <summary className="cursor-pointer list-none select-none">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">Workflow variables</h3>
+                  <p className="mt-0.5 text-xs text-muted-foreground">
+                    Optional: values for the pre- and post-deploy workflows of this VM, for example pfsense_target_alias.
+                  </p>
+                </div>
+                <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">
+                  {variables.filter(row => row.key.trim()).length} set
+                </span>
+              </div>
+            </summary>
+            <div className="mt-3 space-y-2">
+              {variables.map((row, index) => {
+                const error = variableError(row, variables);
+                const set = (patch: Partial<VariableRow>) => setVariables(current => current.map((item, position) => position === index ? { ...item, ...patch } : item));
+                return (
+                  <div key={index} className="space-y-1">
+                    <div className="flex items-center gap-2">
+                      <Input aria-label={`Variable ${index + 1} name`} aria-invalid={Boolean(error)} className="h-8 flex-1 font-mono text-xs" placeholder="name" value={row.key} onChange={event => set({ key: event.target.value })} />
+                      <Input aria-label={`Variable ${index + 1} value`} className="h-8 flex-[2] font-mono text-xs" placeholder="value" value={row.value} onChange={event => set({ value: event.target.value })} />
+                      <Button type="button" variant="ghost" size="icon" className="h-8 w-8 shrink-0 text-destructive hover:text-destructive" aria-label={`Remove variable ${index + 1}`} onClick={() => setVariables(current => current.filter((_, position) => position !== index))}>
+                        <X className="h-3.5 w-3.5" />
+                      </Button>
+                    </div>
+                    {error && <p className="text-xs text-destructive">{error}</p>}
+                  </div>
+                );
+              })}
+              <Button type="button" variant="outline" size="sm" disabled={variables.length >= 30} onClick={() => setVariables(current => [...current, { key: '', value: '' }])}>
+                <Plus className="h-3.5 w-3.5" /> Add variable
+              </Button>
+              <p className="text-xs text-muted-foreground">
+                These values override environment variables with the same name. They are stored with the VM in plain text; keep passwords and tokens under Automations › Variables &amp; Secrets and mark them secret.
+              </p>
+            </div>
+          </details>
+
           <details className="border-t pt-5">
             <summary className="cursor-pointer text-sm font-medium text-muted-foreground hover:text-foreground">
               Advanced VM options
@@ -1053,8 +1114,10 @@ function VmFormContent({workspaceId, vmId, environmentId, connectionId, open, on
               ['Access', `Login: ${form.username || 'required'} · DNS: ${form.dns_servers || 'inherited'} · SSH key variable: ${form.ssh_public_key_variable || 'none'}`],
               ['Before deployment', `${preDeploy.join(' → ') || 'No workflows'}${preDeploy.length ? ` on ${hosts.find(host => host.id === preDeployTarget)?.name || preDeployTarget}` : ''}`],
               ['After deployment', postDeploy.join(' → ') || 'No workflows'],
+              ['Workflow variables', Object.entries(variablesPayload(variables)).map(([key, value]) => `${key}=${value}`).join(' · ') || 'None'],
               ['Options', `Guest agent configured: ${form.agent_enabled ? 'yes' : 'no'} · Start after deployment: ${form.started ? 'yes' : 'no'} · Clone attempts: ${form.clone_retries}`],
             ].map(([label, value]) => <div key={label} className="rounded-md border p-3"><p className="text-xs text-muted-foreground">{label}</p><p className="text-sm break-words">{value}</p></div>)}
+            {variablesInvalid && <div role="alert" className="rounded-md border border-destructive p-3 text-sm">Fix the workflow variables marked on the previous step before saving.</div>}
             {!requiredValuesValid && <div role="alert" className="rounded-md border border-destructive p-3 text-sm"><p className="font-medium">Resolve these fields before saving:</p><ul>{Object.entries(validation.errors).map(([label, error]) => <li key={label}>{label}: {error}</li>)}</ul></div>}
           </section>}
           {catalogQuery.isError && (

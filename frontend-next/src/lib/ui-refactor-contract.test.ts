@@ -263,7 +263,7 @@ describe("UI refactor contract", () => {
     expect(operations).not.toContain('| "Audit"');
     expect(operations).not.toContain('<option value="Audit">');
     expect(router).not.toContain("'Workflow' | 'Audit'");
-    expect(playbooks).toContain('<OverflowMenu title="Advanced automation settings">');
+    expect(playbooks).not.toContain('OverflowMenu');
     expect(playbooks).toContain("<GitTab workspace />");
     expect(profile.indexOf("profile.passwordSection")).toBeLessThan(profile.indexOf("Personal appearance"));
     expect(profile).toContain("More themes");

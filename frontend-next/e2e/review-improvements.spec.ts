@@ -163,7 +163,7 @@ test('VM state and recovery points refresh when an apply finishes', async ({page
  let finished=false;
  await page.route('**/api/opentofu/vms/review-state**',route=>{
   const pathname=new URL(route.request().url()).pathname;
-  let json:unknown={id:'review-state',name:'Review state refresh',environment_id:'default',connection_id:'test',node_name:'pve',vm_id:105,cpu_cores:1,memory_mb:1024,disk_size_gb:40,bridge:'vmbr0',ipv4_address:'dhcp',started:false};
+  let json:unknown={id:'review-state',name:'Review state refresh',environment_id:'default',connection_id:'test',node_name:'pve',vm_id:105,cpu_cores:1,memory_mb:1024,disk_size_gb:40,bridge:'vmbr0',ipv4_address:'dhcp',started:false,playbook_variables:{pfsense_target_alias:'fleet_web'}};
   if(pathname.endsWith('/runs')) json={items:[{id:'review-apply',action:'apply',status:finished?'success':'running'}]};
   else if(pathname.endsWith('/state')) json=finished?{resources:[{address:'proxmox_virtual_environment_vm.review',type:'proxmox_virtual_environment_vm',name:'review'}]}:{resources:[],error:'No state file was found'};
   else if(pathname.endsWith('/live')) json={available:false,reason:'Test VM stopped'};
@@ -173,6 +173,8 @@ test('VM state and recovery points refresh when an apply finishes', async ({page
   return route.fulfill({json});
  });
  await page.goto('/deployments/review-state#definitionTab=configuration');
+ await expect(page.getByText('pfsense_target_alias',{exact:true})).toBeVisible();
+ await expect(page.getByText('fleet_web',{exact:true})).toBeVisible();
  await page.locator('summary').filter({hasText:/^Advanced$/}).click();
  await expect(page.getByText('No state file was found',{exact:true})).toBeVisible();
  finished=true;

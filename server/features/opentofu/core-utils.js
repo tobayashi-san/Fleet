@@ -56,6 +56,31 @@ function normalizePostDeployPlaybooks(value) {
   return unique;
 }
 
+const DEPLOYMENT_VARIABLE_KEY_RE = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+
+/**
+ * Variables passed to the pre- and post-deploy playbooks of one VM. They are
+ * stored with the VM definition, so connection settings (ansible_*) and the
+ * values Fleet sets itself (fleet_*) are rejected.
+ */
+function normalizeDeploymentVariables(value) {
+  if (value === undefined || value === null || value === '') return {};
+  if (!isPlainObject(value)) throw new Error('Deployment variables must be provided as key-value pairs');
+  const entries = Object.entries(value);
+  if (entries.length > 30) throw new Error('At most 30 deployment variables may be set');
+  const result = {};
+  for (const [rawKey, rawValue] of entries) {
+    const key = String(rawKey).trim();
+    if (!DEPLOYMENT_VARIABLE_KEY_RE.test(key)) throw new Error(`Invalid variable name: ${key || 'empty'}. Use letters, digits and underscores, starting with a letter.`);
+    if (/^(ansible|fleet)_/i.test(key)) throw new Error(`Variable ${key} is reserved. Names starting with ansible_ or fleet_ cannot be set per deployment.`);
+    if (!['string', 'number', 'boolean'].includes(typeof rawValue)) throw new Error(`Variable ${key} must be text, a number or true/false`);
+    if (typeof rawValue === 'number' && !Number.isFinite(rawValue)) throw new Error(`Variable ${key} must be a finite number`);
+    result[key] = rawValue;
+  }
+  if (JSON.stringify(result).length > 4096) throw new Error('Deployment variables are too large (max 4 KB)');
+  return result;
+}
+
 // Proxmox uses `disk: 0` for QEMU guests when it has no usable guest usage
 // measurement. LXC disk usage is host-observable, so a real zero remains valid.
 function normalizeProxmoxDiskUsage(resource, guestType) {
@@ -216,6 +241,7 @@ module.exports = {
   isPlainObject,
   isUsableGuestIp,
   normalizeIp,
+  normalizeDeploymentVariables,
   normalizePostDeployPlaybooks,
   normalizeProxmoxDiskUsage,
   parseJsonArray,

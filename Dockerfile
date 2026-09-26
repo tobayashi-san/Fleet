@@ -2,7 +2,7 @@
 # Keep the Node release explicit so builds do not silently move to a different
 # runtime. Update this value through the normal dependency-update process.
 # The frontend bundle is architecture-independent, so it always builds natively.
-FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:50c8e8ca1d27439048670df5883f32d57cf81cff6233222c893fd0d9884cbd81 AS builder
+FROM --platform=$BUILDPLATFORM node:24-alpine@sha256:ebfe2f90462722a7a4de65e91990e97fe0d401c70e0e762c5b53302f905ec1c1 AS builder
 WORKDIR /app
 COPY frontend-next/package*.json ./frontend-next/
 RUN cd frontend-next && npm ci
@@ -11,7 +11,7 @@ RUN cd frontend-next && npm run build
 
 # ── Stage 2: Runtime ─────────────────────────────────────────
 # Use Debian for the runtime and native SQLite addon; both stages use Node 24.
-FROM node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+FROM node:24-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 
 # Apply Debian security updates published after the pinned base image.
 RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \

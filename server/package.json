@@ -17,7 +17,7 @@
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
-    "better-sqlite3": "^12.10.0",
+    "better-sqlite3": "^13.0.3",
     "cors": "^2.8.5",
     "express": "^5.2.1",
     "express-rate-limit": "^8.7.0",

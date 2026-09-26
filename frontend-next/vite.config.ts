@@ -7,6 +7,13 @@ import path from 'node:path';
 const { version } = JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')) as { version: string };
 
 // Default UI served from the backend root.
+const vendorChunks: Record<string, string[]> = {
+  terminal: ['@xterm/xterm', '@xterm/addon-fit'],
+  editor: ['@uiw/react-codemirror', '@codemirror/lang-yaml'],
+  router: ['@tanstack/react-router'],
+  query: ['@tanstack/react-query'],
+};
+
 export default defineConfig({
   base: '/',
   plugins: [react()],
@@ -34,11 +41,11 @@ export default defineConfig({
     sourcemap: false,
     rollupOptions: {
       output: {
-        manualChunks: {
-          terminal: ['@xterm/xterm', '@xterm/addon-fit'],
-          editor: ['@uiw/react-codemirror', '@codemirror/lang-yaml'],
-          router: ['@tanstack/react-router'],
-          query: ['@tanstack/react-query'],
+        // Rolldown only accepts the function form.
+        manualChunks(id) {
+          for (const [chunk, packages] of Object.entries(vendorChunks)) {
+            if (packages.some(name => id.includes(`/node_modules/${name}/`))) return chunk;
+          }
         },
       },
     },

@@ -40,7 +40,7 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "dompurify": "^3.4.15",
+    "dompurify": "^3.4.17",
     "i18next": "^26.4.2",
     "lucide-react": "^0.475.0",
     "marked": "^18.0.13",
